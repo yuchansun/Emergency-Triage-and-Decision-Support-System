@@ -1,0 +1,25 @@
+.label-line {
+    position: absolute;
+    border-top: 1px solid #a0b1b8;
+}
+.body-part-btn {
+    background-color: transparent;
+    cursor: pointer;
+}
+.body-part-btn:hover {
+    background-color: rgba(19, 182, 236, 0.3);
+    border-color: #13b6ec;
+}
+.body-part-btn.active {
+    background-color: rgba(19, 182, 236, 0.3) !important;
+    border-color: #13b6ec !important;
+}
+.symptom-option-btn.selected {
+    background-color: #13b6ec !important;
+    color: white !important;
+}
+.level-btn.selected {
+    background-color: #007bff !important;
+    color: white !important;
+    border-color: #007bff !important;
+}
