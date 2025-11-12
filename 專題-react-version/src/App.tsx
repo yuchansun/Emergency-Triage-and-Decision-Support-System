@@ -2,7 +2,7 @@ import { useState } from 'react';
 import './App.css';
 import PatientInfo from './components/PatientInfo';
 import LeftPanel from './components/LeftPanel';
-import RightPanel from './components/RightPanel';
+import Vitals from './components/Vitals';
 
 function App() {
   // 管理選中的症狀和主訴輸入
@@ -18,7 +18,7 @@ function App() {
               <PatientInfo />
             </div>
             <LeftPanel selectedSymptoms={selectedSymptoms} setSelectedSymptoms={setSelectedSymptoms} inputText={inputText} setInputText={setInputText} />
-            <RightPanel />
+            <Vitals />
           </div>
         </div>
       </main>

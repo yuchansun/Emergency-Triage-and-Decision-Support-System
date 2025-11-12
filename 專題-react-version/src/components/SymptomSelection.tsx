@@ -23,7 +23,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
     });
   };
 
-  const tabBtnBase = 'flex flex-col items-center justify-center px-6 py-3 rounded-lg text-sm font-semibold h-20 transition-colors cursor-pointer w-24';
+  const tabBtnBase = 'flex flex-col items-center justify-center px-8 py-3 rounded-lg text-sm font-semibold h-20 transition-colors cursor-pointer w-32';
 
   return (
     <div className="bg-content-light dark:bg-content-dark p-6 rounded-2xl shadow-lg flex-1 flex flex-col">
