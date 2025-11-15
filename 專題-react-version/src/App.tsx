@@ -3,11 +3,19 @@ import './App.css';
 import PatientInfo from './components/PatientInfo';
 import LeftPanel from './components/LeftPanel';
 import Vitals from './components/Vitals';
+import Login from "./components/Login";
 
 function App() {
   // 管理選中的症狀和主訴輸入
   const [selectedSymptoms, setSelectedSymptoms] = useState<Set<string>>(new Set());
   const [inputText, setInputText] = useState<string>('');
+
+  // 管理登入狀態
+  const [loggedIn, setLoggedIn] = useState(false);
+  // 若尚未登入 → 顯示登入頁
+  if (!loggedIn) {
+    return <Login onLogin={() => setLoggedIn(true)} />;
+  }
 
   return (
     <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark font-display text-text-light dark:text-text-dark">
