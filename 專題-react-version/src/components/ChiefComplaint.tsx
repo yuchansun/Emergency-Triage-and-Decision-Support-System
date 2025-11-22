@@ -1,84 +1,155 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 
 interface ChiefComplaintProps {
   selectedSymptoms: Set<string>;
   setSelectedSymptoms: React.Dispatch<React.SetStateAction<Set<string>>>;
   inputText: string;
   setInputText: React.Dispatch<React.SetStateAction<string>>;
+  activeTab: 't' | 'a';
+  setActiveTab: React.Dispatch<React.SetStateAction<'t' | 'a'>>;
+  onWorstDegreeChange: (degree: number | null) => void;
 }
 
-const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText }) => {
+const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, activeTab, setActiveTab, onWorstDegreeChange }) => {
+  interface TriageRow {
+    category: string;
+    system_code: string;
+    system_name: string;
+    symptom_code: string;
+    symptom_name: string;
+    rule_code: string;
+    judge_name: string;
+    ttas_degree: string;
+    nhi_degree: string;
+  }
+
+  const [triageRows, setTriageRows] = useState<TriageRow[] | null>(null);
+  const [triageError, setTriageError] = useState<string | null>(null);
+  const recognitionRef = useRef<any | null>(null);
+  const [isListening, setIsListening] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCsv = async () => {
+      try {
+        const res = await fetch('/triage_hierarchy.csv');
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const text = await res.text();
+        if (cancelled) return;
+
+        const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
+        if (lines.length <= 1) {
+          setTriageRows([]);
+          return;
+        }
+
+        const rows: TriageRow[] = [];
+        for (let i = 1; i < lines.length; i++) {
+          const parts = lines[i].split(',');
+          if (parts.length < 9) continue;
+          const [category, system_code, system_name, symptom_code, symptom_name, rule_code, judge_name, ttas_degree, nhi_degree] = parts;
+          rows.push({
+            category,
+            system_code,
+            system_name,
+            symptom_code,
+            symptom_name,
+            rule_code,
+            judge_name,
+            ttas_degree,
+            nhi_degree,
+          });
+        }
+
+        setTriageRows(rows);
+      } catch (err: any) {
+        if (cancelled) return;
+        setTriageError(err?.message ?? '載入 triage_hierarchy.csv 失敗');
+      }
+    };
+
+    loadCsv();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [recommendedSymptoms, setRecommendedSymptoms] = useState<string[]>([]);
 
-  // 完整症狀資料庫（包含所有外傷、非外傷、環境症狀）
-  const symptomDatabase = useMemo(() => [
-    // 外傷症狀
-    '頭部鈍傷', '頭部穿刺傷', '頭部撕裂傷、擦傷',
-    '顏面部鈍傷', '顏面部穿刺傷', '顏面部撕裂傷、擦傷',
-    '眼睛鈍傷', '眼睛穿刺傷', '眼睛撕裂傷、擦傷',
-    '鼻子鈍傷', '鼻子穿刺傷', '鼻子撕裂傷、擦傷',
-    '耳朵鈍傷', '耳朵穿刺傷', '耳朵撕裂傷、擦傷',
-    '頸部鈍傷', '頸部穿刺傷', '頸部撕裂傷、擦傷',
-    '胸部鈍傷', '胸部穿刺傷', '胸部撕裂傷、擦傷',
-    '腹部鈍傷', '腹部穿刺傷', '腹部撕裂傷、擦傷',
-    '上肢鈍傷', '上肢穿刺傷', '上肢撕裂傷、擦傷',
-    '腰背部鈍傷', '腰背部穿刺傷', '腰背部撕裂傷、擦傷',
-    '會陰部鈍傷', '會陰部穿刺傷', '會陰部撕裂傷、擦傷',
-    '下肢鈍傷', '下肢穿刺傷', '下肢撕裂傷、擦傷',
-    '燒燙傷', '確定或疑似性侵害', '家庭暴力',
-    '皮膚燒燙傷', '顏面部撕裂傷', '上肢撕裂傷', '下肢撕裂傷', '下肢鈍傷', '腰背部撕裂傷',
-    
-    // 非外傷症狀 - 神經系統
-    '中風症狀（突發性口齒不清／單側肢體感覺異常／突發性視覺異常）', '意識程度改變', '抽搐',
-    '步態不穩/運動失調', '混亂', '眩暈/頭暈', '肢體無力', '知覺喪失/感覺異常', '震顫', '頭痛',
-    
-    // 非外傷症狀 - 眼科
-    '化學物質暴露眼睛', '畏光／光傷害', '眼眶腫脹', '眼睛內異物', '眼睛分泌物', '眼睛疼痛', '眼睛紅／癢', '視覺障礙',
-    
-    // 非外傷症狀 - 呼吸系統
-    '呼吸停止', '呼吸短促', '呼吸道內異物', '咳嗽', '咳血', '換氣過度', '過敏反應',
-    
-    // 非外傷症狀 - 耳鼻喉系統
-    '上呼吸道感染相關症狀（鼻塞、流鼻水、咳嗽、喉嚨痛）', '吞嚥困難', '喉嚨痛', '流鼻血',
-    '牙齒／牙齦問題', '耳內異物', '耳朵分泌物', '耳朵疼痛', '耳鳴', '聽力改變',
-    '過敏或非特定因素引起的鼻塞', '頸部腫脹／疼痛', '顏面疼痛（無外傷／無牙齒問題）', '鼻內異物',
-    
-    // 非外傷症狀 - 心臟血管系統
-    '心跳停止', '胸痛', '心悸', '昏厥', '高血壓', '低血壓',
-    
-    // 非外傷症狀 - 心理健康
-    '失眠', '幻覺／妄想', '怪異行為', '憂鬱／自殺', '暴力行為／自傷／攻擊他人', '焦慮／激動', '社會／社交問題',
-    
-    // 非外傷症狀 - 腸胃系統
-    '便秘', '厭食', '吐血', '吞食異物', '噁心/嘔吐', '打嗝', '直腸內異物', '直腸會陰疼痛',
-    '腹瀉', '腹痛', '腹部腫塊/腹脹', '血便/黑便', '黃疸', '鼠蹊部疼痛/腫塊',
-    
-    // 非外傷症狀 - 骨骼系統
-    '上肢疼痛', '背痛', '關節腫脹', '下肢疼痛',
-    
-    // 非外傷症狀 - 泌尿系統
-    '多尿', '少尿', '尿滯留', '泌尿道感染相關症狀（頻尿、解尿疼痛）', '生殖器官分泌物／病變',
-    '腰痛', '血尿', '陰囊疼痛／腫脹', '陰莖腫脹', '鼠蹊部疼痛／腫塊',
-    
-    // 非外傷症狀 - 婦產科
-    '懷孕問題（大於20週／小於20週）', '月經問題', '產後出血', '確定或疑似性侵害',
-    '陰唇腫脹', '陰道內異物', '陰道出血', '陰道分泌物', '陰道疼痛／搔癢',
-    
-    // 非外傷症狀 - 皮膚系統
-    '乳房紅腫', '局部紅腫', '搔癢', '疑似傳染性皮膚病', '發紺', '皮膚內異物',
-    '紅疹', '腫塊／結節', '自發性瘀斑', '血液體液曝露',
-    
-    // 非外傷症狀 - 一般與其他
-    '全身倦怠', '發燒', '體重減輕', '不明原因疼痛', '其他未分類症狀',
-    '呼吸困難', '頭暈', '意識改變', '嘔吐',
-    
-    // 環境因素症狀
-    '動物咬傷', '蛇咬傷', '化學物質暴露', '中暑/高體溫症', '低體溫症',
-    '有毒氣體吸入/暴露', '溺水', '凍傷', '電擊傷害'
-  ], []);
+  // 從 triage_hierarchy.csv 建立完整症狀清單與對應 TTAS 級數
+  const symptomDatabase = useMemo(() => {
+    if (!triageRows) return [];
+    const names: string[] = [];
+    for (const row of triageRows) {
+      if (!names.includes(row.symptom_name)) {
+        names.push(row.symptom_name);
+      }
+    }
+    return names;
+  }, [triageRows]);
+
+  const symptomDegreeIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!triageRows) return map;
+    for (const row of triageRows) {
+      const degree = parseInt(row.ttas_degree, 10);
+      if (!Number.isFinite(degree)) continue;
+      const existing = map.get(row.symptom_name);
+      if (existing === undefined || degree < existing) {
+        map.set(row.symptom_name, degree);
+      }
+    }
+    return map;
+  }, [triageRows]);
+
+  useEffect(() => {
+    if (inputText.trim()) {
+      searchSymptoms(inputText);
+    }
+  }, [activeTab]);
+
+  // 每個症狀出現過的類別（外傷/非外傷）
+  const symptomCategoryIndex = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    if (!triageRows) return map;
+    for (const row of triageRows) {
+      const set = map.get(row.symptom_name) ?? new Set<string>();
+      set.add(row.category);
+      map.set(row.symptom_name, set);
+    }
+    return map;
+  }, [triageRows]);
+
+  // 每個症狀對應的所有 TTAS 判斷依據 (級數 + 說明)
+  const symptomCriteriaIndex = useMemo(() => {
+    const map = new Map<string, { degree: number; judge: string }[]>();
+    if (!triageRows) return map;
+    for (const row of triageRows) {
+      const degree = parseInt(row.ttas_degree, 10);
+      if (!Number.isFinite(degree) || !row.judge_name) continue;
+      const list = map.get(row.symptom_name) ?? [];
+      if (!list.some(item => item.degree === degree && item.judge === row.judge_name)) {
+        list.push({ degree, judge: row.judge_name });
+      }
+      map.set(row.symptom_name, list);
+    }
+    // 依級數排序，低級數(較嚴重)在前
+    for (const list of map.values()) {
+      list.sort((a, b) => a.degree - b.degree);
+    }
+    return map;
+  }, [triageRows]);
 
   // 搜尋推薦症狀（基於輸入框中的所有關鍵字）
-  const searchSymptoms = (text: string) => {
+  const searchSymptoms = (text: string, selectedOverride?: Set<string>) => {
+    if (!symptomDatabase.length) {
+      setRecommendedSymptoms([]);
+      return;
+    }
     if (text.length < 1) {
       setRecommendedSymptoms([]);
       return;
@@ -101,9 +172,16 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
       return;
     }
     
+    const selectedSet = selectedOverride ?? selectedSymptoms;
+
+    const currentCategory = activeTab === 't' ? '外傷' : '非外傷';
+
     const matches = symptomDatabase.filter(symptom => {
+      // 先用類別過濾：只推薦屬於目前 T/A 類別的症狀
+      const cats = symptomCategoryIndex.get(symptom);
+      if (!cats || !cats.has(currentCategory)) return false;
       // 檢查是否已經選中（任何前綴）
-      const isAlreadySelected = Array.from(selectedSymptoms).some(selected => {
+      const isAlreadySelected = Array.from(selectedSet).some(selected => {
         const cleanSelected = selected.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
         return cleanSelected === symptom;
       });
@@ -147,39 +225,180 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
     }
   };
 
-  // 添加推薦症狀
-  const addRecommendedSymptom = (symptom: string) => {
-    setSelectedSymptoms(prev => new Set([...prev, `manual:${symptom}`]));
-    // 重新搜尋以更新推薦列表（移除剛選的症狀）
-    searchSymptoms(inputText);
-  };
+  const handleVoiceInputClick = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('此瀏覽器不支援語音輸入 (SpeechRecognition)。請改用 Chrome 等支援的瀏覽器。');
+      return;
+    }
 
-  // 移除症狀
-  const removeSymptom = (symptomKey: string) => {
-    setSelectedSymptoms(prev => {
-      const next = new Set(prev);
-      next.delete(symptomKey);
-      return next;
-    });
-    // 重新搜尋以更新推薦列表（可能重新顯示剛移除的症狀）
-    if (inputText.trim()) {
-      setTimeout(() => searchSymptoms(inputText), 0);
+    // 若已在聽，則停止
+    if (isListening && recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
+    recognition.lang = 'zh-TW';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript as string;
+      setInputText(prev => {
+        const base = prev || '';
+        const nextText = base ? base + (base.endsWith('\n') ? '' : '\n') + transcript : transcript;
+        searchSymptoms(nextText);
+        return nextText;
+      });
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      // 有些瀏覽器若重複呼叫 start 會丟錯誤，這裡忽略即可
     }
   };
 
-  // 將選中的症狀轉換為可讀的標籤
+  // 添加推薦症狀
+  const addRecommendedSymptom = (symptom: string) => {
+    setSelectedSymptoms(prev => {
+      // 如果這個症狀文字已經在任何 key 裡，就不再新增重複的
+      const alreadyHas = Array.from(prev).some(selected => {
+        const cleanSelected = selected.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
+        return cleanSelected === symptom;
+      });
+      if (alreadyHas) return prev;
+
+      const next = new Set(prev);
+      next.add(`manual:${symptom}`);
+
+      // 立刻用更新後的 selected set 重新計算推薦清單
+      if (inputText.trim()) {
+        searchSymptoms(inputText, next);
+      }
+
+      return next;
+    });
+  };
+
+  // 移除症狀
+  const removeSymptom = (symptomDisplay: string) => {
+    setSelectedSymptoms(prev => {
+      const next = new Set(prev);
+      // 依顯示文字（去掉前綴後的症狀名稱）移除所有對應 key
+      for (const key of Array.from(prev)) {
+        const cleanKey = key.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
+        if (cleanKey === symptomDisplay) {
+          next.delete(key);
+        }
+      }
+
+      // 用更新後的 selected set 重新計算推薦清單（剛移除的症狀可能重新出現）
+      if (inputText.trim()) {
+        searchSymptoms(inputText, next);
+      }
+
+      return next;
+    });
+  };
+
+  // 將選中的症狀轉換為可讀的標籤與其判斷規則
   const symptomTags = useMemo(() => {
-    return Array.from(selectedSymptoms).map(key => {
+    const map = new Map<string, { display: string; degrees: number | undefined; criteria: { degree: number; judge: string }[] }>();
+
+    for (const key of selectedSymptoms) {
       // 移除前綴（如 't:', 'emerg:', 'manual:' 等）
       const cleanKey = key.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
-      return { key, display: cleanKey };
-    });
-  }, [selectedSymptoms]);
+      const existing = map.get(cleanKey);
+      const degree = symptomDegreeIndex.get(cleanKey);
+      const criteria = symptomCriteriaIndex.get(cleanKey) ?? [];
+
+      if (!existing) {
+        map.set(cleanKey, { display: cleanKey, degrees: degree, criteria });
+      }
+    }
+
+    return Array.from(map.values());
+  }, [selectedSymptoms, symptomDegreeIndex, symptomCriteriaIndex]);
+
+  const [selectedRules, setSelectedRules] = useState<Record<string, { degree: number; judge: string }>>({});
+
+  const worstSelectedDegree = useMemo(() => {
+    const degrees = Object.values(selectedRules).map(r => r.degree);
+    if (degrees.length === 0) return null;
+    return Math.min(...degrees);
+  }, [selectedRules]);
+
+  useEffect(() => {
+    onWorstDegreeChange(worstSelectedDegree);
+  }, [worstSelectedDegree, onWorstDegreeChange]);
+
+  const getRuleColors = (degree: number) => {
+    switch (degree) {
+      case 1:
+        return { border: 'border-red-500', bg: 'bg-red-500/10 hover:bg-red-500/20', text: 'text-red-500' };
+      case 2:
+        return { border: 'border-orange-500', bg: 'bg-orange-500/10 hover:bg-orange-500/20', text: 'text-orange-500' };
+      case 3:
+        return { border: 'border-yellow-500', bg: 'bg-yellow-500/10 hover:bg-yellow-500/20', text: 'text-yellow-500' };
+      case 4:
+        return { border: 'border-green-500', bg: 'bg-green-500/10 hover:bg-green-500/20', text: 'text-green-500' };
+      case 5:
+      default:
+        return { border: 'border-blue-500', bg: 'bg-blue-500/10 hover:bg-blue-500/20', text: 'text-blue-500' };
+    }
+  };
 
   return (
     <div className="bg-content-light dark:bg-content-dark p-6 rounded-2xl shadow-lg flex flex-col">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-2xl font-bold flex items-center gap-2">主訴</h3>
+        <div className="flex items-center gap-4">
+          <h3 className="text-2xl font-bold flex items-center gap-2">主訴</h3>
+          <div className="inline-flex gap-3 bg-background-light dark:bg-background-dark/60 px-2 py-2 rounded-2xl border border-primary/30">
+            <button
+              type="button"
+              onClick={() => setActiveTab('t')}
+              className={`px-6 py-2.5 rounded-xl text-base font-semibold transition-colors ${
+                activeTab === 't'
+                  ? 'bg-primary text-white'
+                  : 'bg-transparent text-primary hover:bg-primary/10'
+              }`}
+            >
+              T 外傷
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('a')}
+              className={`px-6 py-2.5 rounded-xl text-base font-semibold transition-colors ${
+                activeTab === 'a'
+                  ? 'bg-primary text-white'
+                  : 'bg-transparent text-primary hover:bg-primary/10'
+              }`}
+            >
+              A 非外傷
+            </button>
+          </div>
+        </div>
         <div className="flex gap-2">
           <button 
             onClick={() => setSelectedSymptoms(prev => new Set([...prev, 'emerg:cardiac_arrest']))}
@@ -201,7 +420,12 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
           </button>
         </div>
       </div>
-      
+      {triageError && (
+        <div className="mb-2 text-xs text-red-500">
+          {triageError}
+        </div>
+      )}
+
       {/* 輸入區域 */}
       <div className="relative mb-4">
         <textarea 
@@ -213,7 +437,11 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
           onKeyDown={handleKeyDown}
           rows={3}
         />
-        <button className="absolute bottom-3 right-3 flex items-center justify-center size-10 rounded-full bg-primary text-white hover:bg-primary/90 transition-colors">
+        <button
+          type="button"
+          onClick={handleVoiceInputClick}
+          className="absolute bottom-3 right-3 flex items-center justify-center size-10 rounded-full bg-primary text-white hover:bg-primary/90 transition-colors"
+        >
           <span className="material-symbols-outlined">mic</span>
         </button>
       </div>
@@ -241,14 +469,14 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
         <div className="mb-4">
           <h4 className="text-sm font-semibold mb-2">已選症狀</h4>
           <div className="flex flex-wrap gap-2">
-            {symptomTags.map(({ key, display }) => (
+            {symptomTags.map(({ display }) => (
               <div
-                key={key}
-                className="inline-flex items-center gap-1 px-3 py-1 bg-primary text-white text-sm rounded-full"
+                key={display}
+                className="inline-flex items-center gap-1 px-3 py-1 bg-primary text-white text-sm rounded-full max-w-full"
               >
-                <span>{display}</span>
+                <span className="truncate max-w-[10rem]" title={display}>{display}</span>
                 <button
-                  onClick={() => removeSymptom(key)}
+                  onClick={() => removeSymptom(display)}
                   className="ml-1 hover:bg-white/20 rounded-full p-0.5 transition-colors"
                   title="移除症狀"
                 >
@@ -257,6 +485,66 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* 判斷規則：列出各症狀所有 TTAS 判斷依據並可點選 */}
+      {symptomTags.length > 0 && (
+        <div className="mb-4">
+          <h4 className="text-sm font-semibold mb-2">判斷規則</h4>
+          <div className="space-y-2">
+            {symptomTags.map(({ display, criteria }) => (
+              criteria.length > 0 && (
+                <div key={display} className="space-y-1">
+                  <div className="text-xs font-semibold text-subtext-light dark:text-subtext-dark">
+                    {display}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {criteria.map(item => {
+                      const colors = getRuleColors(item.degree);
+                      const current = selectedRules[display];
+                      const isSelected =
+                        !!current &&
+                        current.degree === item.degree &&
+                        current.judge === item.judge;
+                      return (
+                        <button
+                          key={`${display}-${item.degree}-${item.judge}`}
+                          type="button"
+                          onClick={() =>
+                            setSelectedRules(prev => {
+                              const existing = prev[display];
+                              const next = { ...prev };
+                              if (
+                                existing &&
+                                existing.degree === item.degree &&
+                                existing.judge === item.judge
+                              ) {
+                                delete next[display];
+                              } else {
+                                next[display] = { degree: item.degree, judge: item.judge };
+                              }
+                              return next;
+                            })
+                          }
+                          className={`px-2.5 py-1 rounded-full border text-[10px] leading-snug text-left ${colors.border} ${colors.bg} ${colors.text} ${isSelected ? 'ring-2 ring-offset-1 ring-primary' : ''}`}
+                          title={`第${item.degree}級：${item.judge}`}
+                        >
+                          第{item.degree}級：{item.judge}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )
+            ))}
+          </div>
+          {worstSelectedDegree !== null && (
+            <div className="mt-2 text-[11px] text-subtext-light dark:text-subtext-dark">
+              所有已選判斷依據中最嚴重的級數：
+              <span className="font-semibold">第{worstSelectedDegree}級</span>
+            </div>
+          )}
         </div>
       )}
       

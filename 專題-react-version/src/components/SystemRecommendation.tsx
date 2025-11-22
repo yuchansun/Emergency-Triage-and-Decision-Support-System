@@ -1,15 +1,21 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 
 interface SystemRecommendationProps {
   selectedSymptoms: Set<string>;
   inputText: string;
+  worstSelectedDegree: number | null;
 }
 
-const SystemRecommendation: React.FC<SystemRecommendationProps> = ({ selectedSymptoms, inputText }) => {
+const SystemRecommendation: React.FC<SystemRecommendationProps> = ({ selectedSymptoms, inputText, worstSelectedDegree }) => {
   const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
   
   // 根據症狀和輸入文字動態計算推薦級數（簡單模型，之後會替換為AI模型）
   const systemRecommendedLevel = useMemo(() => {
+    // 若有來自判斷規則的最嚴重級數，優先使用
+    if (worstSelectedDegree !== null) {
+      return worstSelectedDegree;
+    }
+
     // 如果沒有輸入主訴且沒有選中症狀，不顯示推薦
     if (!inputText.trim() && selectedSymptoms.size === 0) {
       return null;
@@ -46,9 +52,14 @@ const SystemRecommendation: React.FC<SystemRecommendationProps> = ({ selectedSym
         score = 4; // 第4級
       }
     }
-
     return score;
-  }, [selectedSymptoms, inputText]);
+  }, [worstSelectedDegree, selectedSymptoms, inputText]);
+
+  useEffect(() => {
+    if (systemRecommendedLevel !== null) {
+      setSelectedLevel(systemRecommendedLevel);
+    }
+  }, [systemRecommendedLevel]);
 
   const handleLevelSelect = (level: number) => {
     setSelectedLevel(level);

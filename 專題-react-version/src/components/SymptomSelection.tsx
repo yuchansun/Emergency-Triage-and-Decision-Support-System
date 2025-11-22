@@ -1,12 +1,103 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 
 interface SymptomSelectionProps {
   selectedSymptoms: Set<string>;
   setSelectedSymptoms: React.Dispatch<React.SetStateAction<Set<string>>>;
+  activeTab: 't' | 'a';
 }
 
-const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, setSelectedSymptoms }) => {
-  const [activeTab, setActiveTab] = useState<'t' | 'a' | 'e'>('t');
+const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, setSelectedSymptoms, activeTab }) => {
+  interface TriageRow {
+    category: string;
+    system_code: string;
+    system_name: string;
+    symptom_code: string;
+    symptom_name: string;
+    rule_code: string;
+    judge_name: string;
+    ttas_degree: string;
+    nhi_degree: string;
+  }
+
+  const [triageRows, setTriageRows] = useState<TriageRow[] | null>(null);
+  const [triageError, setTriageError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCsv = async () => {
+      try {
+        const res = await fetch('/triage_hierarchy.csv');
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const text = await res.text();
+        if (cancelled) return;
+
+        const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
+        if (lines.length <= 1) {
+          setTriageRows([]);
+          return;
+        }
+
+        const rows: TriageRow[] = [];
+        for (let i = 1; i < lines.length; i++) {
+          const parts = lines[i].split(',');
+          if (parts.length < 9) continue;
+          const [category, system_code, system_name, symptom_code, symptom_name, rule_code, judge_name, ttas_degree, nhi_degree] = parts;
+          rows.push({
+            category,
+            system_code,
+            system_name,
+            symptom_code,
+            symptom_name,
+            rule_code,
+            judge_name,
+            ttas_degree,
+            nhi_degree,
+          });
+        }
+
+        setTriageRows(rows);
+      } catch (err: any) {
+        if (cancelled) return;
+        setTriageError(err?.message ?? '載入 triage_hierarchy.csv 失敗');
+      }
+    };
+
+    loadCsv();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const symptomIndex = useMemo(() => {
+    if (!triageRows) return null;
+
+    const index = new Map<string, string[]>();
+
+    for (const row of triageRows) {
+      const key = `${row.category}|${row.system_name}`;
+      let list = index.get(key);
+      if (!list) {
+        list = [];
+        index.set(key, list);
+      }
+      if (!list.includes(row.symptom_name)) {
+        list.push(row.symptom_name);
+      }
+    }
+
+    return index;
+  }, [triageRows]);
+
+  const getSymptoms = (category: string, systemName: string): string[] => {
+    if (!symptomIndex) return [];
+    const key = `${category}|${systemName}`;
+    return symptomIndex.get(key) ?? [];
+  };
+
   const [tBody, setTBody] = useState<'head' | 'upper' | 'lower' | null>(null);
   const [aBody, setABody] = useState<'head' | 'upper' | 'lower' | null>(null);
 
@@ -17,39 +108,49 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
 
   const toggleSelect = (key: string) => {
     setSelectedSymptoms(prev => {
+      const cleanTarget = key.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
+
+      // 如果已經有同名症狀，視為 toggle off：移除所有同名 key
+      let removed = false;
+      for (const existing of Array.from(next)) {
+        const cleanExisting = existing.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
+        if (cleanExisting === cleanTarget) {
+          next.delete(existing);
+          removed = true;
+        }
+      }
+
+      // 若沒有同名症狀，則新增這個 key（toggle on）
+      if (!removed) {
+        next.add(key);
+      }
+
       return next;
     });
   };
 
-  const tabBtnBase = 'flex flex-col items-center justify-center px-8 py-3 rounded-lg text-sm font-semibold h-20 transition-colors cursor-pointer w-32';
+  const isSymptomSelected = (label: string) => {
+    return Array.from(selectedSymptoms).some(existing => {
+      const cleanExisting = existing.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
+      return cleanExisting === label;
+    });
+  };
 
   return (
     <div className="bg-content-light dark:bg-content-dark p-6 rounded-2xl shadow-lg flex-1 flex flex-col">
       <div className="flex items-center justify-between gap-4 mb-4">
         <h3 className="text-2xl font-bold">選擇症狀</h3>
-        <div className="grid grid-cols-3 gap-2">
-          <button type="button" data-tab="t" onClick={() => setActiveTab('t')} className={`symptom-tab ${tabBtnBase} ${activeTab === 't' ? 'bg-primary text-white' : ''}`}>
-            <span className="text-xl font-bold">T</span>
-            <span className="text-xs">外傷</span>
-          </button>
-          <button type="button" data-tab="a" onClick={() => setActiveTab('a')} className={`symptom-tab ${tabBtnBase} ${activeTab === 'a' ? 'bg-primary text-white' : ''}`}>
-            <span className="text-xl font-bold">A</span>
-            <span className="text-xs">非外傷</span>
-          </button>
-          <button type="button" data-tab="e" onClick={() => setActiveTab('e')} className={`symptom-tab ${tabBtnBase} ${activeTab === 'e' ? 'bg-primary text-white' : ''}`}>
-            <span className="text-xl font-bold">E</span>
-            <span className="text-xs">環境</span>
-          </button>
-        </div>
       </div>
+      {triageError && (
+        <div className="mb-3 text-sm text-red-500">{triageError}</div>
+      )}
       <div className="space-y-6 flex-1 flex flex-col">
         <div className="mt-4 space-y-4 flex-1 flex flex-col">
           <div data-tab-content="t" className={`symptom-panel flex-1 flex-col min-h-[450px] ${activeTab === 't' ? 'flex' : 'hidden'}`}>
             <div className="flex-1 flex flex-col">
               <h4 className="font-semibold text-lg mb-3">分類</h4>
-              <div className="flex gap-8 flex-1">
+              <div className="flex gap-8 flex-1 items-start">
                 <div className="relative w-48 flex-shrink-0">
                   <img src={bodyImgSrc} alt="Human Body" className="w-full" />
                   <button id="t-head-button" onClick={() => setTBody('head')} className={`body-part-btn absolute top-0 left-0 w-full h-1/4 rounded-t-full transition-colors duration-300 border-2 ${tBody === 'head' ? 'active' : 'border-transparent'}`}>
@@ -70,8 +171,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>頭部</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['頭部鈍傷','頭部穿刺傷','頭部撕裂傷、擦傷'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`t:head:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`t:head:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('外傷', '頭部外傷').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`t:head:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:head:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -81,8 +188,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>顏面部</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['顏面部鈍傷','顏面部穿刺傷','顏面部撕裂傷、擦傷'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`t:face:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`t:face:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('外傷', '顏面部外傷').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`t:face:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:face:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -92,8 +205,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>眼睛</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['眼睛鈍傷','眼睛穿刺傷','眼睛撕裂傷、擦傷'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`t:eye:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`t:eye:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('外傷', '眼睛外傷').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`t:eye:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:eye:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -103,8 +222,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>鼻子</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['鼻子鈍傷','鼻子穿刺傷','鼻子撕裂傷、擦傷'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`t:nose:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`t:nose:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('外傷', '鼻子外傷').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`t:nose:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:nose:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -114,8 +239,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>耳朵</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['耳朵鈍傷','耳朵穿刺傷','耳朵撕裂傷、擦傷'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`t:ear:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`t:ear:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('外傷', '耳朵外傷').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`t:ear:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:ear:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -125,8 +256,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>頸部</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['頸部鈍傷','頸部穿刺傷','頸部撕裂傷、擦傷'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`t:neck:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`t:neck:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('外傷', '頸部外傷').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`t:neck:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:neck:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -138,8 +275,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>胸部</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['胸部鈍傷','胸部穿刺傷','胸部撕裂傷、擦傷'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`t:chest:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`t:chest:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('外傷', '胸部外傷').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`t:chest:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:chest:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -149,8 +292,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>腹部(含骨盆)</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['腹部鈍傷','腹部穿刺傷','腹部撕裂傷、擦傷'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`t:abdomen:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`t:abdomen:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('外傷', '腹部(含骨盆)外傷').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`t:abdomen:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:abdomen:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -160,8 +309,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>上肢</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['上肢鈍傷','上肢穿刺傷','上肢撕裂傷、擦傷'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`t:upperlimb:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`t:upperlimb:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('外傷', '肢體外傷').filter(name => name.includes('上肢')).map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`t:upperlimb:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:upperlimb:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -171,8 +326,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>腰背部</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['腰背部鈍傷','腰背部穿刺傷','腰背部撕裂傷、擦傷'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`t:back:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`t:back:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('外傷', '腰、背部外傷').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`t:back:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:back:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -184,8 +345,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>會陰部及生殖器官</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['會陰部鈍傷','會陰部穿刺傷','會陰部撕裂傷、擦傷'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`t:perineum:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`t:perineum:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('外傷', '會陰部及生殖器官外傷').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`t:perineum:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:perineum:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -195,8 +362,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>下肢</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['下肢鈍傷','下肢穿刺傷','下肢撕裂傷、擦傷'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`t:lowerlimb:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`t:lowerlimb:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('外傷', '肢體外傷').filter(name => name.includes('下肢')).map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`t:lowerlimb:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:lowerlimb:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -206,8 +379,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>皮膚</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['燒燙傷'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`t:skin:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`t:skin:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('外傷', '皮膚外傷').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`t:skin:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:skin:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -217,9 +396,49 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>一般和其他傷害</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['確定或疑似性侵害','家庭暴力'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`t:other:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`t:other:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('外傷', '一般和其他傷害').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`t:other:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:other:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
+                      </div>
+                    </div>
+                    <div>
+                      <h5 className="font-semibold text-base flex items-center gap-2">
+                        <span className="material-symbols-outlined text-primary/80">eco</span>
+                        <span>環境</span>
+                      </h5>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {getSymptoms('外傷', '環境').map(label => {
+                          const iconMap: Record<string, string> = {
+                            '昆蟲螫傷': 'bug_report',
+                            '海洋生物螫咬': 'scuba_diving',
+                            '動物咬傷': 'pets',
+                            '蛇咬傷': 'coronavirus',
+                            '化學物質暴露(疑似或確定化學、輻射或危害物質暴露)': 'science',
+                            '中暑/高體溫症': 'thermostat',
+                            '低體溫症': 'ac_unit',
+                            '有毒氣體吸入/暴露': 'gas_meter',
+                            '溺水': 'pool',
+                            '凍傷': 'severe_cold',
+                            '電擊傷害': 'bolt',
+                          };
+                          const icon = iconMap[label] ?? 'eco';
+                          return (
+                            <button
+                              key={label}
+                              onClick={() => toggleSelect(`t:env:${label}`)}
+                              className={`symptom-option-btn flex items-center justify-start gap-2 px-4 py-2 rounded-lg text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:env:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            >
+                              <span className="material-symbols-outlined">{icon}</span>
+                              <span className="symptom-text">{label}</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
@@ -270,7 +489,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
           <div data-tab-content="a" className={`symptom-panel flex-1 flex-col min-h-[450px] ${activeTab === 'a' ? 'flex' : 'hidden'}`}>
             <div className="flex-1 flex flex-col">
               <h4 className="font-semibold text-lg mb-3">分類</h4>
-              <div className="flex gap-8 flex-1">
+              <div className="flex gap-8 flex-1 items-start">
                 <div className="relative w-48 flex-shrink-0">
                   <img src={bodyImgSrc} alt="Human Body" className="w-full" />
                   <button id="a-head-button" onClick={() => setABody('head')} className={`body-part-btn absolute top-0 left-0 w-full h-1/4 rounded-t-full transition-colors duration-300 border-2 ${aBody === 'head' ? 'active' : 'border-transparent'}`}>
@@ -291,16 +510,15 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>神經系統</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        <button onClick={() => toggleSelect('a:neuro:中風症狀')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:neuro:中風症狀') ? 'selected' : ''}`}>中風症狀（突發性口齒不清／單側肢體感覺異常／突發性視覺異常）</button>
-                        <button onClick={() => toggleSelect('a:neuro:意識改變')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:neuro:意識改變') ? 'selected' : ''}`}>意識程度改變</button>
-                        <button onClick={() => toggleSelect('a:neuro:抽搐')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:neuro:抽搐') ? 'selected' : ''}`}>抽搐</button>
-                        <button onClick={() => toggleSelect('a:neuro:步態不穩')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:neuro:步態不穩') ? 'selected' : ''}`}>步態不穩/運動失調</button>
-                        <button onClick={() => toggleSelect('a:neuro:混亂')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:neuro:混亂') ? 'selected' : ''}`}>混亂</button>
-                        <button onClick={() => toggleSelect('a:neuro:頭暈')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:neuro:頭暈') ? 'selected' : ''}`}>眩暈/頭暈</button>
-                        <button onClick={() => toggleSelect('a:neuro:肢體無力')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:neuro:肢體無力') ? 'selected' : ''}`}>肢體無力</button>
-                        <button onClick={() => toggleSelect('a:neuro:感覺異常')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:neuro:感覺異常') ? 'selected' : ''}`}>知覺喪失/感覺異常</button>
-                        <button onClick={() => toggleSelect('a:neuro:震顫')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:neuro:震顫') ? 'selected' : ''}`}>震顫</button>
-                        <button onClick={() => toggleSelect('a:neuro:頭痛')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:neuro:頭痛') ? 'selected' : ''}`}>頭痛</button>
+                        {getSymptoms('非外傷', '神經系統').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`a:neuro:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:neuro:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
+                        ))}
                       </div>
                     </div>
                     <div>
@@ -309,14 +527,15 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>眼科</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        <button onClick={() => toggleSelect('a:eye:化學物質暴露眼睛')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:eye:化學物質暴露眼睛') ? 'selected' : ''}`}>化學物質暴露眼睛</button>
-                        <button onClick={() => toggleSelect('a:eye:畏光光傷害')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:eye:畏光光傷害') ? 'selected' : ''}`}>畏光／光傷害</button>
-                        <button onClick={() => toggleSelect('a:eye:眼眶腫脹')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:eye:眼眶腫脹') ? 'selected' : ''}`}>眼眶腫脹</button>
-                        <button onClick={() => toggleSelect('a:eye:眼睛內異物')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:eye:眼睛內異物') ? 'selected' : ''}`}>眼睛內異物</button>
-                        <button onClick={() => toggleSelect('a:eye:眼睛分泌物')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:eye:眼睛分泌物') ? 'selected' : ''}`}>眼睛分泌物</button>
-                        <button onClick={() => toggleSelect('a:eye:眼睛疼痛')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:eye:眼睛疼痛') ? 'selected' : ''}`}>眼睛疼痛</button>
-                        <button onClick={() => toggleSelect('a:eye:眼睛紅癢')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:eye:眼睛紅癢') ? 'selected' : ''}`}>眼睛紅／癢</button>
-                        <button onClick={() => toggleSelect('a:eye:視覺障礙')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:eye:視覺障礙') ? 'selected' : ''}`}>視覺障礙</button>
+                        {getSymptoms('非外傷', '眼科').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`a:eye:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:eye:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
+                        ))}
                       </div>
                     </div>
                     <div>
@@ -325,13 +544,15 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>呼吸系統</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        <button onClick={() => toggleSelect('a:resp:呼吸停止')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:resp:呼吸停止') ? 'selected' : ''}`}>呼吸停止</button>
-                        <button onClick={() => toggleSelect('a:resp:呼吸短促')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:resp:呼吸短促') ? 'selected' : ''}`}>呼吸短促</button>
-                        <button onClick={() => toggleSelect('a:resp:呼吸道內異物')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:resp:呼吸道內異物') ? 'selected' : ''}`}>呼吸道內異物</button>
-                        <button onClick={() => toggleSelect('a:resp:咳嗽')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:resp:咳嗽') ? 'selected' : ''}`}>咳嗽</button>
-                        <button onClick={() => toggleSelect('a:resp:咳血')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:resp:咳血') ? 'selected' : ''}`}>咳血</button>
-                        <button onClick={() => toggleSelect('a:resp:換氣過度')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:resp:換氣過度') ? 'selected' : ''}`}>換氣過度</button>
-                        <button onClick={() => toggleSelect('a:resp:過敏反應')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:resp:過敏反應') ? 'selected' : ''}`}>過敏反應</button>
+                        {getSymptoms('非外傷', '呼吸系統').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`a:resp:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:resp:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
+                        ))}
                       </div>
                     </div>
                     <div>
@@ -340,20 +561,15 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>耳鼻喉系統</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        <button onClick={() => toggleSelect('a:ent:上呼吸道感染症狀')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:ent:上呼吸道感染症狀') ? 'selected' : ''}`}>上呼吸道感染相關症狀（鼻塞、流鼻水、咳嗽、喉嚨痛）</button>
-                        <button onClick={() => toggleSelect('a:ent:吞嚥困難')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:ent:吞嚥困難') ? 'selected' : ''}`}>吞嚥困難</button>
-                        <button onClick={() => toggleSelect('a:ent:喉嚨痛')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:ent:喉嚨痛') ? 'selected' : ''}`}>喉嚨痛</button>
-                        <button onClick={() => toggleSelect('a:ent:流鼻血')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:ent:流鼻血') ? 'selected' : ''}`}>流鼻血</button>
-                        <button onClick={() => toggleSelect('a:ent:牙齒牙齦問題')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:ent:牙齒牙齦問題') ? 'selected' : ''}`}>牙齒／牙齦問題</button>
-                        <button onClick={() => toggleSelect('a:ent:耳內異物')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:ent:耳內異物') ? 'selected' : ''}`}>耳內異物</button>
-                        <button onClick={() => toggleSelect('a:ent:耳朵分泌物')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:ent:耳朵分泌物') ? 'selected' : ''}`}>耳朵分泌物</button>
-                        <button onClick={() => toggleSelect('a:ent:耳朵疼痛')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:ent:耳朵疼痛') ? 'selected' : ''}`}>耳朵疼痛</button>
-                        <button onClick={() => toggleSelect('a:ent:耳鳴')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:ent:耳鳴') ? 'selected' : ''}`}>耳鳴</button>
-                        <button onClick={() => toggleSelect('a:ent:聽力改變')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:ent:聽力改變') ? 'selected' : ''}`}>聽力改變</button>
-                        <button onClick={() => toggleSelect('a:ent:鼻塞')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:ent:鼻塞') ? 'selected' : ''}`}>過敏或非特定因素引起的鼻塞</button>
-                        <button onClick={() => toggleSelect('a:ent:頸部腫脹疼痛')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:ent:頸部腫脹疼痛') ? 'selected' : ''}`}>頸部腫脹／疼痛</button>
-                        <button onClick={() => toggleSelect('a:ent:顏面疼痛')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:ent:顏面疼痛') ? 'selected' : ''}`}>顏面疼痛（無外傷／無牙齒問題）</button>
-                        <button onClick={() => toggleSelect('a:ent:鼻內異物')} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has('a:ent:鼻內異物') ? 'selected' : ''}`}>鼻內異物</button>
+                        {getSymptoms('非外傷', '耳鼻喉系統').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`a:ent:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:ent:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -364,8 +580,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>心臟血管系統</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['全身性水腫','全身虛弱/無力','冰冷無脈搏的肢體','單側肢體紅熱','心悸/不規則心跳','心跳停止','暈厥','肢體水腫','胸痛/胸悶','高血壓急症'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`a:cardio:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`a:cardio:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('非外傷', '心臟血管系統').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`a:cardio:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:cardio:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -375,8 +597,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>心理健康</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['失眠','幻覺／妄想','怪異行為','憂鬱／自殺','暴力行為／自傷／攻擊他人','焦慮／激動','社會／社交問題'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`a:mental:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`a:mental:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('非外傷', '心理健康').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`a:mental:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:mental:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -386,8 +614,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>腸胃系統</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['便秘','厭食','吐血','吞食異物','噁心/嘔吐','打嗝','直腸內異物','直腸會陰疼痛','腹瀉','腹痛','腹部腫塊/腹脹','血便/黑便','黃疸','鼠蹊部疼痛/腫塊'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`a:gi:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`a:gi:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('非外傷', '腸胃系統').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`a:gi:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:gi:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -397,8 +631,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>骨骼系統</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['上肢疼痛','背痛','關節腫脹'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`a:bone:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`a:bone:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('非外傷', '骨骼系統').filter(name => name.includes('上肢') || name.includes('背') || name.includes('關節')).map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`a:bone:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:bone:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -410,8 +650,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>泌尿系統</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['多尿','少尿','尿滯留','泌尿道感染相關症狀（頻尿、解尿疼痛）','生殖器官分泌物／病變','腰痛','血尿','陰囊疼痛／腫脹','陰莖腫脹','鼠蹊部疼痛／腫塊'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`a:uro:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`a:uro:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('非外傷', '泌尿系統').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`a:uro:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:uro:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -421,8 +667,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>婦產科</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['懷孕問題（大於20週／小於20週）','月經問題','產後出血','確定或疑似性侵害','陰唇腫脹','陰道內異物','陰道出血','陰道分泌物','陰道疼痛／搔癢'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`a:obgy:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`a:obgy:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('非外傷', '婦產科').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`a:obgy:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:obgy:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -432,8 +684,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>骨骼系統</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['下肢疼痛','關節腫脹'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`a:bone:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`a:bone:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('非外傷', '骨骼系統').filter(name => name.includes('下肢') || name.includes('關節')).map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`a:bone:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:bone:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -443,8 +701,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>皮膚系統</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['乳房紅腫','局部紅腫','搔癢','疑似傳染性皮膚病','發紺','皮膚內異物','紅疹','腫塊／結節','自發性瘀斑','血液體液曝露'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`a:derm:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`a:derm:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('非外傷', '皮膚系統').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`a:derm:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:derm:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -454,8 +718,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         <span>一般與其他</span>
                       </h5>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {['全身倦怠','發燒','體重減輕','不明原因疼痛','其他未分類症狀'].map(label => (
-                          <button key={label} onClick={() => toggleSelect(`a:general:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${selectedSymptoms.has(`a:general:${label}`) ? 'selected' : ''}`}>{label}</button>
+                        {getSymptoms('非外傷', '一般和其他').map(label => (
+                          <button
+                            key={label}
+                            onClick={() => toggleSelect(`a:general:${label}`)}
+                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:general:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                          >
+                            {label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -475,29 +745,6 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-          <div data-tab-content="e" className={`symptom-panel flex-1 flex-col min-h-[450px] ${activeTab === 'e' ? 'flex' : 'hidden'}`}>
-            <h4 className="font-semibold text-lg mb-3">分類</h4>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { icon: 'bug_report', label: '昆蟲螫傷' },
-                { icon: 'scuba_diving', label: '海洋生物螫傷' },
-                { icon: 'pets', label: '動物咬傷' },
-                { icon: 'coronavirus', label: '蛇咬傷' },
-                { icon: 'science', label: '化學物質暴露' },
-                { icon: 'thermostat', label: '中暑/高體溫症' },
-                { icon: 'ac_unit', label: '低體溫症' },
-                { icon: 'gas_meter', label: '有毒氣體吸入/暴露' },
-                { icon: 'pool', label: '溺水' },
-                { icon: 'severe_cold', label: '凍傷' },
-                { icon: 'bolt', label: '電擊傷害' },
-              ].map(item => (
-                <button key={item.label} onClick={() => toggleSelect(`e:${item.label}`)} className={`symptom-option-btn env-btn flex items-center justify-start gap-2 px-4 py-2 rounded-lg text-sm sm:text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors w-full ${selectedSymptoms.has(`e:${item.label}`) ? 'selected' : ''}`}>
-                  <span className="material-symbols-outlined">{item.icon}</span>
-                  <span className="symptom-text">{item.label}</span>
-                </button>
-              ))}
             </div>
           </div>
         </div>
