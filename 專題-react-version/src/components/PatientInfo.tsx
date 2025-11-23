@@ -55,7 +55,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
         <h2 className="text-xl font-bold">急診檢傷系統</h2>
       </div>
 
-      {/* 右邊病患資訊 */}
+      {/* 右邊的病患資訊 */}
       <div className="flex flex-col items-end gap-1 text-sm text-subtext-light dark:text-subtext-dark">
         {/* 核心病患資訊 */}
         <div className="flex items-center gap-4">
