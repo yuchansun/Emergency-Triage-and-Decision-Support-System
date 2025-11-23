@@ -93,7 +93,7 @@ export default function AddPatient({
       idUnknown,
       birthUnknown,
       tsmcTransfer,
-      age: age || undefined,
+      age: age ?? undefined,
     });
   };
 
@@ -105,156 +105,161 @@ export default function AddPatient({
       const birth = new Date(value);
       const today = new Date();
       let calculatedAge = today.getFullYear() - birth.getFullYear();
+
       const m = today.getMonth() - birth.getMonth();
       if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
         calculatedAge--;
       }
+
+      //保證一歲以下也顯示0
+      if (calculatedAge < 0) calculatedAge = 0;
+
       setAge(calculatedAge);
     } else {
-      setAge(null);
+      setAge(0);
     }
   };
 
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-100 p-6">
-        <div className="w-full max-w-3xl bg-white rounded-2xl shadow-lg p-8">
-          <h1 className="text-3xl font-bold text-center mb-8 text-blue-700">
-            新增病患資料
-          </h1>
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-gray-100 p-6">
+      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-lg p-8">
+        <h1 className="text-3xl font-bold text-center mb-8 text-blue-700">
+          新增病患資料
+        </h1>
 
-          {/* IC卡 / 搜尋 */}
-          <div className="flex gap-4 mb-4">
-            <button
-              type="button"
-              className="flex-1 bg-gray-200 py-2 rounded-lg hover:bg-gray-300 transition"
-              onClick={() => {
-                setIcCard(!icCard);
-                handleReadICCard(); // 點 IC 卡時讀取
-              }}
-            >
-              IC卡
-            </button>
+        {/* IC卡 / 搜尋 */}
+        <div className="flex gap-4 mb-4">
+          <button
+            type="button"
+            className="flex-1 bg-gray-200 py-2 rounded-lg hover:bg-gray-300 transition"
+            onClick={() => {
+              setIcCard(!icCard);
+              handleReadICCard(); // 點 IC 卡時讀取
+            }}
+          >
+            IC卡
+          </button>
 
-            <button
-              type="button"
-              className="flex-1 bg-gray-200 py-2 rounded-lg hover:bg-gray-300 transition"
-              onClick={() => setSearch(!search)}
-            >
-              搜尋
-            </button>
-          </div>
+          <button
+            type="button"
+            className="flex-1 bg-gray-200 py-2 rounded-lg hover:bg-gray-300 transition"
+            onClick={() => setSearch(!search)}
+          >
+            搜尋
+          </button>
+        </div>
 
-          {/* 姓名 / 路倒病人 / 病歷號 */}
-          <div className="flex gap-4 mb-4">
+        {/* 姓名 / 路倒病人 / 病歷號 */}
+        <div className="flex gap-4 mb-4">
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="姓名"
+            className="flex-1 border rounded-lg px-4 py-2"
+          />
+
+          <label className="flex items-center gap-2">
             <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="姓名"
-              className="flex-1 border rounded-lg px-4 py-2"
+              type="checkbox"
+              checked={fallingPatient}
+              onChange={() => setFallingPatient(!fallingPatient)}
             />
+            路倒病人
+          </label>
 
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={fallingPatient}
-                onChange={() => setFallingPatient(!fallingPatient)}
-              />
-              路倒病人
-            </label>
+          <input
+            type="text"
+            value={medicalNumber}
+            onChange={(e) => setMedicalNumber(e.target.value)}
+            placeholder="病歷號"
+            className="flex-1 border rounded-lg px-4 py-2"
+          />
+        </div>
 
+        {/* 身分證 / 不詳 / 性別 */}
+        <div className="flex gap-4 mb-4">
+          <input
+            type="text"
+            value={idNumber}
+            onChange={(e) => setIdNumber(e.target.value)}
+            placeholder="身分證號"
+            className="flex-1 border rounded-lg px-4 py-2"
+          />
+
+          <label className="flex items-center gap-2">
             <input
-              type="text"
-              value={medicalNumber}
-              onChange={(e) => setMedicalNumber(e.target.value)}
-              placeholder="病歷號"
-              className="flex-1 border rounded-lg px-4 py-2"
+              type="checkbox"
+              checked={idUnknown}
+              onChange={() => setIdUnknown(!idUnknown)}
             />
-          </div>
+            身分證不詳
+          </label>
 
-          {/* 身分證 / 不詳 / 性別 */}
-          <div className="flex gap-4 mb-4">
+          <select
+            value={gender}
+            onChange={(e) =>
+              setGender(e.target.value as "男" | "女" | "不詳" | "")
+            }
+            className="border rounded-lg px-4 py-2"
+          >
+            <option value="">性別</option>
+            <option value="男">男</option>
+            <option value="女">女</option>
+            <option value="不詳">不詳</option>
+          </select>
+        </div>
+
+        {/* 出生日期 / 不詳 */}
+        <div className="flex gap-4 mb-4">
+          <input
+            type="date"
+            value={birthDate}
+            onChange={(e) => updateBirthDate(e.target.value)}
+            className="flex-1 border rounded-lg px-4 py-2"
+          />
+
+          <label className="flex items-center gap-2">
             <input
-              type="text"
-              value={idNumber}
-              onChange={(e) => setIdNumber(e.target.value)}
-              placeholder="身分證號"
-              className="flex-1 border rounded-lg px-4 py-2"
+              type="checkbox"
+              checked={birthUnknown}
+              onChange={() => setBirthUnknown(!birthUnknown)}
             />
+            出生不詳
+          </label>
+        </div>
 
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={idUnknown}
-                onChange={() => setIdUnknown(!idUnknown)}
-              />
-              身分證不詳
-            </label>
-
-            <select
-              value={gender}
-              onChange={(e) =>
-                setGender(e.target.value as "男" | "女" | "不詳" | "")
-              }
-              className="border rounded-lg px-4 py-2"
-            >
-              <option value="">性別</option>
-              <option value="男">男</option>
-              <option value="女">女</option>
-              <option value="不詳">不詳</option>
-            </select>
-          </div>
-
-          {/* 出生日期 / 不詳 */}
-          <div className="flex gap-4 mb-4">
+        {/* 泰山檢疫所轉入 */}
+        <div className="flex gap-4 mb-4">
+          <label className="flex items-center gap-2">
             <input
-              type="date"
-              value={birthDate}
-              onChange={(e) => updateBirthDate(e.target.value)}
-              className="flex-1 border rounded-lg px-4 py-2"
+              type="checkbox"
+              checked={tsmcTransfer}
+              onChange={() => setTsmcTransfer(!tsmcTransfer)}
             />
+            泰山檢疫所法傳轉入
+          </label>
+        </div>
 
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={birthUnknown}
-                onChange={() => setBirthUnknown(!birthUnknown)}
-              />
-              出生不詳
-            </label>
-          </div>
+        {/* 按鈕區 */}
+        <div className="flex gap-4 mt-6">
+          <button
+            type="button"
+            onClick={handleClear}
+            className="flex-1 bg-gray-300 py-3 rounded-lg hover:bg-gray-400 transition"
+          >
+            清除
+          </button>
 
-          {/* 泰山檢疫所轉入 */}
-          <div className="flex gap-4 mb-4">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={tsmcTransfer}
-                onChange={() => setTsmcTransfer(!tsmcTransfer)}
-              />
-              泰山檢疫所法傳轉入
-            </label>
-          </div>
-
-          {/* 按鈕區 */}
-          <div className="flex gap-4 mt-6">
-            <button
-              type="button"
-              onClick={handleClear}
-              className="flex-1 bg-gray-300 py-3 rounded-lg hover:bg-gray-400 transition"
-            >
-              清除
-            </button>
-
-            <button
-              type="button"
-              onClick={handleConfirm} // 呼叫 handleConfirm 傳資料給父元件
-              className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition"
-            >
-              確認
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleConfirm} // 呼叫 handleConfirm 傳資料給父元件
+            className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition"
+          >
+            確認
+          </button>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
