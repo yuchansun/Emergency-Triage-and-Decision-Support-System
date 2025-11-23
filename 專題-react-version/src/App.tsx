@@ -4,7 +4,8 @@ import PatientInfo from './components/PatientInfo';
 import LeftPanel from './components/LeftPanel';
 import Vitals from './components/Vitals';
 import Login from "./components/Login";
-import AddPatient from "./components/AddPatient";  // ⬅️ 你要新增這個檔案
+import AddPatient from "./components/AddPatient";
+import type { PatientData } from './components/AddPatient';
 
 function App() {
 
@@ -14,6 +15,10 @@ function App() {
   // 症狀與主訴
   const [selectedSymptoms, setSelectedSymptoms] = useState<Set<string>>(new Set());
   const [inputText, setInputText] = useState<string>('');
+
+  // 病患資料
+  const [patientData, setPatientData] = useState<PatientData | null>(null);
+
 
   // ----------------------------
   // 1️⃣ Login 頁面
@@ -26,7 +31,14 @@ function App() {
   // 2️⃣ AddPatient 頁面
   // ----------------------------
   if (stage === "addpatient") {
-    return <AddPatient onNext={() => setStage("main")} />;
+    return (
+      <AddPatient
+        onNext={(data) => {
+          setPatientData(data);  // 存資料
+          setStage("main");      // 切換到主畫面
+        }}
+      />
+    );
   }
 
   // ----------------------------
@@ -38,7 +50,7 @@ function App() {
         <div className="mx-auto max-w-screen-2xl">
           <div className="grid grid-cols-2 gap-8">
             <div className="col-span-2">
-              <PatientInfo />
+              <PatientInfo patient={patientData} />
             </div>
 
             <LeftPanel
