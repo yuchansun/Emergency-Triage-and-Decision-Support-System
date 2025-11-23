@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
 import ChiefComplaint from './ChiefComplaint';
 import SymptomSelection from './SymptomSelection';
-import SystemRecommendation from './SystemRecommendation';
 
 interface LeftPanelProps {
   selectedSymptoms: Set<string>;
   setSelectedSymptoms: React.Dispatch<React.SetStateAction<Set<string>>>;
   inputText: string;
   setInputText: React.Dispatch<React.SetStateAction<string>>;
+  onWorstDegreeChange: (degree: number | null) => void;
+  onDirectToER: () => void;
+  directToERSelected: boolean;
 }
 
-const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText }) => {
+const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, onWorstDegreeChange, onDirectToER, directToERSelected }) => {
   const [activeTab, setActiveTab] = useState<'t' | 'a'>('t');
-  const [worstSelectedDegree, setWorstSelectedDegree] = useState<number | null>(null);
 
   return (
     <div className="flex flex-col gap-8">
@@ -23,12 +24,9 @@ const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymp
         setInputText={setInputText}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        onWorstDegreeChange={setWorstSelectedDegree}
-      />
-      <SystemRecommendation
-        selectedSymptoms={selectedSymptoms}
-        inputText={inputText}
-        worstSelectedDegree={worstSelectedDegree}
+        onWorstDegreeChange={onWorstDegreeChange}
+        onDirectToER={onDirectToER}
+        directToERSelected={directToERSelected}
       />
       <SymptomSelection
         selectedSymptoms={selectedSymptoms}

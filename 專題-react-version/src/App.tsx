@@ -6,6 +6,7 @@ import Vitals from './components/Vitals';
 import Login from "./components/Login";
 import AddPatient from "./components/AddPatient";
 import type { PatientData } from './components/AddPatient';
+import SystemRecommendation from './components/SystemRecommendation';
 
 function App() {
 
@@ -15,6 +16,28 @@ function App() {
   // 症狀與主訴
   const [selectedSymptoms, setSelectedSymptoms] = useState<Set<string>>(new Set());
   const [inputText, setInputText] = useState<string>('');
+  const [worstSelectedDegree, setWorstSelectedDegree] = useState<number | null>(null);
+  const [forceLevel1, setForceLevel1] = useState<boolean>(false);
+  const [directToERSelected, setDirectToERSelected] = useState<boolean>(false);
+
+  const resetMainScreen = () => {
+    setSelectedSymptoms(new Set());
+    setInputText('');
+    setWorstSelectedDegree(null);
+    setForceLevel1(false);
+    setDirectToERSelected(false);
+    setStage('addpatient');
+  };
+
+  const handleDirectToER = () => {
+    const ok = window.confirm('確定直入急救室？');
+    if (!ok) return;
+    setForceLevel1(true);
+    setDirectToERSelected(true);
+    alert('確定級數：第1級');
+    console.log('確定級數：', 1);
+    resetMainScreen();
+  };
 
   // 病患資料
   const [patientData, setPatientData] = useState<PatientData | null>(null);
@@ -53,14 +76,30 @@ function App() {
               <PatientInfo patient={patientData} />
             </div>
 
-            <LeftPanel
-              selectedSymptoms={selectedSymptoms}
-              setSelectedSymptoms={setSelectedSymptoms}
-              inputText={inputText}
-              setInputText={setInputText}
-            />
+            <div className="col-span-6">
+              <LeftPanel
+                selectedSymptoms={selectedSymptoms}
+                setSelectedSymptoms={setSelectedSymptoms}
+                inputText={inputText}
+                setInputText={setInputText}
+                onWorstDegreeChange={setWorstSelectedDegree}
+                onDirectToER={handleDirectToER}
+                directToERSelected={directToERSelected}
+              />
+            </div>
 
-            <Vitals />
+            <div className="col-span-4">
+              <div className="flex flex-col gap-6">
+                <SystemRecommendation
+                  selectedSymptoms={selectedSymptoms}
+                  inputText={inputText}
+                  worstSelectedDegree={worstSelectedDegree}
+                  forceLevel1={forceLevel1}
+                  onSubmitLevel={resetMainScreen}
+                />
+                <Vitals />
+              </div>
+            </div>
           </div>
         </div>
       </main>

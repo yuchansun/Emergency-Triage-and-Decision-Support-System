@@ -8,9 +8,11 @@ interface ChiefComplaintProps {
   activeTab: 't' | 'a';
   setActiveTab: React.Dispatch<React.SetStateAction<'t' | 'a'>>;
   onWorstDegreeChange: (degree: number | null) => void;
+  onDirectToER: () => void;
+  directToERSelected: boolean;
 }
 
-const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, activeTab, setActiveTab, onWorstDegreeChange }) => {
+const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, activeTab, setActiveTab, onWorstDegreeChange, onDirectToER, directToERSelected }) => {
   interface TriageRow {
     category: string;
     system_code: string;
@@ -79,6 +81,39 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
   }, []);
 
   const [recommendedSymptoms, setRecommendedSymptoms] = useState<string[]>([]);
+  const [isSupplementOpen, setIsSupplementOpen] = useState<boolean>(false);
+  const [supplementText, setSupplementText] = useState<string>('');
+  const [voiceBuffer, setVoiceBuffer] = useState<string>('');
+
+  const summarizeChiefComplaint = async (raw: string): Promise<string> => {
+    try {
+      console.log('[LLM] sending raw chief complaint to backend:', raw);
+      const res = await fetch('http://localhost:3001/api/summarize-chief-complaint', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: raw }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        console.error('[LLM] backend returned non-OK status', res.status, text);
+        alert('AI 主訴整理失敗（後端狀態碼 ' + res.status + '），已保留原始主訴。');
+        return raw;
+      }
+      const data = await res.json();
+      const summary =
+        data && typeof data.summary === 'string' && data.summary.trim().length > 0
+          ? data.summary
+          : raw;
+      console.log('[LLM] received summary from backend:', summary);
+      return summary;
+    } catch (err) {
+      console.error('[LLM] error while calling backend:', err);
+      alert('AI 主訴整理時發生錯誤，已保留原始主訴。');
+      return raw;
+    }
+  };
 
   // 從 triage_hierarchy.csv 建立完整症狀清單與對應 TTAS 級數
   const symptomDatabase = useMemo(() => {
@@ -208,6 +243,13 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
     setRecommendedSymptoms(matches);
   };
 
+  const isSymptomSelectedByLabel = (label: string) => {
+    return Array.from(selectedSymptoms).some(selected => {
+      const cleanSelected = selected.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
+      return cleanSelected === label;
+    });
+  };
+
   // 處理輸入變化
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value;
@@ -246,24 +288,47 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
     recognitionRef.current = recognition;
     recognition.lang = 'zh-TW';
     recognition.interimResults = false;
+    recognition.continuous = true;
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
       setIsListening(true);
+      setVoiceBuffer('');
     };
 
     recognition.onend = () => {
       setIsListening(false);
       recognitionRef.current = null;
+
+      // 錄音結束後，將累積的語音一次寫入補充資料，並送給 LLM 做整理
+      setVoiceBuffer(prevRaw => {
+        const raw = prevRaw.trim();
+        if (raw) {
+          setSupplementText(prev => {
+            const base = prev || '';
+            const lines = base.split('\n').filter(l => l.length > 0);
+            // 若任一行已經與這次錄音結果相同，就不要再重複新增
+            if (lines.includes(raw)) {
+              return base;
+            }
+            return base ? base + (base.endsWith('\n') ? '' : '\n') + raw : raw;
+          });
+
+          void (async () => {
+            const summary = await summarizeChiefComplaint(raw);
+            setInputText(summary);
+            searchSymptoms(summary);
+          })();
+        }
+        return prevRaw;
+      });
     };
 
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript as string;
-      setInputText(prev => {
+      setVoiceBuffer(prev => {
         const base = prev || '';
-        const nextText = base ? base + (base.endsWith('\n') ? '' : '\n') + transcript : transcript;
-        searchSymptoms(nextText);
-        return nextText;
+        return base ? base + (base.endsWith('\n') ? '' : '\n') + transcript : transcript;
       });
     };
 
@@ -343,6 +408,36 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
 
   const [selectedRules, setSelectedRules] = useState<Record<string, { degree: number; judge: string }>>({});
 
+  useEffect(() => {
+    // 根據當前已選症狀，自動處理部分規則：
+    // 1) 移除已不在 symptomTags 中的規則
+    // 2) 若「心跳停止」只對應一條判斷依據，則自動帶入
+    const tagNames = new Set(symptomTags.map(t => t.display));
+
+    setSelectedRules(prev => {
+      const next: Record<string, { degree: number; judge: string }> = {};
+
+      // 保留仍存在於 symptomTags 裡的規則
+      for (const name of tagNames) {
+        const existing = prev[name];
+        if (existing) {
+          next[name] = existing;
+          continue;
+        }
+
+        // 對「心跳停止」自動帶入唯一一條規則
+        if (name === '心跳停止') {
+          const criteria = symptomCriteriaIndex.get(name) ?? [];
+          if (criteria.length === 1) {
+            next[name] = { degree: criteria[0].degree, judge: criteria[0].judge };
+          }
+        }
+      }
+
+      return next;
+    });
+  }, [symptomTags, symptomCriteriaIndex]);
+
   const worstSelectedDegree = useMemo(() => {
     const degrees = Object.values(selectedRules).map(r => r.degree);
     if (degrees.length === 0) return null;
@@ -401,19 +496,28 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
         </div>
         <div className="flex gap-2">
           <button 
-            onClick={() => setSelectedSymptoms(prev => new Set([...prev, 'emerg:cardiac_arrest']))}
+            onClick={() =>
+              setSelectedSymptoms(prev => {
+                const label = '心跳停止';
+                const alreadyHas = Array.from(prev).some(selected => {
+                  const cleanSelected = selected.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
+                  return cleanSelected === label;
+                });
+                if (alreadyHas) return prev;
+                return new Set([...prev, `manual:${label}`]);
+              })
+            }
             className={`symptom-option-btn flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors ${
-              selectedSymptoms.has('emerg:cardiac_arrest') ? 'selected' : ''
+              isSymptomSelectedByLabel('心跳停止') ? 'selected' : ''
             }`}
           >
             <span className="material-symbols-outlined text-sm">cardiology</span>
             <span>心跳停止</span>
           </button>
           <button 
-            onClick={() => setSelectedSymptoms(prev => new Set([...prev, 'emerg:direct_to_er']))}
-            className={`symptom-option-btn flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors ${
-              selectedSymptoms.has('emerg:direct_to_er') ? 'selected' : ''
-            }`}
+            type="button"
+            onClick={onDirectToER}
+            className={`symptom-option-btn flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors ${directToERSelected ? 'selected' : ''}`}
           >
             <span className="material-symbols-outlined text-sm">emergency</span>
             <span>直入急救室</span>
@@ -444,6 +548,31 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
         >
           <span className="material-symbols-outlined">mic</span>
         </button>
+      </div>
+
+      {/* 補充資料（可折疊） */}
+      <div className="mb-4">
+        <button
+          type="button"
+          onClick={() => setIsSupplementOpen(prev => !prev)}
+          className="flex items-center gap-2 text-sm font-semibold text-primary hover:text-primary/80"
+        >
+          <span className="material-symbols-outlined text-sm">
+            {isSupplementOpen ? 'expand_less' : 'expand_more'}
+          </span>
+          <span>補充資料</span>
+        </button>
+        {isSupplementOpen && (
+          <div className="mt-2">
+            <textarea
+              className="form-textarea w-full min-h-[80px] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark p-3 focus:ring-primary focus:border-primary resize-none text-sm"
+              placeholder="可輸入補充說明（例如：既往病史、用藥、家屬提供的額外資訊等）"
+              value={supplementText}
+              onChange={(e) => setSupplementText(e.target.value)}
+              rows={3}
+            />
+          </div>
+        )}
       </div>
 
       {/* 推薦症狀 */}
@@ -527,7 +656,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
                               return next;
                             })
                           }
-                          className={`px-2.5 py-1 rounded-full border text-[10px] leading-snug text-left ${colors.border} ${colors.bg} ${colors.text} ${isSelected ? 'ring-2 ring-offset-1 ring-primary' : ''}`}
+                          className={`px-2.5 py-1 rounded-full border text-[10px] leading-snug text-left ${colors.border} ${isSelected ? `${colors.bg.replace('10', '90')} text-white ring-2 ring-offset-1 ring-primary` : `${colors.bg} ${colors.text}`}`}
                           title={`第${item.degree}級：${item.judge}`}
                         >
                           第{item.degree}級：{item.judge}

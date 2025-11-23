@@ -4,56 +4,28 @@ interface SystemRecommendationProps {
   selectedSymptoms: Set<string>;
   inputText: string;
   worstSelectedDegree: number | null;
+  forceLevel1: boolean;
+  onSubmitLevel: () => void;
 }
 
-const SystemRecommendation: React.FC<SystemRecommendationProps> = ({ selectedSymptoms, inputText, worstSelectedDegree }) => {
+const SystemRecommendation: React.FC<SystemRecommendationProps> = ({ selectedSymptoms, inputText, worstSelectedDegree, forceLevel1, onSubmitLevel }) => {
   const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
   
   // 根據症狀和輸入文字動態計算推薦級數（簡單模型，之後會替換為AI模型）
   const systemRecommendedLevel = useMemo(() => {
+    // 若為直入急救室，強制第1級
+    if (forceLevel1) {
+      return 1;
+    }
+
     // 若有來自判斷規則的最嚴重級數，優先使用
     if (worstSelectedDegree !== null) {
       return worstSelectedDegree;
     }
-
-    // 如果沒有輸入主訴且沒有選中症狀，不顯示推薦
-    if (!inputText.trim() && selectedSymptoms.size === 0) {
-      return null;
-    }
-
-    let score = 4; // 預設為第4級（次緊急）
-
-    // 根據緊急症狀調整級數
-    const emergencySymptoms = Array.from(selectedSymptoms).filter(symptom => 
-      symptom.includes('emerg:cardiac_arrest') || 
-      symptom.includes('emerg:direct_to_er') ||
-      symptom.includes('心跳停止') ||
-      symptom.includes('直入急救室') ||
-      symptom.includes('意識改變')
-    );
-    
-    if (emergencySymptoms.length > 0) {
-      score = 1; // 緊急症狀 -> 第1級
-    } else {
-      // 根據主訴關鍵字調整
-      const criticalKeywords = ['噴血', '胸痛', '呼吸困難', '昏厥', '心悸'];
-      const urgentKeywords = ['頭痛', '發燒', '腹痛', '嘔吐'];
-      const moderateKeywords = ['咳嗽', '流鼻水', '喉嚨痛'];
-      
-      const hasCritical = criticalKeywords.some(keyword => inputText.includes(keyword));
-      const hasUrgent = urgentKeywords.some(keyword => inputText.includes(keyword));
-      const hasModerate = moderateKeywords.some(keyword => inputText.includes(keyword));
-      
-      if (hasCritical || selectedSymptoms.size >= 3) {
-        score = 2; // 第2級
-      } else if (hasUrgent || selectedSymptoms.size >= 2) {
-        score = 3; // 第3級
-      } else if (hasModerate || selectedSymptoms.size >= 1) {
-        score = 4; // 第4級
-      }
-    }
-    return score;
-  }, [worstSelectedDegree, selectedSymptoms, inputText]);
+    // 沒有選任何判斷規則時，不再根據文字/症狀自動推薦級數
+    // 由使用者自行點選級數按鈕，或待日後整合更精準的 AI 模型
+    return null;
+  }, [forceLevel1, worstSelectedDegree]);
 
   useEffect(() => {
     if (systemRecommendedLevel !== null) {
@@ -82,6 +54,7 @@ const SystemRecommendation: React.FC<SystemRecommendationProps> = ({ selectedSym
       // 這裡可以添加送出資料的邏輯
       alert(`確定級數：第${selectedLevel}級`);
       console.log('確定級數：', selectedLevel);
+      onSubmitLevel();
     } else {
       alert('請先選擇級數');
     }
