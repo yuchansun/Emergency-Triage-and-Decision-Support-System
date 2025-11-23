@@ -1,6 +1,25 @@
 import { useState } from "react";
 
-export default function AddPatient({ onNext }: { onNext: () => void }) {
+// 用於傳輸病患資料到下一步驟的介面
+export interface PatientData {
+  name: string;
+  idNumber: string;
+  birthDate: string;
+  medicalNumber: string;
+  gender: "男" | "女" | "不詳" | "";
+  icCard: boolean;
+  search: boolean;
+  fallingPatient: boolean;
+  idUnknown: boolean;
+  birthUnknown: boolean;
+  tsmcTransfer: boolean;
+}
+
+export default function AddPatient({
+  onNext,
+}: {
+  onNext: (data: PatientData) => void;
+}) {
   const [name, setName] = useState("");
   const [idNumber, setIdNumber] = useState("");
   const [birthDate, setBirthDate] = useState("");
@@ -13,7 +32,7 @@ export default function AddPatient({ onNext }: { onNext: () => void }) {
   const [birthUnknown, setBirthUnknown] = useState(false);
   const [tsmcTransfer, setTsmcTransfer] = useState(false);
 
-  // 讀 IC 卡
+  // -------------------- IC卡功能 --------------------
   const handleReadICCard = async () => {
     try {
       const res = await fetch("http://127.0.0.1:8000/");
@@ -25,13 +44,11 @@ export default function AddPatient({ onNext }: { onNext: () => void }) {
       }
 
       const card = data[0];
-
-      // 塞入資料
       setName(card.full_name || "");
       setIdNumber(card.id_no || "");
       setBirthDate(card.birth_date || "");
-
-      const sexConvert = card.sex === "M" ? "男" : card.sex === "F" ? "女" : "不詳";
+      const sexConvert =
+        card.sex === "M" ? "男" : card.sex === "F" ? "女" : "不詳";
       setGender(sexConvert);
 
       alert("已成功讀取 IC 卡資料！");
@@ -41,6 +58,7 @@ export default function AddPatient({ onNext }: { onNext: () => void }) {
     }
   };
 
+  // -------------------- 清除表單 --------------------
   const handleClear = () => {
     setName("");
     setIdNumber("");
@@ -55,6 +73,23 @@ export default function AddPatient({ onNext }: { onNext: () => void }) {
     setTsmcTransfer(false);
   };
 
+  // -------------------- 確認按鈕 --------------------
+  const handleConfirm = () => {
+    onNext({
+      name,
+      idNumber,
+      birthDate,
+      medicalNumber,
+      gender,
+      icCard,
+      search,
+      fallingPatient,
+      idUnknown,
+      birthUnknown,
+      tsmcTransfer,
+    });
+  };
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100 p-6">
       <div className="w-full max-w-3xl bg-white rounded-2xl shadow-lg p-8">
@@ -62,13 +97,14 @@ export default function AddPatient({ onNext }: { onNext: () => void }) {
           新增病患資料
         </h1>
 
+        {/* IC卡 / 搜尋 */}
         <div className="flex gap-4 mb-4">
           <button
             type="button"
             className="flex-1 bg-gray-200 py-2 rounded-lg hover:bg-gray-300 transition"
             onClick={() => {
               setIcCard(!icCard);
-              handleReadICCard(); // ← 點 IC 卡時讀資料
+              handleReadICCard(); // 點 IC 卡時讀取
             }}
           >
             IC卡
@@ -83,6 +119,7 @@ export default function AddPatient({ onNext }: { onNext: () => void }) {
           </button>
         </div>
 
+        {/* 姓名 / 路倒病人 / 病歷號 */}
         <div className="flex gap-4 mb-4">
           <input
             type="text"
@@ -110,6 +147,7 @@ export default function AddPatient({ onNext }: { onNext: () => void }) {
           />
         </div>
 
+        {/* 身分證 / 不詳 / 性別 */}
         <div className="flex gap-4 mb-4">
           <input
             type="text"
@@ -130,7 +168,9 @@ export default function AddPatient({ onNext }: { onNext: () => void }) {
 
           <select
             value={gender}
-            onChange={(e) => setGender(e.target.value as "男" | "女" | "不詳" | "")}
+            onChange={(e) =>
+              setGender(e.target.value as "男" | "女" | "不詳" | "")
+            }
             className="border rounded-lg px-4 py-2"
           >
             <option value="">性別</option>
@@ -140,6 +180,7 @@ export default function AddPatient({ onNext }: { onNext: () => void }) {
           </select>
         </div>
 
+        {/* 出生日期 / 不詳 */}
         <div className="flex gap-4 mb-4">
           <input
             type="date"
@@ -158,6 +199,7 @@ export default function AddPatient({ onNext }: { onNext: () => void }) {
           </label>
         </div>
 
+        {/* 泰山檢疫所轉入 */}
         <div className="flex gap-4 mb-4">
           <label className="flex items-center gap-2">
             <input
@@ -169,6 +211,7 @@ export default function AddPatient({ onNext }: { onNext: () => void }) {
           </label>
         </div>
 
+        {/* 按鈕區 */}
         <div className="flex gap-4 mt-6">
           <button
             type="button"
@@ -180,7 +223,7 @@ export default function AddPatient({ onNext }: { onNext: () => void }) {
 
           <button
             type="button"
-            onClick={onNext}
+            onClick={handleConfirm} // 呼叫 handleConfirm 傳資料給父元件
             className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition"
           >
             確認
