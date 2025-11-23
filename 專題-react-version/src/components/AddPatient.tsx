@@ -58,7 +58,7 @@ export default function AddPatient({
     }
   };
 
-  // -------------------- 清除表單 --------------------
+  // -------------------- 清除表單 ------------------
   const handleClear = () => {
     setName("");
     setIdNumber("");
