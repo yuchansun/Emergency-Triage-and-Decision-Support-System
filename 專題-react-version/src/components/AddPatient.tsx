@@ -128,6 +128,7 @@ export default function AddPatient({
             placeholder="姓名"
             className="flex-1 border rounded-lg px-4 py-2"
           />
+
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -136,6 +137,7 @@ export default function AddPatient({
             />
             路倒病人
           </label>
+
           <input
             type="text"
             value={medicalNumber}
@@ -154,6 +156,7 @@ export default function AddPatient({
             placeholder="身分證號"
             className="flex-1 border rounded-lg px-4 py-2"
           />
+
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -162,6 +165,7 @@ export default function AddPatient({
             />
             身分證不詳
           </label>
+
           <select
             value={gender}
             onChange={(e) =>
@@ -184,6 +188,7 @@ export default function AddPatient({
             onChange={(e) => setBirthDate(e.target.value)}
             className="flex-1 border rounded-lg px-4 py-2"
           />
+
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -215,6 +220,7 @@ export default function AddPatient({
           >
             清除
           </button>
+
           <button
             type="button"
             onClick={handleConfirm} // 呼叫 handleConfirm 傳資料給父元件
