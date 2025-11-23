@@ -22,6 +22,36 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
   const [triageRows, setTriageRows] = useState<TriageRow[] | null>(null);
   const [triageError, setTriageError] = useState<string | null>(null);
 
+  const normalizeSymptomName = (name: string): string => {
+    // 移除後面括號內的補充說明，無論是全形（ ）或半形 ( )
+    let base = name;
+    const fullIdx = base.indexOf('（');
+    const asciiIdx = base.indexOf('(');
+    let cut = -1;
+    if (fullIdx >= 0 && asciiIdx >= 0) {
+      cut = Math.min(fullIdx, asciiIdx);
+    } else if (fullIdx >= 0) {
+      cut = fullIdx;
+    } else if (asciiIdx >= 0) {
+      cut = asciiIdx;
+    }
+    if (cut >= 0) {
+      base = base.slice(0, cut);
+    }
+    return base.trim();
+  };
+
+  interface CcRow {
+    category: string;
+    system_code: string;
+    system_name: string;
+    symptom_code: string;
+    symptom_name: string;
+    count: number;
+  }
+
+  const [ccRows, setCcRows] = useState<CcRow[] | null>(null);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -72,6 +102,48 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCcCsv = async () => {
+      try {
+        const res = await fetch('/cc_with_counts.csv');
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const text = await res.text();
+        if (cancelled) return;
+
+        const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
+        if (lines.length <= 1) {
+          setCcRows([]);
+          return;
+        }
+
+        const rows: CcRow[] = [];
+        for (let i = 1; i < lines.length; i++) {
+          const parts = lines[i].split(',');
+          if (parts.length < 6) continue;
+          const [category, system_code, system_name, symptom_code, symptom_name, countStr] = parts;
+          const count = Number(countStr ?? '0');
+          rows.push({ category, system_code, system_name, symptom_code, symptom_name, count: isNaN(count) ? 0 : count });
+        }
+
+        setCcRows(rows);
+      } catch {
+        if (cancelled) return;
+        // 常見症狀 CSV 載入失敗時，維持 null，僅不顯示 header 快捷
+        setCcRows(null);
+      }
+    };
+
+    loadCcCsv();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const symptomIndex = useMemo(() => {
     if (!triageRows) return null;
 
@@ -84,7 +156,9 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
         list = [];
         index.set(key, list);
       }
-      if (!list.includes(row.symptom_name)) {
+      const normalized = normalizeSymptomName(row.symptom_name);
+      const hasSame = list.some(label => normalizeSymptomName(label) === normalized);
+      if (!hasSame) {
         list.push(row.symptom_name);
       }
     }
@@ -98,6 +172,47 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
     return symptomIndex.get(key) ?? [];
   };
 
+  const commonTrauma = useMemo(() => {
+    if (!ccRows) return [] as CcRow[];
+
+    // 先依 symptom_name 合併，多筆時保留 count 較大的那一筆，避免同一症狀（例如成人/兒童版）出現兩次
+    const byName = new Map<string, CcRow>();
+    for (const row of ccRows) {
+      if (row.category !== '外傷') continue;
+      const key = normalizeSymptomName(row.symptom_name);
+      const existing = byName.get(key);
+      if (!existing || row.count > existing.count) {
+        byName.set(key, row);
+      }
+    }
+
+    return Array.from(byName.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+  }, [ccRows]);
+
+  const commonNonTrauma = useMemo(() => {
+    if (!ccRows) return [] as CcRow[];
+
+    const byName = new Map<string, CcRow>();
+    for (const row of ccRows) {
+      if (row.category !== '非外傷') continue;
+      const key = normalizeSymptomName(row.symptom_name);
+      const existing = byName.get(key);
+      if (!existing || row.count > existing.count) {
+        byName.set(key, row);
+      }
+    }
+
+    // 先依出現次數取前 8 名，再依文字長度重新排序，
+    // 讓在現有寬度下按鈕比較有機會排成兩行
+    const topByCount = Array.from(byName.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+
+    return topByCount.sort((a, b) => b.symptom_name.length - a.symptom_name.length);
+  }, [ccRows]);
+
   const [tBody, setTBody] = useState<'head' | 'upper' | 'lower' | null>(null);
   const [aBody, setABody] = useState<'head' | 'upper' | 'lower' | null>(null);
 
@@ -108,13 +223,13 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
 
   const toggleSelect = (key: string) => {
     setSelectedSymptoms(prev => {
-      const cleanTarget = key.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
+      const cleanTarget = normalizeSymptomName(key.replace(/^[^:]+:/, '').replace(/^[^:]+:/, ''));
       const next = new Set(prev);
 
       // 如果已經有同名症狀，視為 toggle off：移除所有同名 key
       let removed = false;
       for (const existing of Array.from(next)) {
-        const cleanExisting = existing.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
+        const cleanExisting = normalizeSymptomName(existing.replace(/^[^:]+:/, '').replace(/^[^:]+:/, ''));
         if (cleanExisting === cleanTarget) {
           next.delete(existing);
           removed = true;
@@ -132,15 +247,55 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
 
   const isSymptomSelected = (label: string) => {
     return Array.from(selectedSymptoms).some(existing => {
-      const cleanExisting = existing.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
-      return cleanExisting === label;
+      const cleanExisting = normalizeSymptomName(existing.replace(/^[^:]+:/, '').replace(/^[^:]+:/, ''));
+      return cleanExisting === normalizeSymptomName(label);
     });
   };
 
   return (
     <div className="bg-content-light dark:bg-content-dark p-6 rounded-2xl shadow-lg flex-1 flex flex-col">
-      <div className="flex items-center justify-between gap-4 mb-4">
-        <h3 className="text-2xl font-bold">選擇症狀</h3>
+      <div className="flex items-center justify-between gap-4 mb-4 h-[96px]">
+        <h3 className="text-2xl font-bold flex-1">選擇症狀</h3>
+        <div className="flex items-center gap-3 ml-auto h-full">
+          {activeTab === 't' && (
+            <div className="bg-primary/5 p-2.5 rounded-lg border border-primary/20 flex items-center gap-2 max-w-[40rem]">
+              <h5 className="font-semibold text-sm flex items-center gap-1 whitespace-nowrap">
+                <span className="material-symbols-outlined text-primary text-base">emergency</span>
+                <span>常見外傷</span>
+              </h5>
+              <div className="flex flex-wrap gap-2 justify-end">
+                {commonTrauma.map(item => (
+                  <button
+                    key={item.symptom_code}
+                    onClick={() => toggleSelect(`t:common:${item.symptom_name}`)}
+                    className={`symptom-option-btn px-3 py-1.5 rounded-full text-xs bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${(selectedSymptoms.has(`t:common:${item.symptom_name}`) || isSymptomSelected(item.symptom_name)) ? 'selected' : ''}`}
+                  >
+                    {item.symptom_name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {activeTab === 'a' && (
+            <div className="bg-primary/5 p-2.5 rounded-lg border border-primary/20 flex items-center gap-2 max-w-[40rem]">
+              <h5 className="font-semibold text-sm mb-0 flex items-center gap-1 whitespace-nowrap">
+                <span className="material-symbols-outlined text-primary text-base">emergency</span>
+                <span>常見非外傷</span>
+              </h5>
+              <div className="flex flex-wrap gap-2 justify-end">
+                {commonNonTrauma.map(item => (
+                  <button
+                    key={item.symptom_code}
+                    onClick={() => toggleSelect(`a:common:${item.symptom_name}`)}
+                    className={`symptom-option-btn px-3 py-1.5 rounded-full text-xs bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${(selectedSymptoms.has(`a:common:${item.symptom_name}`) || isSymptomSelected(item.symptom_name)) ? 'selected' : ''}`}
+                  >
+                    {item.symptom_name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
       {triageError && (
         <div className="mb-3 text-sm text-red-500">{triageError}</div>
@@ -163,7 +318,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                     <span className="invisible">下身</span>
                   </button>
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 flex flex-col">
                   <div id="t-head-trauma-options" className={`${tBody === 'head' ? '' : 'hidden'} space-y-6`}>
                     <div>
                       <h5 className="font-semibold text-base flex items-center gap-2">
@@ -444,46 +599,6 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                   </div>
                 </div>
               </div>
-              <div className="mt-4">
-                <div className="w-full bg-primary/5 p-4 rounded-lg border border-primary/20">
-                  <h5 className="font-semibold text-sm mb-3 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary text-base">emergency</span>
-                    <span>常見外傷</span>
-                  </h5>
-                  <div className="grid grid-cols-6 gap-2">
-                    {[{
-                      icon: 'local_fire_department',
-                      lines: ['皮膚','燒燙傷'],
-                      key: '皮膚-燒燙傷'
-                    },{
-                      icon: 'face',
-                      lines: ['顏面部','撕裂傷'],
-                      key: '顏面部-撕裂傷'
-                    },{
-                      icon: 'back_hand',
-                      lines: ['上肢','撕裂傷'],
-                      key: '上肢-撕裂傷'
-                    },{
-                      icon: 'directions_walk',
-                      lines: ['下肢','撕裂傷'],
-                      key: '下肢-撕裂傷'
-                    },{
-                      icon: 'directions_run',
-                      lines: ['下肢','鈍傷'],
-                      key: '下肢-鈍傷'
-                    },{
-                      icon: 'airline_seat_recline_normal',
-                      lines: ['腰背部','撕裂傷'],
-                      key: '腰背部-撕裂傷'
-                    }].map(item => (
-                      <button key={item.key} onClick={() => toggleSelect(`t:common:${item.key}`)} className={`symptom-option-btn flex flex-col items-center justify-center gap-1 p-2 rounded-lg text-xs bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${selectedSymptoms.has(`t:common:${item.key}`) ? 'selected' : ''}`}>
-                        <span className="material-symbols-outlined text-lg">{item.icon}</span>
-                        <span className="text-center leading-tight">{item.lines[0]}<br/>{item.lines[1]}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
           <div data-tab-content="a" className={`symptom-panel flex-1 flex-col min-h-[450px] ${activeTab === 'a' ? 'flex' : 'hidden'}`}>
@@ -729,19 +844,6 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         ))}
                       </div>
                     </div>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-4">
-                <div className="w-full bg-primary/5 p-4 rounded-lg border border-primary/20">
-                  <h5 className="font-semibold text-sm mb-3 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary text-base">emergency</span>
-                    <span>常見非外傷</span>
-                  </h5>
-                  <div className="flex flex-wrap gap-2">
-                    {['呼吸困難','發燒','腹痛','頭暈','頭痛','意識改變','嘔吐','咳嗽','腰痛'].map(label => (
-                      <button key={label} onClick={() => toggleSelect(`a:common:${label}`)} className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${selectedSymptoms.has(`a:common:${label}`) ? 'selected' : ''}`}>{label}</button>
-                    ))}
                   </div>
                 </div>
               </div>
