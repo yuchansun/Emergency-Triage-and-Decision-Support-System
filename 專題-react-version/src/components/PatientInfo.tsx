@@ -17,6 +17,20 @@ interface PatientInfoProps {
   patient: PatientData | null;
 }
 
+
+interface ToccState {
+  travel: string;
+  travelStart: string;
+  travelEnd: string;
+  occupation: string;
+  occupationOther: string;
+  contactItems: string[];
+  clusterItems: string[];
+  clusterOther: string;
+  symptoms: string[];
+}
+
+
 const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
 
   // ===== 標籤狀態 =====
@@ -29,33 +43,60 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
   // ===== TOCC UI 狀態 =====
   const [showTOCCOptions, setShowTOCCOptions] = useState(false);
 
+  // 大傷應變選擇（預設空字串 -> 顯示灰色；選擇後變紅色）
+  const [majorIncident, setMajorIncident] = useState<string>("");
+
   // 新 TOCC 輸入內容（旅遊、職業、接觸史、群聚）
-  const [tocc, setTocc] = useState({
+  const [tocc, setTocc] = useState<ToccState>({
     travel: "",
+    travelStart: "",
+    travelEnd: "",
     occupation: "",
-    contact: false,
-    cluster: false,
+    occupationOther: "",
+    contactItems: [],
+    clusterItems: [],
+    clusterOther: "",
+    symptoms: [],
   });
 
   const popupRef = useRef<HTMLDivElement>(null);
 
-  // 按 TOCC 後開關彈窗
+  // 切換普通標籤
   const toggleTag = (key: keyof typeof tags) => {
-    setTags({ ...tags, [key]: !tags[key] });
-    if (key === "tocc") setShowTOCCOptions(!showTOCCOptions);
+    if (key !== "tocc") { // TOCC 不在這裡處理
+      setTags(prev => ({ ...prev, [key]: !prev[key] }));
+    }
   };
 
-  // 點外面關閉彈窗
+  // 切換 TOCC 標籤與彈窗
+  const toggleTOCC = () => {
+    setShowTOCCOptions(prev => !prev);
+  };
+  // 同步 tags.tocc 顏色
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (popupRef.current && !popupRef.current.contains(event.target as Node)) {
+    setTags(prev => ({ ...prev, tocc: showTOCCOptions }));
+  }, [showTOCCOptions]);
+  // 點外關閉
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      // 如果點擊目標在 popup 或 TOCC 按鈕，就不要關閉
+      if (
+        popupRef.current && !popupRef.current.contains(event.target as Node) &&
+        !toccButtonRef.current?.contains(event.target as Node)
+      ) {
         setShowTOCCOptions(false);
       }
+    };
+    if (showTOCCOptions) {
+      document.addEventListener("mousedown", handleClickOutside);
     }
-
-    if (showTOCCOptions) document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
   }, [showTOCCOptions]);
+  // 用一個 ref 指向 TOCC 按鈕
+  const toccButtonRef = useRef<HTMLSpanElement>(null);
+
 
   if (!patient) return <div>尚無病患資料</div>;
 
@@ -104,6 +145,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
         {/* 註記與輸入區 */}
         <div className="flex items-center gap-2 mt-1">
           <span
+            style={{ userSelect: "none" }}
             className={`px-2 py-0.5 rounded text-xs font-medium cursor-pointer ${tags.fever ? "bg-green-200 text-green-800" : "bg-gray-200 text-gray-800"
               }`}
             onClick={() => toggleTag("fever")}
@@ -112,6 +154,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
           </span>
 
           <span
+            style={{ userSelect: "none" }}
             className={`px-2 py-0.5 rounded text-xs font-medium cursor-pointer ${tags.isolation ? "bg-yellow-200 text-yellow-800" : "bg-gray-200 text-gray-800"
               }`}
             onClick={() => toggleTag("isolation")}
@@ -122,9 +165,10 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
           {/* TOCC 標籤 + 彈窗 */}
           <div className="relative inline-block">
             <span
-              className={`px-2 py-0.5 rounded text-xs font-medium cursor-pointer ${tags.tocc ? "bg-blue-400 text-white" : "bg-slate-200 text-slate-800"
-                }`}
-              onClick={() => toggleTag("tocc")}
+              ref={toccButtonRef}
+              style={{ userSelect: "none" }}
+              className={`px-2 py-0.5 rounded text-xs font-medium cursor-pointer ${tags.tocc ? "bg-blue-400 text-white" : "bg-slate-200 text-slate-800"}`}
+              onClick={toggleTOCC}
             >
               TOCC
             </span>
@@ -133,17 +177,17 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
             {showTOCCOptions && (
               <div
                 ref={popupRef}
-                className="absolute top-full left-0 mt-1 w-64 bg-white dark:bg-gray-700 p-3 rounded shadow z-20 border border-gray-200 dark:border-gray-600"
+                className="absolute top-full left-0 mt-1 w-80 bg-white dark:bg-gray-700 p-3 rounded shadow z-20 border border-gray-200 dark:border-gray-600"
               >
                 <div className="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-2">
                   TOCC 詳細資訊
                 </div>
 
-                <div className="flex flex-col gap-3 max-h-60 overflow-y-auto pr-1">
+                <div className="flex flex-col gap-3  pr-1">
 
                   {/* 旅遊史 */}
-                  <div className="flex flex-col text-xs">
-                    <label className="mb-1 text-gray-600 dark:text-gray-300">旅遊史</label>
+                  <div className="flex flex-col text-xs gap-1">
+                    <label className="text-gray-600 dark:text-gray-300">旅遊史</label>
                     <input
                       type="text"
                       placeholder="請輸入旅遊地區"
@@ -151,11 +195,25 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
                       onChange={(e) => setTocc({ ...tocc, travel: e.target.value })}
                       className="px-2 py-1 border rounded text-xs bg-gray-50 dark:bg-gray-800 dark:text-gray-200"
                     />
+                    <div className="flex gap-2">
+                      <input
+                        type="date"
+                        value={tocc.travelStart || ""}
+                        onChange={(e) => setTocc({ ...tocc, travelStart: e.target.value })}
+                        className="px-2 py-1 border rounded text-xs bg-gray-50 dark:bg-gray-800 dark:text-gray-200"
+                      />
+                      <input
+                        type="date"
+                        value={tocc.travelEnd || ""}
+                        onChange={(e) => setTocc({ ...tocc, travelEnd: e.target.value })}
+                        className="px-2 py-1 border rounded text-xs bg-gray-50 dark:bg-gray-800 dark:text-gray-200"
+                      />
+                    </div>
                   </div>
 
                   {/* 職業史 */}
-                  <div className="flex flex-col text-xs">
-                    <label className="mb-1 text-gray-600 dark:text-gray-300">職業史</label>
+                  <div className="flex flex-col text-xs gap-1">
+                    <label className="text-gray-600 dark:text-gray-300">職業史</label>
                     <select
                       value={tocc.occupation}
                       onChange={(e) => setTocc({ ...tocc, occupation: e.target.value })}
@@ -168,26 +226,111 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
                       <option value="工廠">工廠</option>
                       <option value="其他">其他</option>
                     </select>
+                    {tocc.occupation === "其他" && (
+                      <input
+                        type="text"
+                        placeholder="請輸入職業"
+                        value={tocc.occupationOther || ""}
+                        onChange={(e) => setTocc({ ...tocc, occupationOther: e.target.value })}
+                        className="px-2 py-1 border rounded text-xs bg-gray-50 dark:bg-gray-800 dark:text-gray-200"
+                      />
+                    )}
                   </div>
 
                   {/* 接觸史 */}
-                  <div className="flex items-center justify-between text-xs">
+                  <div className="flex flex-col text-xs gap-1">
                     <label className="text-gray-600 dark:text-gray-300">接觸史</label>
-                    <input
-                      type="checkbox"
-                      checked={tocc.contact}
-                      onChange={() => setTocc({ ...tocc, contact: !tocc.contact })}
-                    />
+                    <div className="flex gap-4">
+                      {["疾病", "動物"].map((item) => (
+                        <div
+                          key={item}
+                          className={`flex items-center gap-1 px-2 py-1 border rounded cursor-pointer ${tocc.contactItems?.includes(item) ? "bg-blue-400 text-white" : "bg-gray-50 dark:bg-gray-800 dark:text-gray-200"
+                            }`}
+                          onClick={() => {
+                            const current = tocc.contactItems || [];
+                            if (current.includes(item)) {
+                              setTocc({ ...tocc, contactItems: current.filter((i) => i !== item) });
+                            } else {
+                              setTocc({ ...tocc, contactItems: [...current, item] });
+                            }
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={tocc.contactItems?.includes(item) || false}
+                            readOnly
+                          />
+                          <span>{item}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
-                  {/* 是否群聚 */}
-                  <div className="flex items-center justify-between text-xs">
+                  {/* 群聚 */}
+                  <div className="flex flex-col text-xs gap-1">
                     <label className="text-gray-600 dark:text-gray-300">是否群聚</label>
-                    <input
-                      type="checkbox"
-                      checked={tocc.cluster}
-                      onChange={() => setTocc({ ...tocc, cluster: !tocc.cluster })}
-                    />
+                    <div className="flex flex-wrap gap-2">
+                      {["家人", "朋友", "同事", "同學", "其他"].map((item) => (
+                        <div
+                          key={item}
+                          className={`flex items-center gap-1 px-2 py-1 border rounded cursor-pointer ${tocc.clusterItems?.includes(item) ? "bg-blue-400 text-white" : "bg-gray-50 dark:bg-gray-800 dark:text-gray-200"
+                            }`}
+                          onClick={() => {
+                            const current = tocc.clusterItems || [];
+                            if (current.includes(item)) {
+                              setTocc({ ...tocc, clusterItems: current.filter((i) => i !== item) });
+                            } else {
+                              setTocc({ ...tocc, clusterItems: [...current, item] });
+                            }
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={tocc.clusterItems?.includes(item) || false}
+                            readOnly
+                          />
+                          <span>{item}</span>
+                        </div>
+                      ))}
+                      {tocc.clusterItems?.includes("其他") && (
+                        <input
+                          type="text"
+                          placeholder="請輸入群聚對象"
+                          value={tocc.clusterOther || ""}
+                          onChange={(e) => setTocc({ ...tocc, clusterOther: e.target.value })}
+                          className="px-2 py-1 border rounded text-xs bg-gray-50 dark:bg-gray-800 dark:text-gray-200"
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 症狀 */}
+                  <div className="flex flex-col text-xs gap-1">
+                    <label className="text-gray-600 dark:text-gray-300">症狀</label>
+                    <div className="flex gap-4">
+                      {["咳嗽", "發燒"].map((item) => (
+                        <div
+                          key={item}
+                          className={`flex items-center gap-1 px-2 py-1 border rounded cursor-pointer ${tocc.symptoms?.includes(item) ? "bg-red-400 text-white" : "bg-gray-50 dark:bg-gray-800 dark:text-gray-200"
+                            }`}
+                          onClick={() => {
+                            const current = tocc.symptoms || [];
+                            if (current.includes(item)) {
+                              setTocc({ ...tocc, symptoms: current.filter((i) => i !== item) });
+                            } else {
+                              setTocc({ ...tocc, symptoms: [...current, item] });
+                            }
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={tocc.symptoms?.includes(item) || false}
+                            readOnly
+                          />
+                          <span>{item}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
                 </div>
@@ -197,7 +340,17 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
                   <button
                     className="text-xs text-red-600 underline"
                     onClick={() =>
-                      setTocc({ travel: "", occupation: "", contact: false, cluster: false })
+                      setTocc({
+                        travel: "",
+                        travelStart: "",
+                        travelEnd: "",
+                        occupation: "",
+                        occupationOther: "",
+                        contactItems: [],
+                        clusterItems: [],
+                        clusterOther: "",
+                        symptoms: [],
+                      })
                     }
                   >
                     重置
@@ -212,6 +365,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
                 </div>
               </div>
             )}
+
           </div>
 
           {/* 病患來源 */}
@@ -224,7 +378,11 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
           </select>
 
           {/* 大傷應變 */}
-          <select className="px-2 py-0.5 rounded bg-red-200 text-red-800 text-xs font-medium border border-red-300">
+          <select
+            value={majorIncident}
+            onChange={(e) => setMajorIncident(e.target.value)}
+            className={`px-2 py-0.5 rounded text-xs font-medium border ${majorIncident ? 'bg-red-200 text-red-800 border-red-300' : 'bg-blue-100 text-slate-800 border-blue-300'}`}
+          >
             <option value="">選擇大傷</option>
             <option value="馬太鞍溪堰塞湖溢流">馬太鞍溪堰塞湖溢流</option>
             <option value="明揚國際屏東廠火災">明揚國際屏東廠火災</option>
