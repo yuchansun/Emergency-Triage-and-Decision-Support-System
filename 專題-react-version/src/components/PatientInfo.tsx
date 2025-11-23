@@ -10,6 +10,7 @@ interface PatientData {
   medicalId?: string;
   idNumber?: string;
   visitNumber?: string;
+  age?: number;
 }
 
 interface PatientInfoProps {
@@ -60,7 +61,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
         {/* 核心病患資訊 */}
         <div className="flex items-center gap-4">
           <span className="font-medium text-text-light dark:text-text-dark">{patient.name}</span>
-          <span>({patient.gender}, {patient.birthDate}歲)</span>
+          <span>({patient.gender}, {patient.age}歲)</span>
           <span className="h-4 w-px bg-content-dark"></span>
           {patient.medicalId && <span>病歷號: {patient.medicalId}</span>}
           {patient.idNumber && <span>身分證號: {patient.idNumber}</span>}
@@ -113,10 +114,23 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
             隔離註記
           </span>
 
-          {/* 固定顯示欄位 */}
-          {/*patient.bed && */ <span className="px-2 py-0.5 rounded bg-blue-100 text-slate-800 text-xs font-medium">床位: 343434{patient.bed}</span>}
-          {/*patient.source && */<span className="px-2 py-0.5 rounded bg-blue-100 text-slate-800 text-xs font-medium">病患來源: 3434{patient.source}</span>}
-          {/*patient.visitTime && */<span className="px-2 py-0.5 rounded bg-blue-100 text-slate-800 text-xs font-medium">看診時間: 121{patient.visitTime}</span>}
+          {/* 床位、病患來源、看診時間 */}
+
+          <select
+            className="px-2 py-0.5 rounded bg-blue-100 text-slate-800 text-xs font-medium border border-blue-300"
+          >
+            <option value="">選擇病患來源</option>
+            <option value="急診">急診</option>
+            <option value="門診">門診</option>
+            <option value="住院">住院</option>
+            <option value="其他">其他</option>
+          </select>
+          {<span className="px-2 py-0.5 rounded bg-blue-100 text-slate-800 text-xs font-medium">看診時間: {new Date().toLocaleString()}</span>}
+          <input
+            type="text"
+            placeholder="輸入床位"
+            className="px-2 py-0.5 rounded bg-blue-100 text-slate-800 text-xs font-medium border border-blue-300 w-20"
+          />
         </div>
       </div>
     </header>
