@@ -96,7 +96,8 @@ function App() {
                   forceLevel1={forceLevel1}
                   onSubmitLevel={resetMainScreen}
                 />
-                <Vitals />
+                <Vitals gender={patientData?.gender} />
+
               </div>
             </div>
           </div>
