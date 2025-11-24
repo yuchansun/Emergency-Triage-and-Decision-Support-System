@@ -4,8 +4,12 @@ import PatientInfo from './components/PatientInfo';
 import LeftPanel from './components/LeftPanel';
 import Vitals from './components/Vitals';
 import Login from "./components/Login";
+<<<<<<< HEAD
 import AddPatient from "./components/AddPatient";
 import type { PatientData } from './components/AddPatient';
+=======
+import AddPatient from "./components/AddPatient";  // ⬅️ 你要新增這個檔案
+>>>>>>> nico
 import SystemRecommendation from './components/SystemRecommendation';
 
 function App() {
@@ -38,10 +42,13 @@ function App() {
     console.log('確定級數：', 1);
     resetMainScreen();
   };
+<<<<<<< HEAD
 
   // 病患資料
   const [patientData, setPatientData] = useState<PatientData | null>(null);
 
+=======
+>>>>>>> nico
 
   // ----------------------------
   // 1️⃣ Login 頁面
@@ -71,9 +78,15 @@ function App() {
     <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark font-display text-text-light dark:text-text-dark">
       <main className="flex-1 px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-screen-2xl">
+<<<<<<< HEAD
           <div className="grid grid-cols-2 gap-8">
             <div className="col-span-2">
               <PatientInfo patient={patientData} />
+=======
+          <div className="grid grid-cols-10 gap-8">
+            <div className="col-span-10">
+              <PatientInfo />
+>>>>>>> nico
             </div>
 
             <div className="col-span-6">
