@@ -102,7 +102,31 @@ export default function AddPatient({
     setBirthDate(value);
 
     if (value) {
-      const birth = new Date(value);
+      let normalized = value.trim();
+      // 支援 IC 卡常見的 YYYYMMDD 格式，轉成 YYYY-MM-DD
+      if (/^\d{8}$/.test(normalized)) {
+        const y = normalized.slice(0, 4);
+        const m = normalized.slice(4, 6);
+        const d = normalized.slice(6, 8);
+        normalized = `${y}-${m}-${d}`;
+      }
+
+      // 若只輸入西元年（YYYY），以年份粗略計算年齡，不要求月日
+      if (/^\d{4}$/.test(normalized)) {
+        const year = parseInt(normalized, 10);
+        const thisYear = new Date().getFullYear();
+        let approxAge = thisYear - year;
+        if (approxAge < 0) approxAge = 0;
+        setAge(approxAge);
+        return;
+      }
+
+      const birth = new Date(normalized);
+      if (isNaN(birth.getTime())) {
+        // 解析失敗時，不更新 age，維持原本值避免誤判
+        return;
+      }
+
       const today = new Date();
       let calculatedAge = today.getFullYear() - birth.getFullYear();
 
@@ -111,12 +135,12 @@ export default function AddPatient({
         calculatedAge--;
       }
 
-      //保證一歲以下也顯示0
+      // 保證一歲以下也顯示 0
       if (calculatedAge < 0) calculatedAge = 0;
 
       setAge(calculatedAge);
     } else {
-      setAge(0);
+      setAge(null);
     }
   };
 

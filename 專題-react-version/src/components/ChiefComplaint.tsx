@@ -10,9 +10,10 @@ interface ChiefComplaintProps {
   onWorstDegreeChange: (degree: number | null) => void;
   onDirectToER: () => void;
   directToERSelected: boolean;
+  age?: number; // 病患年齡，用於成人(A)/兒童(P)規則切換
 }
 
-const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, activeTab, setActiveTab, onWorstDegreeChange, onDirectToER, directToERSelected }) => {
+const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, activeTab, setActiveTab, onWorstDegreeChange, onDirectToER, directToERSelected, age }) => {
   interface TriageRow {
     category: string;
     system_code: string;
@@ -130,7 +131,14 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
   const symptomDegreeIndex = useMemo(() => {
     const map = new Map<string, number>();
     if (!triageRows) return map;
+
+    const isAdult = age !== undefined ? age >= 18 : true;
+
     for (const row of triageRows) {
+      // 依 system_code 開頭決定成人/兒童規則：A*=成人、P*=兒童，其餘(T*/E*)一律保留
+      if (row.system_code.startsWith('A') && !isAdult) continue;
+      if (row.system_code.startsWith('P') && isAdult) continue;
+
       const degree = parseInt(row.ttas_degree, 10);
       if (!Number.isFinite(degree)) continue;
       const existing = map.get(row.symptom_name);
@@ -139,7 +147,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
       }
     }
     return map;
-  }, [triageRows]);
+  }, [triageRows, age]);
 
   useEffect(() => {
     if (inputText.trim()) {
@@ -163,7 +171,14 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
   const symptomCriteriaIndex = useMemo(() => {
     const map = new Map<string, { degree: number; judge: string }[]>();
     if (!triageRows) return map;
+
+    const isAdult = age !== undefined ? age >= 18 : true;
+
     for (const row of triageRows) {
+      // 依 system_code 開頭決定成人/兒童規則：A*=成人、P*=兒童，其餘(T*/E*)一律保留
+      if (row.system_code.startsWith('A') && !isAdult) continue;
+      if (row.system_code.startsWith('P') && isAdult) continue;
+
       const degree = parseInt(row.ttas_degree, 10);
       if (!Number.isFinite(degree) || !row.judge_name) continue;
       const list = map.get(row.symptom_name) ?? [];
@@ -177,7 +192,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
       list.sort((a, b) => a.degree - b.degree);
     }
     return map;
-  }, [triageRows]);
+  }, [triageRows, age]);
 
   // 搜尋推薦症狀（基於輸入框中的所有關鍵字）
   const searchSymptoms = (text: string, selectedOverride?: Set<string>) => {
@@ -325,9 +340,17 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
     };
 
     recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript as string;
+      // 只取最新一個 result，避免每次都從 results[0] 取而造成整句重複累積
+      const lastIndex = event.results.length - 1;
+      const transcript = (event.results[lastIndex][0].transcript as string) || '';
+      if (!transcript) return;
+
       setVoiceBuffer(prev => {
         const base = prev || '';
+        // 若這次辨識結果已經完整出現在目前累積內容中，就不要再重複新增
+        if (base.includes(transcript)) {
+          return base;
+        }
         return base ? base + (base.endsWith('\n') ? '' : '\n') + transcript : transcript;
       });
     };
@@ -544,9 +567,13 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
         <button
           type="button"
           onClick={handleVoiceInputClick}
-          className="absolute bottom-3 right-3 flex items-center justify-center size-10 rounded-full bg-primary text-white hover:bg-primary/90 transition-colors"
+          className={`absolute bottom-3 right-3 flex items-center justify-center size-10 rounded-full text-white transition-all duration-200 shadow-md ${
+            isListening
+              ? 'bg-red-500 hover:bg-red-600 scale-110 shadow-red-500/50 animate-pulse'
+              : 'bg-primary hover:bg-primary/90'
+          }`}
         >
-          <span className="material-symbols-outlined">mic</span>
+          <span className="material-symbols-outlined">{isListening ? 'stop_circle' : 'mic'}</span>
         </button>
       </div>
 
