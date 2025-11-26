@@ -84,6 +84,7 @@ function App() {
                 onWorstDegreeChange={setWorstSelectedDegree}
                 onDirectToER={handleDirectToER}
                 directToERSelected={directToERSelected}
+                age={patientData?.age}
               />
             </div>
 

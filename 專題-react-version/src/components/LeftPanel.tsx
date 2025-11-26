@@ -10,9 +10,10 @@ interface LeftPanelProps {
   onWorstDegreeChange: (degree: number | null) => void;
   onDirectToER: () => void;
   directToERSelected: boolean;
+  age?: number; // 病患年齡，用於成人/兒童規則切換
 }
 
-const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, onWorstDegreeChange, onDirectToER, directToERSelected }) => {
+const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, onWorstDegreeChange, onDirectToER, directToERSelected, age }) => {
   const [activeTab, setActiveTab] = useState<'t' | 'a'>('t');
 
   return (
@@ -27,11 +28,13 @@ const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymp
         onWorstDegreeChange={onWorstDegreeChange}
         onDirectToER={onDirectToER}
         directToERSelected={directToERSelected}
+        age={age}
       />
       <SymptomSelection
         selectedSymptoms={selectedSymptoms}
         setSelectedSymptoms={setSelectedSymptoms}
         activeTab={activeTab}
+        age={age}
       />
     </div>
   );

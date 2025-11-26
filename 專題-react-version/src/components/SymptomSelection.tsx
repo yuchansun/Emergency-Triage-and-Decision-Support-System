@@ -4,9 +4,10 @@ interface SymptomSelectionProps {
   selectedSymptoms: Set<string>;
   setSelectedSymptoms: React.Dispatch<React.SetStateAction<Set<string>>>;
   activeTab: 't' | 'a';
+  age?: number; // 病患年齡，用於成人(A)/兒童(P)非外傷症狀切換
 }
 
-const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, setSelectedSymptoms, activeTab }) => {
+const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, setSelectedSymptoms, activeTab, age }) => {
   interface TriageRow {
     category: string;
     system_code: string;
@@ -148,8 +149,13 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
     if (!triageRows) return null;
 
     const index = new Map<string, string[]>();
+    const isAdult = age !== undefined ? age >= 18 : true;
 
     for (const row of triageRows) {
+      // 非外傷症狀依 A*/P* 與年齡切換；外傷/環境(T*/E*)不受影響
+      if (row.system_code.startsWith('A') && !isAdult) continue;
+      if (row.system_code.startsWith('P') && isAdult) continue;
+
       const key = `${row.category}|${row.system_name}`;
       let list = index.get(key);
       if (!list) {
@@ -164,7 +170,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
     }
 
     return index;
-  }, [triageRows]);
+  }, [triageRows, age]);
 
   const getSymptoms = (category: string, systemName: string): string[] => {
     if (!symptomIndex) return [];
@@ -195,8 +201,14 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
     if (!ccRows) return [] as CcRow[];
 
     const byName = new Map<string, CcRow>();
+    const isAdult = age !== undefined ? age >= 18 : true;
+
     for (const row of ccRows) {
       if (row.category !== '非外傷') continue;
+      // 非外傷常見主訴依 system_code A*/P* 與年齡切換
+      if (row.system_code.startsWith('A') && !isAdult) continue;
+      if (row.system_code.startsWith('P') && isAdult) continue;
+
       const key = normalizeSymptomName(row.symptom_name);
       const existing = byName.get(key);
       if (!existing || row.count > existing.count) {
@@ -204,14 +216,15 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
       }
     }
 
-    // 先依出現次數取前 8 名，再依文字長度重新排序，
-    // 讓在現有寬度下按鈕比較有機會排成兩行
+    // 先依出現次數取前 N 名（成人 8 個、兒童 5 個），再依文字長度重新排序，
+    // 讓在現有寬度下按鈕比較有機會排成兩行，避免兒童常見清單過高
+    const limit = isAdult ? 8 : 8;
     const topByCount = Array.from(byName.values())
       .sort((a, b) => b.count - a.count)
-      .slice(0, 8);
+      .slice(0, limit);
 
     return topByCount.sort((a, b) => b.symptom_name.length - a.symptom_name.length);
-  }, [ccRows]);
+  }, [ccRows, age]);
 
   const [tBody, setTBody] = useState<'head' | 'upper' | 'lower' | null>(null);
   const [aBody, setABody] = useState<'head' | 'upper' | 'lower' | null>(null);
@@ -254,7 +267,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
 
   return (
     <div className="bg-content-light dark:bg-content-dark p-6 rounded-2xl shadow-lg flex-1 flex flex-col">
-      <div className="flex items-center justify-between gap-4 mb-4 h-[96px]">
+      <div className="flex items-center justify-between gap-4 mb-4 min-h-[96px]">
         <h3 className="text-2xl font-bold flex-1">選擇症狀</h3>
         <div className="flex items-center gap-3 ml-auto h-full">
           {activeTab === 't' && (
@@ -282,16 +295,31 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                 <span className="material-symbols-outlined text-primary text-base">emergency</span>
                 <span>常見非外傷</span>
               </h5>
-              <div className="flex flex-wrap gap-2 justify-end">
-                {commonNonTrauma.map(item => (
-                  <button
-                    key={item.symptom_code}
-                    onClick={() => toggleSelect(`a:common:${item.symptom_name}`)}
-                    className={`symptom-option-btn px-3 py-1.5 rounded-full text-xs bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${(selectedSymptoms.has(`a:common:${item.symptom_name}`) || isSymptomSelected(item.symptom_name)) ? 'selected' : ''}`}
-                  >
-                    {item.symptom_name}
-                  </button>
-                ))}
+              <div className="flex flex-col gap-1 flex-1">
+                <div className="flex flex-wrap gap-2 justify-end">
+                  {commonNonTrauma.slice(0, 4).map(item => (
+                    <button
+                      key={item.symptom_code}
+                      onClick={() => toggleSelect(`a:common:${item.symptom_name}`)}
+                      className={`symptom-option-btn px-3 py-1.5 rounded-full text-xs bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${(selectedSymptoms.has(`a:common:${item.symptom_name}`) || isSymptomSelected(item.symptom_name)) ? 'selected' : ''}`}
+                    >
+                      {item.symptom_name}
+                    </button>
+                  ))}
+                </div>
+                {commonNonTrauma.length > 4 && (
+                  <div className="flex flex-wrap gap-2 justify-end">
+                    {commonNonTrauma.slice(4).map(item => (
+                      <button
+                        key={item.symptom_code}
+                        onClick={() => toggleSelect(`a:common:${item.symptom_name}`)}
+                        className={`symptom-option-btn px-3 py-1.5 rounded-full text-xs bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${(selectedSymptoms.has(`a:common:${item.symptom_name}`) || isSymptomSelected(item.symptom_name)) ? 'selected' : ''}`}
+                      >
+                        {item.symptom_name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
