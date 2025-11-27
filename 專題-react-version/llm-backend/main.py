@@ -40,6 +40,7 @@ async def summarize_cc(body: SummarizeRequest):
             "請只輸出症狀關鍵詞本身，使用頓號（、）分隔，例如：『頭痛、頭暈、全身不適』，"
             "不要加上『患者主訴』或任何其他說明句子，也不要加入時間、原因或推論。"
             "若原始主訴中沒有明確症狀，則盡量從語意中推測一到兩個最可能的症狀關鍵詞即可。\n\n"
+            "嚴禁回傳原始內容或其長句，即使你不確定。\n"
             "原始主訴：" + raw + "\n\n症狀關鍵詞："
         )
         resp = client.models.generate_content(
@@ -50,6 +51,7 @@ async def summarize_cc(body: SummarizeRequest):
 
         # 若模型回傳空字串，退回原文作為保底，避免前端出現空白主訴。
         if not summary:
+            print("LLM empty:", e)
             summary = raw
     except Exception as e:
         print("LLM error:", e)

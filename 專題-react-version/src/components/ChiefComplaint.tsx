@@ -30,6 +30,8 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
   const [triageError, setTriageError] = useState<string | null>(null);
   const recognitionRef = useRef<any | null>(null);
   const [isListening, setIsListening] = useState(false);
+  const voiceProcessedRef = useRef(false);
+  const voiceBufferRef = useRef<string>('');
 
   useEffect(() => {
     let cancelled = false;
@@ -84,7 +86,6 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
   const [recommendedSymptoms, setRecommendedSymptoms] = useState<string[]>([]);
   const [isSupplementOpen, setIsSupplementOpen] = useState<boolean>(false);
   const [supplementText, setSupplementText] = useState<string>('');
-  const [voiceBuffer, setVoiceBuffer] = useState<string>('');
 
   const summarizeChiefComplaint = async (raw: string): Promise<string> => {
     try {
@@ -299,6 +300,16 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
       return;
     }
 
+    // 若已有 recognition 物件在，先停止它（防止多個 recognition 並行）
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
+      } catch {
+        // ignore
+      }
+    }
+
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
     recognition.lang = 'zh-TW';
@@ -308,35 +319,40 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
 
     recognition.onstart = () => {
       setIsListening(true);
-      setVoiceBuffer('');
+      voiceBufferRef.current = '';
+      voiceProcessedRef.current = false;
     };
 
     recognition.onend = () => {
       setIsListening(false);
       recognitionRef.current = null;
 
-      // 錄音結束後，將累積的語音一次寫入補充資料，並送給 LLM 做整理
-      setVoiceBuffer(prevRaw => {
-        const raw = prevRaw.trim();
-        if (raw) {
-          setSupplementText(prev => {
-            const base = prev || '';
-            const lines = base.split('\n').filter(l => l.length > 0);
-            // 若任一行已經與這次錄音結果相同，就不要再重複新增
-            if (lines.includes(raw)) {
-              return base;
-            }
-            return base ? base + (base.endsWith('\n') ? '' : '\n') + raw : raw;
-          });
+      // 防止重複執行：檢查是否已經處理過
+      if (voiceProcessedRef.current) {
+        return;
+      }
+      voiceProcessedRef.current = true;
 
-          void (async () => {
-            const summary = await summarizeChiefComplaint(raw);
-            setInputText(summary);
-            searchSymptoms(summary);
-          })();
-        }
-        return prevRaw;
-      });
+      // 錄音結束後，將累積的語音一次寫入補充資料，並送給 LLM 做整理
+      const raw = voiceBufferRef.current.trim();
+      if (raw) {
+        setSupplementText(prev => {
+          const base = prev || '';
+          const lines = base.split('\n').filter(l => l.length > 0);
+          // 若任一行已經與這次錄音結果相同，就不要再重複新增
+          if (lines.includes(raw)) {
+            return base;
+          }
+          return base ? base + (base.endsWith('\n') ? '' : '\n') + raw : raw;
+        });
+
+        void (async () => {
+          const summary = await summarizeChiefComplaint(raw);
+          setInputText(summary);
+          searchSymptoms(summary);
+        })();
+      }
+      voiceBufferRef.current = '';
     };
 
     recognition.onresult = (event: any) => {
@@ -345,14 +361,11 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
       const transcript = (event.results[lastIndex][0].transcript as string) || '';
       if (!transcript) return;
 
-      setVoiceBuffer(prev => {
-        const base = prev || '';
-        // 若這次辨識結果已經完整出現在目前累積內容中，就不要再重複新增
-        if (base.includes(transcript)) {
-          return base;
-        }
-        return base ? base + (base.endsWith('\n') ? '' : '\n') + transcript : transcript;
-      });
+      const base = voiceBufferRef.current || '';
+      // 若這次辨識結果已經完整出現在目前累積內容中，就不要再重複新增
+      if (!base.includes(transcript)) {
+        voiceBufferRef.current = base ? base + (base.endsWith('\n') ? '' : '\n') + transcript : transcript;
+      }
     };
 
     recognition.onerror = () => {
