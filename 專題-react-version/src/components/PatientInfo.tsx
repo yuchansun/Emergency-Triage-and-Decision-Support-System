@@ -46,6 +46,9 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
   // 大傷應變選擇（預設空字串 -> 顯示灰色；選擇後變紅色）
   const [majorIncident, setMajorIncident] = useState<string>("");
 
+  // 病患來源選擇（預設空字串 -> 顯示灰色；選擇後變藍色）
+  const [patientSource, setPatientSource] = useState<string>("");
+
   // 新 TOCC 輸入內容（旅遊、職業、接觸史、群聚）
   const [tocc, setTocc] = useState<ToccState>({
     travel: "",
@@ -369,7 +372,15 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
           </div>
 
           {/* 病患來源 */}
-          <select className="px-2 py-0.5 rounded bg-blue-100 text-slate-800 text-xs font-medium border border-blue-300">
+          <select
+            value={patientSource}
+            onChange={(e) => setPatientSource(e.target.value)}
+            className={`px-2 py-0.5 rounded-lg text-xs font-medium transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-0 ${
+              patientSource
+                ? 'bg-blue-500 text-white border border-transparent focus:ring-blue-400'
+                : 'bg-slate-100 text-slate-700 border border-slate-200 focus:ring-blue-300'
+            }`}
+          >
             <option value="">選擇病患來源</option>
             <option value="急診">急診</option>
             <option value="門診">門診</option>
@@ -381,7 +392,11 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
           <select
             value={majorIncident}
             onChange={(e) => setMajorIncident(e.target.value)}
-            className={`px-2 py-0.5 rounded text-xs font-medium border ${majorIncident ? 'bg-red-200 text-red-800 border-red-300' : 'bg-blue-100 text-slate-800 border-blue-300'}`}
+            className={`px-2 py-0.5 rounded-lg text-xs font-medium transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-0 ${
+              majorIncident
+                ? 'bg-red-500 text-white border border-transparent focus:ring-red-400'
+                : 'bg-slate-100 text-slate-700 border border-slate-200 focus:ring-red-300'
+            }`}
           >
             <option value="">選擇大傷</option>
             <option value="馬太鞍溪堰塞湖溢流">馬太鞍溪堰塞湖溢流</option>
