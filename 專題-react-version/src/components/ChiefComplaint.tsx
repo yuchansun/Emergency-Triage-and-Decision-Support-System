@@ -32,51 +32,30 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
   const [isListening, setIsListening] = useState(false);
   const voiceProcessedRef = useRef(false);
   const voiceBufferRef = useRef<string>('');
+  const fullVoiceRef = useRef<string>('');
+  const langSwitchRef = useRef(false);
+  const speechLangRef = useRef<'zh-TW' | 'en-US'>('zh-TW');
+  const [speechLang, setSpeechLang] = useState<'zh-TW' | 'en-US'>('zh-TW');
 
   useEffect(() => {
     let cancelled = false;
 
-    const loadCsv = async () => {
+    const loadFromDb = async () => {
       try {
-        const res = await fetch('/triage_hierarchy.csv');
+        const res = await fetch('http://localhost/專題test/專題-react-version/api/get_triage_hierarchy.php');
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
-        const text = await res.text();
+        const data: TriageRow[] = await res.json();
         if (cancelled) return;
-
-        const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
-        if (lines.length <= 1) {
-          setTriageRows([]);
-          return;
-        }
-
-        const rows: TriageRow[] = [];
-        for (let i = 1; i < lines.length; i++) {
-          const parts = lines[i].split(',');
-          if (parts.length < 9) continue;
-          const [category, system_code, system_name, symptom_code, symptom_name, rule_code, judge_name, ttas_degree, nhi_degree] = parts;
-          rows.push({
-            category,
-            system_code,
-            system_name,
-            symptom_code,
-            symptom_name,
-            rule_code,
-            judge_name,
-            ttas_degree,
-            nhi_degree,
-          });
-        }
-
-        setTriageRows(rows);
+        setTriageRows(data ?? []);
       } catch (err: any) {
         if (cancelled) return;
-        setTriageError(err?.message ?? '載入 triage_hierarchy.csv 失敗');
+        setTriageError(err?.message ?? '載入 triage_hierarchy（資料庫）失敗');
       }
     };
 
-    loadCsv();
+    loadFromDb();
 
     return () => {
       cancelled = true;
@@ -84,6 +63,9 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
   }, []);
 
   const [recommendedSymptoms, setRecommendedSymptoms] = useState<string[]>([]);
+  // LLM 事先為外傷 / 非外傷各自計算好的推薦症狀，切換 Tab 時直接使用
+  const [llmTraumaSymptoms, setLlmTraumaSymptoms] = useState<string[] | null>(null);
+  const [llmNonTraumaSymptoms, setLlmNonTraumaSymptoms] = useState<string[] | null>(null);
   const [isSupplementOpen, setIsSupplementOpen] = useState<boolean>(false);
   const [supplementText, setSupplementText] = useState<string>('');
 
@@ -150,11 +132,29 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
     return map;
   }, [triageRows, age]);
 
+  // Tab 切換或主訴變更時：
+  // 1) 若該 Tab 已有對應的 LLM 推薦結果，直接顯示（完全不再呼叫 LLM）
+  // 2) 否則使用關鍵字推薦
   useEffect(() => {
-    if (inputText.trim()) {
-      searchSymptoms(inputText);
+    const trimmed = inputText.trim();
+    if (!trimmed) {
+      setRecommendedSymptoms([]);
+      return;
     }
-  }, [activeTab]);
+
+    if (activeTab === 't' && llmTraumaSymptoms && llmTraumaSymptoms.length) {
+      setRecommendedSymptoms(llmTraumaSymptoms);
+      return;
+    }
+
+    if (activeTab === 'a' && llmNonTraumaSymptoms && llmNonTraumaSymptoms.length) {
+      setRecommendedSymptoms(llmNonTraumaSymptoms);
+      return;
+    }
+
+    // 若該 Tab 尚無 LLM 結果，則使用關鍵字推薦
+    searchSymptoms(trimmed);
+  }, [activeTab, inputText, llmTraumaSymptoms, llmNonTraumaSymptoms]);
 
   // 每個症狀出現過的類別（外傷/非外傷）
   const symptomCategoryIndex = useMemo(() => {
@@ -163,6 +163,20 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
     for (const row of triageRows) {
       const set = map.get(row.symptom_name) ?? new Set<string>();
       set.add(row.category);
+      map.set(row.symptom_name, set);
+    }
+    return map;
+  }, [triageRows]);
+
+  // 每個症狀出現過的 system_code 類型（A/P/T/E），用來更精準區分外傷/非外傷
+  const symptomSystemTypeIndex = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    if (!triageRows) return map;
+    for (const row of triageRows) {
+      const first = (row.system_code || '').charAt(0);
+      if (!first) continue;
+      const set = map.get(row.symptom_name) ?? new Set<string>();
+      set.add(first);
       map.set(row.symptom_name, set);
     }
     return map;
@@ -226,11 +240,28 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
     const selectedSet = selectedOverride ?? selectedSymptoms;
 
     const currentCategory = activeTab === 't' ? '外傷' : '非外傷';
+    const isAdult = age !== undefined ? age >= 18 : true;
+    console.log('[CC] searchSymptoms activeTab =', activeTab, 'category =', currentCategory);
 
     const matches = symptomDatabase.filter(symptom => {
       // 先用類別過濾：只推薦屬於目前 T/A 類別的症狀
       const cats = symptomCategoryIndex.get(symptom);
       if (!cats || !cats.has(currentCategory)) return false;
+
+      // 再用 system_code 開頭嚴格區分外傷/非外傷 + 成人/兒童
+      const sysTypes = symptomSystemTypeIndex.get(symptom);
+      if (!sysTypes) return false;
+
+      if (currentCategory === '非外傷') {
+        // 非外傷：只接受 A*/P* 系統
+        if (!sysTypes.has('A') && !sysTypes.has('P')) return false;
+        // 成人只推薦有 A* 的症狀，兒童只推薦有 P* 的症狀
+        if (isAdult && !sysTypes.has('A')) return false;
+        if (!isAdult && !sysTypes.has('P')) return false;
+      } else {
+        // 外傷：只接受 T*/E* 系統
+        if (!sysTypes.has('T') && !sysTypes.has('E')) return false;
+      }
       // 檢查是否已經選中（任何前綴）
       const isAlreadySelected = Array.from(selectedSet).some(selected => {
         const cleanSelected = selected.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
@@ -259,6 +290,121 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
     setRecommendedSymptoms(matches);
   };
 
+  // 透過後端 LLM 從候選清單中推薦症狀
+  // 回傳該 Tab 對應的推薦症狀陣列（若無合理結果則回傳 null）
+  const requestLlmRecommendations = async (summary: string, tab: 't' | 'a'): Promise<string[] | null> => {
+    if (!triageRows) return null;
+    if (!summary.trim()) return null;
+
+    const currentCategory = tab === 't' ? '外傷' : '非外傷';
+    console.log('[CC] requestLlmRecommendations tab =', tab, 'current category =', currentCategory);
+
+    // 只提供目前類別的症狀給 LLM 當候選：
+    // 直接從 triageRows 過濾，使用與其他地方一致的年齡/類別邏輯
+    const isAdult = age !== undefined ? age >= 18 : true;
+    const candidateSet = new Set<string>();
+
+    for (const row of triageRows) {
+      if (row.category !== currentCategory) continue;
+
+      const code = row.system_code || '';
+
+      // 進一步用 system_code 嚴格區分外傷/非外傷：
+      // - 非外傷：只接受 A*/P*，排除 T*/E*
+      // - 外傷：只接受 T*/E*，排除 A*/P*
+      if (currentCategory === '非外傷') {
+        if (!code.startsWith('A') && !code.startsWith('P')) continue;
+
+        // 非外傷症狀依 A*/P* 與年齡切換
+        if (code.startsWith('A') && !isAdult) continue;
+        if (code.startsWith('P') && isAdult) continue;
+      } else {
+        // 外傷模式下，僅接受 T*/E* 系統
+        if (!code.startsWith('T') && !code.startsWith('E')) continue;
+      }
+
+      candidateSet.add(row.symptom_name);
+    }
+
+    const candidates = Array.from(candidateSet);
+
+    if (!candidates.length) return null;
+
+    try {
+      console.log('[LLM] requesting symptom recommendations with summary:', summary);
+      const res = await fetch('http://localhost:3001/api/recommend-symptoms', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text: summary,
+          symptom_candidates: candidates,
+          max_results: 10,
+        }),
+      });
+
+      if (!res.ok) {
+        console.warn('LLM recommend API not ok:', res.status);
+        return null;
+      }
+
+      const data = await res.json();
+      const list: string[] = Array.isArray(data?.recommended_symptoms)
+        ? data.recommended_symptoms
+        : [];
+
+      console.log('[LLM] received recommended_symptoms from backend:', list);
+
+      if (!list.length) return null;
+
+      // 過濾掉已經選中的症狀，並限制顯示數量
+      const filtered = list.filter(name => {
+        const already = Array.from(selectedSymptoms).some(selected => {
+          const cleanSelected = selected.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
+          return cleanSelected === name;
+        });
+        return !already;
+      }).slice(0, 10);
+
+      return filtered.length > 0 ? filtered : null;
+    } catch (err) {
+      console.error('LLM recommend error:', err);
+      return null;
+    }
+    return null;
+  };
+
+  // 共用：用 LLM 先整理主訴，再更新推薦症狀
+  const runLlmSummarizeAndRecommend = async (rawText?: string) => {
+    // 優先使用錄音整段逐字稿，其次使用呼叫方傳入的 rawText，最後才用目前主訴欄位
+    const source = (fullVoiceRef.current || rawText || inputText || '').trim();
+    if (!source) return;
+
+    console.log('[CC] runLlmSummarizeAndRecommend activeTab =', activeTab, 'source =', source);
+
+    const summary = await summarizeChiefComplaint(source);
+    setInputText(summary);
+
+    // 讓 LLM 針對外傷 / 非外傷各自產生一組推薦清單，之後切換 Tab 時直接使用
+    const [traumaList, nonTraumaList] = await Promise.all([
+      requestLlmRecommendations(summary, 't'),
+      requestLlmRecommendations(summary, 'a'),
+    ]);
+
+    setLlmTraumaSymptoms(traumaList ?? []);
+    setLlmNonTraumaSymptoms(nonTraumaList ?? []);
+
+    // 依當下 Tab 選擇要顯示哪一組推薦；若該組沒有 LLM 結果，則退回關鍵字推薦
+    if (activeTab === 't' && traumaList && traumaList.length) {
+      setRecommendedSymptoms(traumaList);
+    } else if (activeTab === 'a' && nonTraumaList && nonTraumaList.length) {
+      setRecommendedSymptoms(nonTraumaList);
+    } else {
+      searchSymptoms(source);
+    }
+  };
+
   const isSymptomSelectedByLabel = (label: string) => {
     return Array.from(selectedSymptoms).some(selected => {
       const cleanSelected = selected.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
@@ -278,25 +424,15 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      // Enter 鍵不清空輸入，保持搜尋狀態
-      searchSymptoms(inputText);
+      // Enter 觸發：用目前主訴呼叫 LLM 進行「整理＋推薦」
+      void runLlmSummarizeAndRecommend(inputText);
     }
   };
 
-  const handleVoiceInputClick = () => {
+  const startSpeechRecognition = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       alert('此瀏覽器不支援語音輸入 (SpeechRecognition)。請改用 Chrome 等支援的瀏覽器。');
-      return;
-    }
-
-    // 若已在聽，則停止
-    if (isListening && recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {
-        // ignore
-      }
       return;
     }
 
@@ -312,29 +448,25 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
 
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
-    recognition.lang = 'zh-TW';
+    recognition.lang = speechLangRef.current;
     recognition.interimResults = false;
     recognition.continuous = true;
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
+      console.log('[VOICE] start');
       setIsListening(true);
       voiceBufferRef.current = '';
       voiceProcessedRef.current = false;
     };
 
     recognition.onend = () => {
+      console.log('[VOICE] end, buffer =', voiceBufferRef.current);
       setIsListening(false);
       recognitionRef.current = null;
 
-      // 防止重複執行：檢查是否已經處理過
-      if (voiceProcessedRef.current) {
-        return;
-      }
-      voiceProcessedRef.current = true;
-
-      // 錄音結束後，將累積的語音一次寫入補充資料，並送給 LLM 做整理
       const raw = voiceBufferRef.current.trim();
+      console.log('[VOICE] final raw text =', raw);
       if (raw) {
         setSupplementText(prev => {
           const base = prev || '';
@@ -346,19 +478,43 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
           return base ? base + (base.endsWith('\n') ? '' : '\n') + raw : raw;
         });
 
-        void (async () => {
-          const summary = await summarizeChiefComplaint(raw);
-          setInputText(summary);
-          searchSymptoms(summary);
-        })();
+        // 累積整段錄音（可能包含多次語言切換）
+        fullVoiceRef.current = fullVoiceRef.current
+          ? fullVoiceRef.current + (fullVoiceRef.current.endsWith('\n') ? '' : '\n') + raw
+          : raw;
       }
       voiceBufferRef.current = '';
+
+      // 若是為了切換語言而停止，處理完這一段後，用最新語言重新開始
+      if (langSwitchRef.current) {
+        console.log('[VOICE] onend due to lang switch, restarting with lang =', speechLangRef.current);
+        langSwitchRef.current = false;
+        voiceProcessedRef.current = false;
+        startSpeechRecognition();
+        return;
+      }
+
+      // 防止重複執行：檢查是否已經處理過（只在真正結束錄音時生效）
+      if (voiceProcessedRef.current) {
+        console.log('[VOICE] onend already processed, skip');
+        return;
+      }
+      voiceProcessedRef.current = true;
+
+      // 錄音真正結束：用整段累積內容送給 LLM 做整理
+      const fullRaw = (fullVoiceRef.current || raw).trim();
+      if (fullRaw) {
+        void runLlmSummarizeAndRecommend(fullRaw);
+      }
+      fullVoiceRef.current = '';
     };
 
     recognition.onresult = (event: any) => {
+      console.log('[VOICE] result event:', event);
       // 只取最新一個 result，避免每次都從 results[0] 取而造成整句重複累積
       const lastIndex = event.results.length - 1;
       const transcript = (event.results[lastIndex][0].transcript as string) || '';
+      console.log('[VOICE] transcript =', transcript);
       if (!transcript) return;
 
       const base = voiceBufferRef.current || '';
@@ -366,9 +522,11 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
       if (!base.includes(transcript)) {
         voiceBufferRef.current = base ? base + (base.endsWith('\n') ? '' : '\n') + transcript : transcript;
       }
+      console.log('[VOICE] buffer now =', voiceBufferRef.current);
     };
 
-    recognition.onerror = () => {
+    recognition.onerror = (e: any) => {
+      console.error('[VOICE] error:', e?.error ?? e);
       setIsListening(false);
       recognitionRef.current = null;
     };
@@ -378,6 +536,31 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
     } catch {
       // 有些瀏覽器若重複呼叫 start 會丟錯誤，這裡忽略即可
     }
+  };
+
+  const handleVoiceInputClick = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('此瀏覽器不支援語音輸入 (SpeechRecognition)。請改用 Chrome 等支援的瀏覽器。');
+      return;
+    }
+
+    // 若已在聽，則停止（這種停止代表使用者結束錄音，需要總結）
+    if (isListening && recognitionRef.current) {
+      try {
+        langSwitchRef.current = false;
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    // 開始新的錄音段落時，重置整段累積內容
+    fullVoiceRef.current = '';
+    voiceBufferRef.current = '';
+    voiceProcessedRef.current = false;
+    startSpeechRecognition();
   };
 
   // 添加推薦症狀
@@ -526,7 +709,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
                   : 'bg-transparent text-primary hover:bg-primary/10'
               }`}
             >
-              A 非外傷
+              {(age !== undefined ? (age >= 18 ? 'A' : 'P') : 'A')} 非外傷
             </button>
           </div>
         </div>
@@ -592,16 +775,73 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
 
       {/* 補充資料（可折疊） */}
       <div className="mb-4">
-        <button
-          type="button"
-          onClick={() => setIsSupplementOpen(prev => !prev)}
-          className="flex items-center gap-2 text-sm font-semibold text-primary hover:text-primary/80"
-        >
-          <span className="material-symbols-outlined text-sm">
-            {isSupplementOpen ? 'expand_less' : 'expand_more'}
-          </span>
-          <span>補充資料</span>
-        </button>
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setIsSupplementOpen(prev => !prev)}
+            className="flex items-center gap-2 text-sm font-semibold text-primary hover:text-primary/80"
+          >
+            <span className="material-symbols-outlined text-sm">
+              {isSupplementOpen ? 'expand_less' : 'expand_more'}
+            </span>
+            <span>補充資料</span>
+          </button>
+          <div className="flex items-center gap-1 text-xs text-subtext-light dark:text-subtext-dark">
+            <span className="material-symbols-outlined text-base">translate</span>
+            <button
+              type="button"
+              onClick={() => {
+                if (speechLangRef.current === 'zh-TW') {
+                  setSpeechLang('zh-TW');
+                  return;
+                }
+                speechLangRef.current = 'zh-TW';
+                setSpeechLang('zh-TW');
+                if (isListening && recognitionRef.current) {
+                  try {
+                    langSwitchRef.current = true;
+                    recognitionRef.current.stop();
+                  } catch {
+                    // ignore
+                  }
+                }
+              }}
+              className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-colors ${
+                speechLang === 'zh-TW'
+                  ? 'bg-primary text-white border-primary'
+                  : 'bg-transparent text-primary border-primary/40 hover:bg-primary/10'
+              }`}
+            >
+              中文
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (speechLangRef.current === 'en-US') {
+                  setSpeechLang('en-US');
+                  return;
+                }
+                speechLangRef.current = 'en-US';
+                setSpeechLang('en-US');
+                if (isListening && recognitionRef.current) {
+                  try {
+                    langSwitchRef.current = true;
+                    recognitionRef.current.stop();
+                  } catch {
+                    // ignore
+                  }
+                }
+              }}
+              className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-colors ${
+                speechLang === 'en-US'
+                  ? 'bg-primary text-white border-primary'
+                  : 'bg-transparent text-primary border-primary/40 hover:bg-primary/10'
+              }`}
+            >
+              English
+            </button>
+          </div>
+        </div>
         {isSupplementOpen && (
           <div className="mt-2">
             <textarea

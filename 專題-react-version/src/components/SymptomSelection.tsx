@@ -56,47 +56,22 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
   useEffect(() => {
     let cancelled = false;
 
-    const loadCsv = async () => {
+    const loadFromDb = async () => {
       try {
-        const res = await fetch('/triage_hierarchy.csv');
+        const res = await fetch('http://localhost/專題test/專題-react-version/api/get_triage_hierarchy.php');
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
-        const text = await res.text();
+        const data: TriageRow[] = await res.json();
         if (cancelled) return;
-
-        const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
-        if (lines.length <= 1) {
-          setTriageRows([]);
-          return;
-        }
-
-        const rows: TriageRow[] = [];
-        for (let i = 1; i < lines.length; i++) {
-          const parts = lines[i].split(',');
-          if (parts.length < 9) continue;
-          const [category, system_code, system_name, symptom_code, symptom_name, rule_code, judge_name, ttas_degree, nhi_degree] = parts;
-          rows.push({
-            category,
-            system_code,
-            system_name,
-            symptom_code,
-            symptom_name,
-            rule_code,
-            judge_name,
-            ttas_degree,
-            nhi_degree,
-          });
-        }
-
-        setTriageRows(rows);
+        setTriageRows(data ?? []);
       } catch (err: any) {
         if (cancelled) return;
-        setTriageError(err?.message ?? '載入 triage_hierarchy.csv 失敗');
+        setTriageError(err?.message ?? '載入 triage_hierarchy（資料庫）失敗');
       }
     };
 
-    loadCsv();
+    loadFromDb();
 
     return () => {
       cancelled = true;
@@ -106,39 +81,23 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
   useEffect(() => {
     let cancelled = false;
 
-    const loadCcCsv = async () => {
+    const loadCcFromDb = async () => {
       try {
-        const res = await fetch('/cc_with_counts.csv');
+        const res = await fetch('http://localhost/專題test/專題-react-version/api/get_cc_with_counts.php');
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
-        const text = await res.text();
+        const data: CcRow[] = await res.json();
         if (cancelled) return;
-
-        const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
-        if (lines.length <= 1) {
-          setCcRows([]);
-          return;
-        }
-
-        const rows: CcRow[] = [];
-        for (let i = 1; i < lines.length; i++) {
-          const parts = lines[i].split(',');
-          if (parts.length < 6) continue;
-          const [category, system_code, system_name, symptom_code, symptom_name, countStr] = parts;
-          const count = Number(countStr ?? '0');
-          rows.push({ category, system_code, system_name, symptom_code, symptom_name, count: isNaN(count) ? 0 : count });
-        }
-
-        setCcRows(rows);
+        setCcRows(data ?? []);
       } catch {
         if (cancelled) return;
-        // 常見症狀 CSV 載入失敗時，維持 null，僅不顯示 header 快捷
+        // 常見症狀資料庫查詢失敗時，維持 null，僅不顯示 header 快捷
         setCcRows(null);
       }
     };
 
-    loadCcCsv();
+    loadCcFromDb();
 
     return () => {
       cancelled = true;
@@ -216,14 +175,19 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
       }
     }
 
-    // 先依出現次數取前 N 名（成人 8 個、兒童 5 個），再依文字長度重新排序，
-    // 讓在現有寬度下按鈕比較有機會排成兩行，避免兒童常見清單過高
-    const limit = isAdult ? 8 : 8;
+    // 先依出現次數取前 N 名
+    const limit = 8;
     const topByCount = Array.from(byName.values())
       .sort((a, b) => b.count - a.count)
       .slice(0, limit);
 
-    return topByCount.sort((a, b) => b.symptom_name.length - a.symptom_name.length);
+    // 成人：為了讓版面高度比較均勻，用「字比較長的排前面」
+    if (isAdult) {
+      return topByCount.sort((a, b) => b.symptom_name.length - a.symptom_name.length);
+    }
+
+    // 兒童：維持依出現次數排序（最常見的在最前面）
+    return topByCount;
   }, [ccRows, age]);
 
   const [tBody, setTBody] = useState<'head' | 'upper' | 'lower' | null>(null);
@@ -297,7 +261,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
               </h5>
               <div className="flex flex-col gap-1 flex-1">
                 <div className="flex flex-wrap gap-2 justify-end">
-                  {commonNonTrauma.slice(0, 4).map(item => (
+                  {commonNonTrauma.slice(0, 3).map(item => (
                     <button
                       key={item.symptom_code}
                       onClick={() => toggleSelect(`a:common:${item.symptom_name}`)}
@@ -307,9 +271,9 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                     </button>
                   ))}
                 </div>
-                {commonNonTrauma.length > 4 && (
+                {commonNonTrauma.length > 3 && (
                   <div className="flex flex-wrap gap-2 justify-end">
-                    {commonNonTrauma.slice(4).map(item => (
+                    {commonNonTrauma.slice(3).map(item => (
                       <button
                         key={item.symptom_code}
                         onClick={() => toggleSelect(`a:common:${item.symptom_name}`)}
