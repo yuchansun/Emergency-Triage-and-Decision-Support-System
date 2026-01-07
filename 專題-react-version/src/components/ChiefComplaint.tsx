@@ -575,14 +575,11 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
 
       const next = new Set(prev);
       next.add(`manual:${symptom}`);
-
-      // 立刻用更新後的 selected set 重新計算推薦清單
-      if (inputText.trim()) {
-        searchSymptoms(inputText, next);
-      }
-
       return next;
     });
+
+    // 點選後只把該顆從目前推薦列表中移除，其它保持不變
+    setRecommendedSymptoms(prev => prev.filter(s => s !== symptom));
   };
 
   // 移除症狀
