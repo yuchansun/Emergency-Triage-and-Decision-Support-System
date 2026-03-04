@@ -23,3 +23,61 @@
     color: white !important;
     border-color: #007bff !important;
 }
+
+/* Print styles for document preview */
+@page {
+    size: A4;
+    margin: 20mm;
+}
+
+@media print {
+    /* hide everything except the printable preview */
+    body * {
+        visibility: hidden;
+    }
+
+    .doc-preview, .doc-preview * {
+        visibility: visible;
+    }
+
+    /* position preview to top-left and match A4 dimensions */
+    .doc-preview {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 210mm;
+        height: 297mm;
+        margin: 0;
+        padding: 20mm;
+        box-shadow: none !important;
+        border: none !important;
+        overflow: visible !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    /* ensure text sizes and table borders print cleanly */
+    .doc-preview table { border-collapse: collapse !important; }
+    .doc-preview td, .doc-preview th { border: 1px solid #000 !important; padding: 6px !important; }
+
+    /* hide UI elements marked no-print */
+    .no-print { display: none !important; }
+}
+
+/* Additional styling for printed document: typography and spacing */
+.doc-preview {
+    font-family: "Times New Roman", "Noto Serif TC", serif;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #111827; /* near-black */
+}
+.doc-preview h3, .doc-preview .font-semibold { font-weight: 700; }
+.doc-preview table td { vertical-align: top; }
+.doc-preview .border-b { border-bottom: 1px solid #d1d5db; }
+.doc-preview .font-serif { font-family: "Times New Roman", "Noto Serif TC", serif; }
+
+/* Make sure when printing we use strong borders for tables */
+@media print {
+    .doc-preview, .doc-preview table, .doc-preview td { color: #000; }
+    .doc-preview table td { border: 1px solid #000 !important; }
+}
