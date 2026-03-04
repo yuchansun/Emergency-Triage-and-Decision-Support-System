@@ -15,6 +15,12 @@ interface PatientData {
 
 interface PatientInfoProps {
   patient: PatientData | null;
+  bed: string;
+  setBed: (s: string) => void;
+  patientSource: string;
+  setPatientSource: (s: string) => void;
+  majorIncident: string;
+  setMajorIncident: (s: string) => void;
 }
 
 
@@ -31,7 +37,7 @@ interface ToccState {
 }
 
 
-const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
+const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patientSource, setPatientSource, majorIncident, setMajorIncident }) => {
 
   // ===== 標籤狀態 =====
   const [tags, setTags] = useState({
@@ -43,11 +49,23 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
   // ===== TOCC UI 狀態 =====
   const [showTOCCOptions, setShowTOCCOptions] = useState(false);
 
-  // 大傷應變選擇（預設空字串 -> 顯示灰色；選擇後變紅色）
-  const [majorIncident, setMajorIncident] = useState<string>("");
+  // 當被提升到 App 層時，來源/大傷/床位 由 props 管理
+  // 為了處理 "其他" 可輸入情況，使用 local state 追蹤正在編輯的文字
+  const [localPatientSourceOther, setLocalPatientSourceOther] = useState<string>('');
+  const [localMajorIncidentOther, setLocalMajorIncidentOther] = useState<string>('');
 
-  // 病患來源選擇（預設空字串 -> 顯示灰色；選擇後變藍色）
-  const [patientSource, setPatientSource] = useState<string>("");
+  // 若 props 中帶入自訂文字，將其同步到 local state 以便顯示在輸入框
+  useEffect(() => {
+    if (patientSource && !['急診','門診','住院','其他'].includes(patientSource)) {
+      setLocalPatientSourceOther(patientSource);
+    }
+  }, [patientSource]);
+
+  useEffect(() => {
+    if (majorIncident && !['馬太鞍溪堰塞湖溢流','明揚國際屏東廠火災','八仙樂園派對粉塵爆炸事故','其他'].includes(majorIncident)) {
+      setLocalMajorIncidentOther(majorIncident);
+    }
+  }, [majorIncident]);
 
   // 新 TOCC 輸入內容（旅遊、職業、接觸史、群聚）
   const [tocc, setTocc] = useState<ToccState>({
@@ -373,10 +391,19 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
 
           {/* 病患來源 */}
           <select
-            value={patientSource}
-            onChange={(e) => setPatientSource(e.target.value)}
+            value={patientSource === '' || ['急診','門診','住院','其他'].includes(patientSource) ? patientSource : '其他'}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === '其他') {
+                // 切換到其他編輯模式
+                setPatientSource('其他');
+                setLocalPatientSourceOther('');
+              } else {
+                setPatientSource(v);
+              }
+            }}
             className={`px-2 py-0.5 rounded-lg text-xs font-medium transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-0 ${
-              patientSource
+              patientSource && patientSource !== '其他'
                 ? 'bg-blue-500 text-white border border-transparent focus:ring-blue-400'
                 : 'bg-slate-100 text-slate-700 border border-slate-200 focus:ring-blue-300'
             }`}
@@ -388,12 +415,38 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
             <option value="其他">其他</option>
           </select>
 
+          {/* 若來源為 '其他' 或為非預設選項時，顯示可編輯輸入欄 */}
+          {(patientSource === '其他' || (patientSource && !['急診','門診','住院','其他'].includes(patientSource))) && (
+            <input
+              type="text"
+              value={patientSource === '其他' ? localPatientSourceOther : patientSource}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (patientSource === '其他') {
+                  setLocalPatientSourceOther(v);
+                }
+                // 直接把自訂來源寫回 props，方便匯出使用
+                setPatientSource(v);
+              }}
+              placeholder="請輸入其他來源"
+              className="px-2 py-0.5 rounded border text-xs ml-2"
+            />
+          )}
+
           {/* 大傷應變 */}
           <select
-            value={majorIncident}
-            onChange={(e) => setMajorIncident(e.target.value)}
+            value={majorIncident === '' || ['馬太鞍溪堰塞湖溢流','明揚國際屏東廠火災','八仙樂園派對粉塵爆炸事故','其他'].includes(majorIncident) ? majorIncident : '其他'}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === '其他') {
+                setMajorIncident('其他');
+                setLocalMajorIncidentOther('');
+              } else {
+                setMajorIncident(v);
+              }
+            }}
             className={`px-2 py-0.5 rounded-lg text-xs font-medium transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-0 ${
-              majorIncident
+              majorIncident && majorIncident !== '其他'
                 ? 'bg-red-500 text-white border border-transparent focus:ring-red-400'
                 : 'bg-slate-100 text-slate-700 border border-slate-200 focus:ring-red-300'
             }`}
@@ -405,11 +458,28 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient }) => {
             <option value="其他">其他</option>
           </select>
 
+          {/* 若選其他或自訂文字，顯示輸入欄 */}
+          {(majorIncident === '其他' || (majorIncident && !['馬太鞍溪堰塞湖溢流','明揚國際屏東廠火災','八仙樂園派對粉塵爆炸事故','其他'].includes(majorIncident))) && (
+            <input
+              type="text"
+              value={majorIncident === '其他' ? localMajorIncidentOther : majorIncident}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (majorIncident === '其他') setLocalMajorIncidentOther(v);
+                setMajorIncident(v);
+              }}
+              placeholder="請輸入其他大傷描述"
+              className="px-2 py-0.5 rounded border text-xs ml-2"
+            />
+          )}
+
 
           {/* 床位 */}
           <input
             type="text"
             placeholder="輸入床位"
+            value={bed}
+            onChange={(e) => setBed(e.target.value)}
             className="px-2 py-0.5 rounded bg-blue-100 text-slate-800 text-xs font-medium border border-blue-300 w-20"
           />
           {/* 看診時間（自動生成） */}

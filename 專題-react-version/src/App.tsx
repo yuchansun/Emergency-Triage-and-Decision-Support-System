@@ -7,11 +7,12 @@ import Login from "./components/Login";
 import AddPatient from "./components/AddPatient";
 import type { PatientData } from './components/AddPatient';
 import SystemRecommendation from './components/SystemRecommendation';
+import EmergencyTriageReport from './components/EmergencyTriageReport';
 
 function App() {
 
   // 管理目前系統在哪一頁：login → addpatient → main
-  const [stage, setStage] = useState<"login" | "addpatient" | "main">("login");
+  const [stage, setStage] = useState<"login" | "addpatient" | "main" | "triageReport">("login");
 
   // 症狀與主訴
   const [selectedSymptoms, setSelectedSymptoms] = useState<Set<string>>(new Set());
@@ -26,7 +27,7 @@ function App() {
     setWorstSelectedDegree(null);
     setForceLevel1(false);
     setDirectToERSelected(false);
-    setStage('addpatient');
+    //setStage('addpatient');
   };
 
   const handleDirectToER = () => {
@@ -41,6 +42,10 @@ function App() {
 
   // 病患資料
   const [patientData, setPatientData] = useState<PatientData | null>(null);
+  // 病房 / 來源 / 大傷（提升到 App 層以供報表使用）
+  const [bed, setBed] = useState<string>('');
+  const [patientSource, setPatientSource] = useState<string>('');
+  const [majorIncident, setMajorIncident] = useState<string>('');
 
   // ----------------------------
   // 1️⃣ Login 頁面
@@ -62,6 +67,23 @@ function App() {
       />
     );
   }
+  // ----------------------------
+  // 4️⃣ EmergencyTriageReport 頁面
+  // ----------------------------
+  if (stage === "triageReport") {
+    return (
+      <EmergencyTriageReport
+        patientData={patientData}
+        inputText={inputText}
+        selectedSymptoms={selectedSymptoms}
+        worstSelectedDegree={worstSelectedDegree}
+        bed={bed}
+        patientSource={patientSource}
+        majorIncident={majorIncident}
+        onBack={() => setStage('main')}
+      />
+    );
+  }
 
   // ----------------------------
   // 3️⃣ Main 主畫面
@@ -72,7 +94,15 @@ function App() {
         <div className="mx-auto max-w-screen-2xl">
           <div className="grid grid-cols-10 gap-8">
             <div className="col-span-10">
-              <PatientInfo patient={patientData} />
+              <PatientInfo
+                patient={patientData}
+                bed={bed}
+                setBed={setBed}
+                patientSource={patientSource}
+                setPatientSource={setPatientSource}
+                majorIncident={majorIncident}
+                setMajorIncident={setMajorIncident}
+              />
             </div>
 
             <div className="col-span-6">
@@ -95,7 +125,8 @@ function App() {
                   inputText={inputText}
                   worstSelectedDegree={worstSelectedDegree}
                   forceLevel1={forceLevel1}
-                  onSubmitLevel={resetMainScreen}
+                  onSubmitLevel={resetMainScreen} // 只重置資料，不改 stage
+                  onOpenTriageReport={() => setStage("triageReport")} // 控制跳轉
                 />
                 <Vitals gender={patientData?.gender} />
 
@@ -106,6 +137,7 @@ function App() {
       </main>
     </div>
   );
+
 }
 
 export default App;

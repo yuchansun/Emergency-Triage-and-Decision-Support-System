@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from google import genai
 import json
 import os
+from database import fetch_all
 
 app = FastAPI()
 
@@ -150,3 +151,14 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
     except Exception as e:
         print("LLM recommend error:", e)
         return RecommendSymptomsResponse(recommended_symptoms=[])
+
+# 新增一個 API，用來抓取那 5 個隨機病患
+@app.get("/api/patients")
+async def get_patients():
+    query = "SELECT patient_id, name, id_number, birth_date, medical_number, gender FROM patients"
+    patients = fetch_all(query)
+    
+    if not patients:
+        return {"message": "目前沒有病患資料或連線失敗"}
+            
+    return patients
