@@ -58,7 +58,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
 
     const loadFromDb = async () => {
       try {
-        const res = await fetch('http://localhost/專題test/專題-react-version/api/get_triage_hierarchy.php');
+        const res = await fetch('http://localhost:8000/triage_hierarchy');
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
@@ -83,7 +83,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
 
     const loadCcFromDb = async () => {
       try {
-        const res = await fetch('http://localhost/專題test/專題-react-version/api/get_cc_with_counts.php');
+        const res = await fetch('http://localhost:8000/cc_with_counts');
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }

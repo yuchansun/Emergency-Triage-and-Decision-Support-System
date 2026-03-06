@@ -42,7 +42,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
 
     const loadFromDb = async () => {
       try {
-        const res = await fetch('http://localhost/專題test/專題-react-version/api/get_triage_hierarchy.php');
+        const res = await fetch('http://localhost:8000/triage_hierarchy');
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
