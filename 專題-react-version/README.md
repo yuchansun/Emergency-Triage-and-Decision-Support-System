@@ -1,73 +1,85 @@
-# React + TypeScript + Vite
+# 急診檢傷輔助決策系統
+本專案以 **React + FastAPI + MySQL** 開發  
+---
+# 系統架構
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+前端：                後端：                資料庫：
+- React              - Python             - MySQL (phpMyAdmin)
+- TypeScript         - FastAPI              
+- Vite               
+-----------------------------------------------------------------------------
+# 專案結構 (實際上順序跟下面圖示的不太一樣 且我只有放較重要在下圖 但不影響這只是參考)
 
-Currently, two official plugins are available:
+專題-react-version/
+│
+├─ src/ # React 前端 裡面放各種元件
+├─ package.json
+├─ .env # 前端 API 設定
+│
+└─ api/  （這邊都是資料庫api處理）
+    └─ routers/
+    │    ├─ counts.py # cc_with_counts API
+    │    └─ triagehierarchy.py # triage_hierarchy API
+    │    └─(未來新增的 API 可放在這裡 ex:病人資料、病歷資料、級數...，就放這裡)
+    ├─ main.py # FastAPI主程式入口 只負責：建立FastAPI app、把各個 router 掛進來...
+    ├─ db.py # 資料庫連線
+    └─ .env # 後端資料庫設定
+│   
+└─llm-backend/  （這邊都是放大語言模型相關 連結資料庫的就不要放這裡了）
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+-----------------------------------------------------------------------------
+請先安裝以下工具：
 
-## React Compiler
+- Node.js
+- Python 3
+- MySQL 或 XAMPP
+- pip3
+-----------------------------------------------------------------------------
+# 後端設定 (FastAPI) （要連線資料庫必須在終端機先進行這個步驟）
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+＃進入 api 資料夾：
+cd api
 
-## Expanding the ESLint configuration
+＃安裝 Python 套件：  （若已安裝過就省略）
+pip3 install fastapi uvicorn pymysql python-dotenv
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+＃在api資料夾中建立 .env （若已建立過就省略）（以下是檔案內容 資料庫連線換成自己設定的） 
+DB_HOST=localhost
+DB_USER=root
+DB_PASS=
+DB_NAME=triage  (因為我的資料庫名稱是triage)
+ 
+＃啟動後端伺服器
+uvicorn main:app --reload --port 8000
+（成功後會看到： Uvicorn running on http://127.0.0.1:8000）
+（API測試網址： http://localhost:8000/docs）
+-----------------------------------------------------------------------------
+# 前端設定 (React) 
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+＃回到專案根目錄：
+cd ..
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+＃安裝套件： （若已安裝過就省略）
+npm install
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+＃建立前端 .env （這跟剛剛那個後端.env不一樣喔） （以下是檔案內容）
+VITE_API_BASE_URL=http://localhost:8000
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+＃啟動前端
+npm run dev
+-----------------------------------------------------------------------------
+#一個小建議
+在 .gitignore 裡加：
+.env
+-----------------------------------------------------------------------------
+# 開發流程
+以後開發時需要同時啟動：
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+＃後端
+cd api
+uvicorn main:app --reload --port 8000
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+＃前端
+cd 專題資料夾
+npm run dev
+

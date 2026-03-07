@@ -58,7 +58,8 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
 
     const loadFromDb = async () => {
       try {
-        const res = await fetch('http://localhost:8000/triage_hierarchy');
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+        const res = await fetch(`${API_BASE_URL}/triage_hierarchy`);
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
@@ -83,7 +84,8 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
 
     const loadCcFromDb = async () => {
       try {
-        const res = await fetch('http://localhost:8000/cc_with_counts');
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+        const res = await fetch(`${API_BASE_URL}/cc_with_counts`);
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }

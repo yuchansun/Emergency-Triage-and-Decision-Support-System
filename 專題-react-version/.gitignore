@@ -26,5 +26,6 @@ llm-backend/venv/
 *.sln
 *.sw?
 
+.env
 __pycache__/
 *.pyc

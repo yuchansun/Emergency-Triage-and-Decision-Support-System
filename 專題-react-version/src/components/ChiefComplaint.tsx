@@ -42,7 +42,8 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
 
     const loadFromDb = async () => {
       try {
-        const res = await fetch('http://localhost:8000/triage_hierarchy');
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+        const res = await fetch(`${API_BASE_URL}/triage_hierarchy`);
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
