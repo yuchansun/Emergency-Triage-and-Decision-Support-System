@@ -41,20 +41,19 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
     let cancelled = false;
 
     const loadFromDb = async () => {
-      try {
-        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-        const res = await fetch(`${API_BASE_URL}/triage_hierarchy`);
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-        const data: TriageRow[] = await res.json();
-        if (cancelled) return;
-        setTriageRows(data ?? []);
-      } catch (err: any) {
-        if (cancelled) return;
-        setTriageError(err?.message ?? '載入 triage_hierarchy（資料庫）失敗');
-      }
-    };
+  try {
+    const res = await fetch("http://localhost:8000/triage_hierarchy");
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const data: TriageRow[] = await res.json();
+    if (cancelled) return;
+    setTriageRows(data ?? []);
+  } catch (err: any) {
+    if (cancelled) return;
+    setTriageError(err?.message ?? '載入 triage_hierarchy（資料庫）失敗');
+  }
+};
 
     loadFromDb();
 

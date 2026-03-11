@@ -58,8 +58,10 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
 
     const loadFromDb = async () => {
       try {
-        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-        const res = await fetch(`${API_BASE_URL}/triage_hierarchy`);
+        // 直接寫死網址，跳過 import.meta.env
+        const targetUrl = "http://localhost:8000/triage_hierarchy";
+        const res = await fetch(targetUrl);
+
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
@@ -84,8 +86,12 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
 
     const loadCcFromDb = async () => {
       try {
-        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-        const res = await fetch(`${API_BASE_URL}/cc_with_counts`);
+        // 直接寫死網址，跳過 import.meta.env
+        const targetUrl = "http://localhost:8000/cc_with_counts";
+
+        console.log("🔗 正在連線至:", targetUrl);
+
+        const res = await fetch(targetUrl);
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
@@ -94,7 +100,6 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
         setCcRows(data ?? []);
       } catch {
         if (cancelled) return;
-        // 常見症狀資料庫查詢失敗時，維持 null，僅不顯示 header 快捷
         setCcRows(null);
       }
     };
