@@ -50,7 +50,7 @@ DB_PASS=
 DB_NAME=triage  (因為我的資料庫名稱是triage)
  
 ＃啟動後端伺服器
-uvicorn main:app --reload --port 8000
+(python -m)uvicorn main:app --reload --port 8000  (視情況如果開不了可以加入前面括號的python -m)
 （成功後會看到： Uvicorn running on http://127.0.0.1:8000）
 （API測試網址： http://localhost:8000/docs）
 -----------------------------------------------------------------------------
