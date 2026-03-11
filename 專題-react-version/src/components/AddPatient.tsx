@@ -1,6 +1,7 @@
 import { useState } from "react";
 
-// 用於傳輸病患資料到下一步驟的介面
+// 用於傳輸病患資料到下一步驟的介面 
+//只是測試
 export interface PatientData {
   name: string;
   idNumber: string;
