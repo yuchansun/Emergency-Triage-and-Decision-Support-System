@@ -47,6 +47,28 @@ function App() {
   const [patientSource, setPatientSource] = useState<string>('');
   const [majorIncident, setMajorIncident] = useState<string>('');
 
+  // === 新增：生命徵象 state（對應 Vitals.tsx 的 vitals props）===
+  const [vitals, setVitals] = useState({
+    temperature: '',
+    heartRate: '',
+    spo2: '',
+    respRate: '',
+    weight: '',
+    systolicBP: '',
+    diastolicBP: '',
+    bloodSugar: '',
+    bloodSugarLevel: null,
+    gcsEye: null,
+    gcsVerbal: null,
+    gcsMotor: null,
+    obHistory: null,
+    pastHistory: [],
+    drugAllergy: null,
+    painScore: null,
+    doNotTreat: '',
+    sentiment: null,
+  });
+
   // ----------------------------
   // 1️⃣ Login 頁面
   // ----------------------------
@@ -128,8 +150,11 @@ function App() {
                   onSubmitLevel={resetMainScreen} // 只重置資料，不改 stage
                   onOpenTriageReport={() => setStage("triageReport")} // 控制跳轉
                 />
-                <Vitals gender={patientData?.gender} />
-
+                <Vitals 
+                  gender={patientData?.gender}
+                  vitals={vitals}        // ← 新增：傳 vitals state
+                  setVitals={setVitals}  // ← 新增：傳 setVitals 函式
+                />
               </div>
             </div>
           </div>
