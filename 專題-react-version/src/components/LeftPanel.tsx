@@ -10,14 +10,14 @@ interface LeftPanelProps {
   onWorstDegreeChange: (degree: number | null) => void;
   onDirectToER: () => void;
   directToERSelected: boolean;
-  age?: number; // 病患年齡，用於成人/兒童規則切換
-
-  /**  
-   * chiefComplaint 組件變動時把資料回報給父層  
-   * 會包含 selectedRules 與補充文字，父層可用來打包送資料庫  
-   */
+  age?: number;
   onChiefComplaintChange?: (data: {
-    selectedRules: Record<string, { degree: number; judge: string }>;
+    selectedRules: Record<string, { 
+      degree: number; 
+      judge: string; 
+      rule_code: string;      // ← 加這個
+      symptom_name: string;   // ← 加這個
+    }>;
     supplementText: string;
   }) => void;
 }
