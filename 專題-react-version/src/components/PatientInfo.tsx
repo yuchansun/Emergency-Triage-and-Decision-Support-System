@@ -21,8 +21,10 @@ interface PatientInfoProps {
   setPatientSource: (s: string) => void;
   majorIncident: string;
   setMajorIncident: (s: string) => void;
-}
 
+  // ← 新增這個
+  onToccChange?: (toccData: ToccState) => void;
+}
 
 interface ToccState {
   travel: string;
@@ -36,8 +38,16 @@ interface ToccState {
   symptoms: string[];
 }
 
-
-const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patientSource, setPatientSource, majorIncident, setMajorIncident }) => {
+const PatientInfo: React.FC<PatientInfoProps> = ({
+  patient,
+  bed,
+  setBed,
+  patientSource,
+  setPatientSource,
+  majorIncident,
+  setMajorIncident,
+  onToccChange,  // ← 新增解構
+}) => {
 
   // ===== 標籤狀態 =====
   const [tags, setTags] = useState({
@@ -56,13 +66,13 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patient
 
   // 若 props 中帶入自訂文字，將其同步到 local state 以便顯示在輸入框
   useEffect(() => {
-    if (patientSource && !['急診','門診','住院','其他'].includes(patientSource)) {
+    if (patientSource && !['急診', '門診', '住院', '其他'].includes(patientSource)) {
       setLocalPatientSourceOther(patientSource);
     }
   }, [patientSource]);
 
   useEffect(() => {
-    if (majorIncident && !['馬太鞍溪堰塞湖溢流','明揚國際屏東廠火災','八仙樂園派對粉塵爆炸事故','其他'].includes(majorIncident)) {
+    if (majorIncident && !['馬太鞍溪堰塞湖溢流', '明揚國際屏東廠火災', '八仙樂園派對粉塵爆炸事故', '其他'].includes(majorIncident)) {
       setLocalMajorIncidentOther(majorIncident);
     }
   }, [majorIncident]);
@@ -213,20 +223,32 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patient
                       type="text"
                       placeholder="請輸入旅遊地區"
                       value={tocc.travel}
-                      onChange={(e) => setTocc({ ...tocc, travel: e.target.value })}
+                      onChange={(e) => {
+                        const newTocc = { ...tocc, travel: e.target.value };
+                        setTocc(newTocc);
+                        onToccChange?.(newTocc);
+                      }}
                       className="px-2 py-1 border rounded text-xs bg-gray-50 dark:bg-gray-800 dark:text-gray-200"
                     />
                     <div className="flex gap-2">
                       <input
                         type="date"
                         value={tocc.travelStart || ""}
-                        onChange={(e) => setTocc({ ...tocc, travelStart: e.target.value })}
+                        onChange={(e) => {
+                          const newTocc = { ...tocc, travelStart: e.target.value };
+                          setTocc(newTocc);
+                          onToccChange?.(newTocc);
+                        }}
                         className="px-2 py-1 border rounded text-xs bg-gray-50 dark:bg-gray-800 dark:text-gray-200"
                       />
                       <input
                         type="date"
                         value={tocc.travelEnd || ""}
-                        onChange={(e) => setTocc({ ...tocc, travelEnd: e.target.value })}
+                        onChange={(e) => {
+                          const newTocc = { ...tocc, travelEnd: e.target.value };
+                          setTocc(newTocc);
+                          onToccChange?.(newTocc);
+                        }}
                         className="px-2 py-1 border rounded text-xs bg-gray-50 dark:bg-gray-800 dark:text-gray-200"
                       />
                     </div>
@@ -237,7 +259,11 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patient
                     <label className="text-gray-600 dark:text-gray-300">職業史</label>
                     <select
                       value={tocc.occupation}
-                      onChange={(e) => setTocc({ ...tocc, occupation: e.target.value })}
+                      onChange={(e) => {
+                        const newTocc = { ...tocc, occupation: e.target.value };
+                        setTocc(newTocc);
+                        onToccChange?.(newTocc);
+                      }}
                       className="px-2 py-1 border rounded bg-gray-50 dark:bg-gray-800 dark:text-gray-200"
                     >
                       <option value="">請選擇</option>
@@ -252,7 +278,11 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patient
                         type="text"
                         placeholder="請輸入職業"
                         value={tocc.occupationOther || ""}
-                        onChange={(e) => setTocc({ ...tocc, occupationOther: e.target.value })}
+                        onChange={(e) => {
+                          const newTocc = { ...tocc, occupationOther: e.target.value };
+                          setTocc(newTocc);
+                          onToccChange?.(newTocc);
+                        }}
                         className="px-2 py-1 border rounded text-xs bg-gray-50 dark:bg-gray-800 dark:text-gray-200"
                       />
                     )}
@@ -269,11 +299,14 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patient
                             }`}
                           onClick={() => {
                             const current = tocc.contactItems || [];
+                            let newTocc;
                             if (current.includes(item)) {
-                              setTocc({ ...tocc, contactItems: current.filter((i) => i !== item) });
+                              newTocc = { ...tocc, contactItems: current.filter((i) => i !== item) };
                             } else {
-                              setTocc({ ...tocc, contactItems: [...current, item] });
+                              newTocc = { ...tocc, contactItems: [...current, item] };
                             }
+                            setTocc(newTocc);
+                            onToccChange?.(newTocc);
                           }}
                         >
                           <input
@@ -298,11 +331,14 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patient
                             }`}
                           onClick={() => {
                             const current = tocc.clusterItems || [];
+                            let newTocc;
                             if (current.includes(item)) {
-                              setTocc({ ...tocc, clusterItems: current.filter((i) => i !== item) });
+                              newTocc = { ...tocc, clusterItems: current.filter((i) => i !== item) };
                             } else {
-                              setTocc({ ...tocc, clusterItems: [...current, item] });
+                              newTocc = { ...tocc, clusterItems: [...current, item] };
                             }
+                            setTocc(newTocc);
+                            onToccChange?.(newTocc);
                           }}
                         >
                           <input
@@ -318,7 +354,11 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patient
                           type="text"
                           placeholder="請輸入群聚對象"
                           value={tocc.clusterOther || ""}
-                          onChange={(e) => setTocc({ ...tocc, clusterOther: e.target.value })}
+                          onChange={(e) => {
+                            const newTocc = { ...tocc, clusterOther: e.target.value };
+                            setTocc(newTocc);
+                            onToccChange?.(newTocc);
+                          }}
                           className="px-2 py-1 border rounded text-xs bg-gray-50 dark:bg-gray-800 dark:text-gray-200"
                         />
                       )}
@@ -336,11 +376,14 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patient
                             }`}
                           onClick={() => {
                             const current = tocc.symptoms || [];
+                            let newTocc;
                             if (current.includes(item)) {
-                              setTocc({ ...tocc, symptoms: current.filter((i) => i !== item) });
+                              newTocc = { ...tocc, symptoms: current.filter((i) => i !== item) };
                             } else {
-                              setTocc({ ...tocc, symptoms: [...current, item] });
+                              newTocc = { ...tocc, symptoms: [...current, item] };
                             }
+                            setTocc(newTocc);
+                            onToccChange?.(newTocc);
                           }}
                         >
                           <input
@@ -360,8 +403,8 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patient
                 <div className="flex justify-between mt-3">
                   <button
                     className="text-xs text-red-600 underline"
-                    onClick={() =>
-                      setTocc({
+                    onClick={() => {
+                      const resetTocc = {
                         travel: "",
                         travelStart: "",
                         travelEnd: "",
@@ -371,15 +414,20 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patient
                         clusterItems: [],
                         clusterOther: "",
                         symptoms: [],
-                      })
-                    }
+                      };
+                      setTocc(resetTocc);
+                      onToccChange?.(resetTocc);
+                    }}
                   >
                     重置
                   </button>
 
                   <button
                     className="text-xs bg-blue-500 text-white px-3 py-1 rounded"
-                    onClick={() => setShowTOCCOptions(false)}
+                    onClick={() => {
+                      setShowTOCCOptions(false);
+                      onToccChange?.(tocc); // ← 新增這行
+                    }}
                   >
                     確認
                   </button>
@@ -391,7 +439,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patient
 
           {/* 病患來源 */}
           <select
-            value={patientSource === '' || ['急診','門診','住院','其他'].includes(patientSource) ? patientSource : '其他'}
+            value={patientSource === '' || ['急診', '門診', '住院', '其他'].includes(patientSource) ? patientSource : '其他'}
             onChange={(e) => {
               const v = e.target.value;
               if (v === '其他') {
@@ -402,11 +450,10 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patient
                 setPatientSource(v);
               }
             }}
-            className={`px-2 py-0.5 rounded-lg text-xs font-medium transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-0 ${
-              patientSource && patientSource !== '其他'
-                ? 'bg-blue-500 text-white border border-transparent focus:ring-blue-400'
-                : 'bg-slate-100 text-slate-700 border border-slate-200 focus:ring-blue-300'
-            }`}
+            className={`px-2 py-0.5 rounded-lg text-xs font-medium transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-0 ${patientSource && patientSource !== '其他'
+              ? 'bg-blue-500 text-white border border-transparent focus:ring-blue-400'
+              : 'bg-slate-100 text-slate-700 border border-slate-200 focus:ring-blue-300'
+              }`}
           >
             <option value="">選擇病患來源</option>
             <option value="急診">急診</option>
@@ -416,7 +463,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patient
           </select>
 
           {/* 若來源為 '其他' 或為非預設選項時，顯示可編輯輸入欄 */}
-          {(patientSource === '其他' || (patientSource && !['急診','門診','住院','其他'].includes(patientSource))) && (
+          {(patientSource === '其他' || (patientSource && !['急診', '門診', '住院', '其他'].includes(patientSource))) && (
             <input
               type="text"
               value={patientSource === '其他' ? localPatientSourceOther : patientSource}
@@ -435,7 +482,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patient
 
           {/* 大傷應變 */}
           <select
-            value={majorIncident === '' || ['馬太鞍溪堰塞湖溢流','明揚國際屏東廠火災','八仙樂園派對粉塵爆炸事故','其他'].includes(majorIncident) ? majorIncident : '其他'}
+            value={majorIncident === '' || ['馬太鞍溪堰塞湖溢流', '明揚國際屏東廠火災', '八仙樂園派對粉塵爆炸事故', '其他'].includes(majorIncident) ? majorIncident : '其他'}
             onChange={(e) => {
               const v = e.target.value;
               if (v === '其他') {
@@ -445,11 +492,10 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patient
                 setMajorIncident(v);
               }
             }}
-            className={`px-2 py-0.5 rounded-lg text-xs font-medium transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-0 ${
-              majorIncident && majorIncident !== '其他'
-                ? 'bg-red-500 text-white border border-transparent focus:ring-red-400'
-                : 'bg-slate-100 text-slate-700 border border-slate-200 focus:ring-red-300'
-            }`}
+            className={`px-2 py-0.5 rounded-lg text-xs font-medium transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-0 ${majorIncident && majorIncident !== '其他'
+              ? 'bg-red-500 text-white border border-transparent focus:ring-red-400'
+              : 'bg-slate-100 text-slate-700 border border-slate-200 focus:ring-red-300'
+              }`}
           >
             <option value="">選擇大傷</option>
             <option value="馬太鞍溪堰塞湖溢流">馬太鞍溪堰塞湖溢流</option>
@@ -459,7 +505,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({ patient, bed, setBed, patient
           </select>
 
           {/* 若選其他或自訂文字，顯示輸入欄 */}
-          {(majorIncident === '其他' || (majorIncident && !['馬太鞍溪堰塞湖溢流','明揚國際屏東廠火災','八仙樂園派對粉塵爆炸事故','其他'].includes(majorIncident))) && (
+          {(majorIncident === '其他' || (majorIncident && !['馬太鞍溪堰塞湖溢流', '明揚國際屏東廠火災', '八仙樂園派對粉塵爆炸事故', '其他'].includes(majorIncident))) && (
             <input
               type="text"
               value={majorIncident === '其他' ? localMajorIncidentOther : majorIncident}

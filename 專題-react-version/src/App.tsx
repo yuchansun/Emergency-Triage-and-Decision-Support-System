@@ -10,11 +10,8 @@ import SystemRecommendation from './components/SystemRecommendation';
 import EmergencyTriageReport from './components/EmergencyTriageReport';
 
 function App() {
-
-  // 管理目前系統在哪一頁：login → addpatient → main
+  // === 所有 state 定義（已有）===
   const [stage, setStage] = useState<"login" | "addpatient" | "main" | "triageReport">("login");
-
-  // 症狀與主訴
   const [selectedSymptoms, setSelectedSymptoms] = useState<Set<string>>(new Set());
   const [inputText, setInputText] = useState<string>('');
   const [worstSelectedDegree, setWorstSelectedDegree] = useState<number | null>(null);
@@ -68,6 +65,146 @@ function App() {
     doNotTreat: '',
     sentiment: null,
   });
+
+  // === 新增：ChiefComplaint 的資料 ===
+  const [chiefComplaintData, setChiefComplaintData] = useState({
+    selectedRules: {} as Record<string, { degree: number; judge: string }>,
+    supplementText: '',
+  });
+
+  // === 新增：TOCC 資料 state ===
+  const [tocc, setTocc] = useState<ToccState>({
+    travel: "",
+    travelStart: "",
+    travelEnd: "",
+    occupation: "",
+    occupationOther: "",
+    contactItems: [],
+    clusterItems: [],
+    clusterOther: "",
+    symptoms: [],
+  });
+
+  // === 新增：visit_time（看診時間）===
+  const [visitTime, setVisitTime] = useState<string>(new Date().toISOString());
+
+  // 在最上面加 interface（如果還沒有的話）
+  interface ToccState {
+    travel: string;
+    travelStart: string;
+    travelEnd: string;
+    occupation: string;
+    occupationOther: string;
+    contactItems: string[];
+    clusterItems: string[];
+    clusterOther: string;
+    symptoms: string[];
+  }
+
+  // === 新增：handleConfirmAndSaveTriage ===
+  const handleConfirmAndSaveTriage = async (triageData: any) => {
+    const fullPayload = {
+      // PatientInfo 的資訊
+      bed,
+      patientSource,
+      majorIncident,
+      visitTime,
+
+      // TOCC 資訊
+      tocc_travel: tocc.travel,
+      tocc_travel_start: tocc.travelStart,
+      tocc_travel_end: tocc.travelEnd,
+      tocc_occupation: tocc.occupation,
+      tocc_occupation_other: tocc.occupationOther,
+      tocc_contact_items: tocc.contactItems.join(', '),
+      tocc_cluster_items: tocc.clusterItems.join(', '),
+      tocc_cluster_other: tocc.clusterOther,
+      tocc_symptoms: tocc.symptoms.join(', '),
+
+      // SystemRecommendation 的資料
+      selectedSymptoms: triageData.selectedSymptoms,
+      inputText: triageData.inputText,
+      worstSelectedDegree: triageData.worstSelectedDegree,
+      selectedLevel: triageData.selectedLevel,
+
+      // ChiefComplaint 的資料
+      result: {
+        rule_code: Object.values(chiefComplaintData.selectedRules)
+          .map((r: any) => r.judge)
+          .join(';'),
+        notes: chiefComplaintData.supplementText,
+      },
+
+      // Vitals 的資料
+      vitals: {
+        temperature: vitals.temperature ? parseFloat(vitals.temperature) : null,
+        heart_rate: vitals.heartRate ? parseInt(vitals.heartRate) : null,
+        spo2: vitals.spo2 ? parseInt(vitals.spo2) : null,
+        respiratory_rate: vitals.respRate ? parseInt(vitals.respRate) : null,
+        weight: vitals.weight ? parseFloat(vitals.weight) : null,
+        blood_pressure_sys: vitals.systolicBP ? parseInt(vitals.systolicBP) : null,
+        blood_pressure_dia: vitals.diastolicBP ? parseInt(vitals.diastolicBP) : null,
+        blood_sugar: vitals.bloodSugar ? parseInt(vitals.bloodSugar) : null,
+        gcs_eye: vitals.gcsEye ? parseInt(vitals.gcsEye) : null,
+        gcs_verbal: vitals.gcsVerbal ? parseInt(vitals.gcsVerbal) : null,
+        gcs_motor: vitals.gcsMotor ? parseInt(vitals.gcsMotor) : null,
+        past_medical_history: vitals.pastHistory.join(', '),
+        do_not_treat: vitals.doNotTreat,
+        allergy: vitals.drugAllergy,
+        pain_score: vitals.painScore,
+        sentiment: vitals.sentiment,
+      },
+
+      timestamp: new Date().toISOString(),
+    };
+
+    // ========== 📝 開始：調試紀錄 ==========
+    console.log('🚀 [開始發送檢傷資料]');
+    console.log('📦 完整 payload:', fullPayload);
+    console.log('🏥 PatientInfo:', {
+      bed,
+      patientSource,
+      majorIncident,
+      visitTime,
+    });
+    console.log('🏷️ ChiefComplaint:', chiefComplaintData);
+    console.log('❤️ Vitals:', fullPayload.vitals);
+    console.log('🔢 SystemRecommendation:', {
+      selectedSymptoms: triageData.selectedSymptoms,
+      inputText: triageData.inputText,
+      worstSelectedDegree: triageData.worstSelectedDegree,
+      selectedLevel: triageData.selectedLevel,
+    });
+    // ========== 📝 結束：調試紀錄 ==========
+
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+      console.log('🌐 API_BASE_URL:', API_BASE_URL);
+      console.log('📤 發送到:', `${API_BASE_URL}/triagesave`);
+
+      const res = await fetch(`${API_BASE_URL}/triagesave`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fullPayload),
+      });
+
+      console.log('✅ 回應狀態碼:', res.status);
+      console.log('✅ 回應 OK:', res.ok);
+
+      if (res.ok) {
+        const responseData = await res.json();
+        console.log('✅ 後端回應:', responseData);
+        alert(`檢傷資料已儲存，ID: ${responseData.triageId}`);
+      } else {
+        const errorData = await res.json();
+        console.error('❌ 後端錯誤:', errorData);
+        alert(`儲存失敗: ${errorData.detail || '未知錯誤'}`);
+      }
+    } catch (error) {
+      console.error('❌ 網路錯誤:', error);
+      alert('網路錯誤');
+    }
+  };
 
   // ----------------------------
   // 1️⃣ Login 頁面
@@ -124,6 +261,7 @@ function App() {
                 setPatientSource={setPatientSource}
                 majorIncident={majorIncident}
                 setMajorIncident={setMajorIncident}
+                onToccChange={(toccData) => setTocc(toccData)}  // ← 新增這行
               />
             </div>
 
@@ -137,6 +275,7 @@ function App() {
                 onDirectToER={handleDirectToER}
                 directToERSelected={directToERSelected}
                 age={patientData?.age}
+                onChiefComplaintChange={(data) => setChiefComplaintData(data)}  // ← 新增
               />
             </div>
 
@@ -147,10 +286,11 @@ function App() {
                   inputText={inputText}
                   worstSelectedDegree={worstSelectedDegree}
                   forceLevel1={forceLevel1}
-                  onSubmitLevel={resetMainScreen} // 只重置資料，不改 stage
-                  onOpenTriageReport={() => setStage("triageReport")} // 控制跳轉
+                  onSubmitLevel={resetMainScreen}
+                  onOpenTriageReport={() => setStage("triageReport")}
+                  onConfirmAndSave={handleConfirmAndSaveTriage}  // ← 新增這行
                 />
-                <Vitals 
+                <Vitals
                   gender={patientData?.gender}
                   vitals={vitals}        // ← 新增：傳 vitals state
                   setVitals={setVitals}  // ← 新增：傳 setVitals 函式

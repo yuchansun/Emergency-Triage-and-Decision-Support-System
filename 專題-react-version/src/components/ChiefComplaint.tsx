@@ -10,10 +10,26 @@ interface ChiefComplaintProps {
   onWorstDegreeChange: (degree: number | null) => void;
   onDirectToER: () => void;
   directToERSelected: boolean;
-  age?: number; // 病患年齡，用於成人(A)/兒童(P)規則切換
+  age?: number;
+  onChiefComplaintChange?: (data: {
+    selectedRules: Record<string, { degree: number; judge: string }>;
+    supplementText: string;
+  }) => void;  // ← 新增：傳資料回 App
 }
 
-const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, activeTab, setActiveTab, onWorstDegreeChange, onDirectToER, directToERSelected, age }) => {
+const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ 
+  selectedSymptoms, 
+  setSelectedSymptoms, 
+  inputText, 
+  setInputText, 
+  activeTab, 
+  setActiveTab, 
+  onWorstDegreeChange, 
+  onDirectToER, 
+  directToERSelected, 
+  age,
+  onChiefComplaintChange,  // ← 新增解構
+}) => {
   interface TriageRow {
     category: string;
     system_code: string;
@@ -680,6 +696,14 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ selectedSymptoms, setSe
         return { border: 'border-blue-500', bg: 'bg-blue-500/10 hover:bg-blue-500/20', text: 'text-blue-500' };
     }
   };
+
+  // 每當 selectedRules 或 supplementText 變化時，傳回 App
+  useEffect(() => {
+    onChiefComplaintChange?.({
+      selectedRules,
+      supplementText,
+    });
+  }, [selectedRules, supplementText, onChiefComplaintChange]);
 
   return (
     <div className="bg-content-light dark:bg-content-dark p-6 rounded-2xl shadow-lg flex flex-col">
