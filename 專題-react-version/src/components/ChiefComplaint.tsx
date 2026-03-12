@@ -7,14 +7,19 @@ interface ChiefComplaintProps {
   setInputText: React.Dispatch<React.SetStateAction<string>>;
   activeTab: 't' | 'a';
   setActiveTab: React.Dispatch<React.SetStateAction<'t' | 'a'>>;
-  onWorstDegreeChange: (degree: number | null) => void;
-  onDirectToER: () => void;
-  directToERSelected: boolean;
+  onWorstDegreeChange?: (degree: number | null) => void;
+  onDirectToER?: () => void;
+  directToERSelected?: boolean;
   age?: number;
   onChiefComplaintChange?: (data: {
-    selectedRules: Record<string, { degree: number; judge: string }>;
+    selectedRules: Record<string, { 
+      degree: number; 
+      judge: string; 
+      rule_code: string;      // ← 加這個
+      symptom_name: string;   // ← 加這個
+    }>;
     supplementText: string;
-  }) => void;  // ← 新增：傳資料回 App
+  }) => void;
 }
 
 const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ 
@@ -201,25 +206,23 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
 
   // 每個症狀對應的所有 TTAS 判斷依據 (級數 + 說明)
   const symptomCriteriaIndex = useMemo(() => {
-    const map = new Map<string, { degree: number; judge: string }[]>();
+    const map = new Map<string, { degree: number; judge: string; rule_code: string }[]>();  // ← 加 rule_code
     if (!triageRows) return map;
 
     const isAdult = age !== undefined ? age >= 18 : true;
 
     for (const row of triageRows) {
-      // 依 system_code 開頭決定成人/兒童規則：A*=成人、P*=兒童，其餘(T*/E*)一律保留
       if (row.system_code.startsWith('A') && !isAdult) continue;
       if (row.system_code.startsWith('P') && isAdult) continue;
 
       const degree = parseInt(row.ttas_degree, 10);
       if (!Number.isFinite(degree) || !row.judge_name) continue;
       const list = map.get(row.symptom_name) ?? [];
-      if (!list.some(item => item.degree === degree && item.judge === row.judge_name)) {
-        list.push({ degree, judge: row.judge_name });
+      if (!list.some(item => item.rule_code === row.rule_code)) {  // ← 改判重複條件
+        list.push({ degree, judge: row.judge_name, rule_code: row.rule_code });  // ← 加 rule_code
       }
       map.set(row.symptom_name, list);
     }
-    // 依級數排序，低級數(較嚴重)在前
     for (const list of map.values()) {
       list.sort((a, b) => a.degree - b.degree);
     }
@@ -511,7 +514,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
         return;
       }
 
-      // 防止重複執行：檢查是否已經處理過（只在真正結束錄音時生效）
+      // 防止重複執行：檢查是否已已经處理過（只在真正結束錄音時生效）
       if (voiceProcessedRef.current) {
         console.log('[VOICE] onend already processed, skip');
         return;
@@ -622,10 +625,13 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
 
   // 將選中的症狀轉換為可讀的標籤與其判斷規則
   const symptomTags = useMemo(() => {
-    const map = new Map<string, { display: string; degrees: number | undefined; criteria: { degree: number; judge: string }[] }>();
+    const map = new Map<string, { 
+      display: string; 
+      degrees: number | undefined; 
+      criteria: { degree: number; judge: string; rule_code: string }[]  // ← 加 rule_code
+    }>();
 
     for (const key of selectedSymptoms) {
-      // 移除前綴（如 't:', 'emerg:', 'manual:' 等）
       const cleanKey = key.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
       const existing = map.get(cleanKey);
       const degree = symptomDegreeIndex.get(cleanKey);
@@ -639,7 +645,12 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     return Array.from(map.values());
   }, [selectedSymptoms, symptomDegreeIndex, symptomCriteriaIndex]);
 
-  const [selectedRules, setSelectedRules] = useState<Record<string, { degree: number; judge: string }>>({});
+  const [selectedRules, setSelectedRules] = useState<Record<string, { 
+    degree: number; 
+    judge: string;
+    rule_code: string;      // ← 新增
+    symptom_name: string;   // ← 新增
+}>>({});
 
   useEffect(() => {
     // 根據當前已選症狀，自動處理部分規則：
@@ -648,22 +659,24 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     const tagNames = new Set(symptomTags.map(t => t.display));
 
     setSelectedRules(prev => {
-      const next: Record<string, { degree: number; judge: string }> = {};
+      const next: Record<string, { degree: number; judge: string; rule_code: string; symptom_name: string }> = {};
 
-      // 保留仍存在於 symptomTags 裡的規則
-      for (const name of tagNames) {
-        const existing = prev[name];
-        if (existing) {
-          next[name] = existing;
-          continue;
+      for (const [ruleCode, ruleData] of Object.entries(prev)) {
+        if (tagNames.has(ruleData.symptom_name)) {  // ← 改用 symptom_name 判斷
+          next[ruleCode] = ruleData;
         }
+      }
 
-        // 對「心跳停止」自動帶入唯一一條規則
-        if (name === '心跳停止') {
-          const criteria = symptomCriteriaIndex.get(name) ?? [];
-          if (criteria.length === 1) {
-            next[name] = { degree: criteria[0].degree, judge: criteria[0].judge };
-          }
+      // 對「心跳停止」自動帶入唯一一條規則
+      if (tagNames.has('心跳停止') && !Object.values(next).some(r => r.symptom_name === '心跳停止')) {
+        const criteria = symptomCriteriaIndex.get('心跳停止') ?? [];
+        if (criteria.length === 1) {
+          next[criteria[0].rule_code] = {
+            degree: criteria[0].degree,
+            judge: criteria[0].judge,
+            rule_code: criteria[0].rule_code,
+            symptom_name: '心跳停止',
+          };
         }
       }
 
@@ -678,7 +691,9 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
   }, [selectedRules]);
 
   useEffect(() => {
-    onWorstDegreeChange(worstSelectedDegree);
+    if (onWorstDegreeChange) {
+      onWorstDegreeChange(worstSelectedDegree);
+    }
   }, [worstSelectedDegree, onWorstDegreeChange]);
 
   const getRuleColors = (degree: number) => {
@@ -699,10 +714,14 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
 
   // 每當 selectedRules 或 supplementText 變化時，傳回 App
   useEffect(() => {
-    onChiefComplaintChange?.({
-      selectedRules,
-      supplementText,
-    });
+    const timer = setTimeout(() => {
+      onChiefComplaintChange?.({
+        selectedRules,
+        supplementText,
+      });
+    }, 100); // ← 100ms debounce
+
+    return () => clearTimeout(timer);
   }, [selectedRules, supplementText, onChiefComplaintChange]);
 
   return (
@@ -933,27 +952,25 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
                   <div className="flex flex-wrap gap-2">
                     {criteria.map(item => {
                       const colors = getRuleColors(item.degree);
-                      const current = selectedRules[display];
-                      const isSelected =
-                        !!current &&
-                        current.degree === item.degree &&
-                        current.judge === item.judge;
+                      // ← 把多餘的 current 那行刪掉
+                      const isSelected = !!selectedRules[item.rule_code];
                       return (
                         <button
-                          key={`${display}-${item.degree}-${item.judge}`}
+                          key={item.rule_code}  // ← 改成 rule_code，比較穩定
                           type="button"
                           onClick={() =>
                             setSelectedRules(prev => {
-                              const existing = prev[display];
+                              const existing = prev[item.rule_code];
                               const next = { ...prev };
-                              if (
-                                existing &&
-                                existing.degree === item.degree &&
-                                existing.judge === item.judge
-                              ) {
-                                delete next[display];
+                              if (existing) {
+                                delete next[item.rule_code];
                               } else {
-                                next[display] = { degree: item.degree, judge: item.judge };
+                                next[item.rule_code] = {
+                                  degree: item.degree,
+                                  judge: item.judge,
+                                  rule_code: item.rule_code,
+                                  symptom_name: display,
+                                };
                               }
                               return next;
                             })

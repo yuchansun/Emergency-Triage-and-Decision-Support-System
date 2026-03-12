@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import './App.css';
 import PatientInfo from './components/PatientInfo';
 import LeftPanel from './components/LeftPanel';
@@ -68,9 +68,16 @@ function App() {
 
   // === 新增：ChiefComplaint 的資料 ===
   const [chiefComplaintData, setChiefComplaintData] = useState({
-    selectedRules: {} as Record<string, { degree: number; judge: string }>,
+    selectedRules: {} as Record<string, { degree: number; judge: string; rule_code: string; symptom_name: string }>,
     supplementText: '',
   });
+
+  const handleChiefComplaintChange = useCallback((data: {
+    selectedRules: Record<string, { degree: number; judge: string; rule_code: string; symptom_name: string }>;
+    supplementText: string;
+  }) => {
+    setChiefComplaintData(data);
+  }, []);
 
   // === 新增：TOCC 資料 state ===
   const [tocc, setTocc] = useState<ToccState>({
@@ -129,9 +136,7 @@ function App() {
 
       // ChiefComplaint 的資料
       result: {
-        rule_code: Object.values(chiefComplaintData.selectedRules)
-          .map((r: any) => r.judge)
-          .join(';'),
+        rule_code: Object.keys(chiefComplaintData.selectedRules).join(';'),
         notes: chiefComplaintData.supplementText,
       },
 
@@ -168,6 +173,8 @@ function App() {
       visitTime,
     });
     console.log('🏷️ ChiefComplaint:', chiefComplaintData);
+    console.log('🏷️ selectedRules keys:', Object.keys(chiefComplaintData.selectedRules));
+    console.log('🏷️ result.rule_code:', Object.keys(chiefComplaintData.selectedRules).join(';'));
     console.log('❤️ Vitals:', fullPayload.vitals);
     console.log('🔢 SystemRecommendation:', {
       selectedSymptoms: triageData.selectedSymptoms,
@@ -275,7 +282,7 @@ function App() {
                 onDirectToER={handleDirectToER}
                 directToERSelected={directToERSelected}
                 age={patientData?.age}
-                onChiefComplaintChange={(data) => setChiefComplaintData(data)}  // ← 新增
+                onChiefComplaintChange={handleChiefComplaintChange}  // ← 修改這行
               />
             </div>
 
