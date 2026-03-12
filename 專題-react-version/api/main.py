@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers.counts import router as counts_router
 from routers.triagehierarchy import router as triage_router
+from routers.triagesave import router as triage_save_router  # ← 新增
 
 app = FastAPI()
 
@@ -18,3 +19,4 @@ def read_root():
 
 app.include_router(counts_router)
 app.include_router(triage_router)
+app.include_router(triage_save_router)  # ← 新增

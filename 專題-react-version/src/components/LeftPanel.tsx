@@ -11,9 +11,18 @@ interface LeftPanelProps {
   onDirectToER: () => void;
   directToERSelected: boolean;
   age?: number; // 病患年齡，用於成人/兒童規則切換
+
+  /**  
+   * chiefComplaint 組件變動時把資料回報給父層  
+   * 會包含 selectedRules 與補充文字，父層可用來打包送資料庫  
+   */
+  onChiefComplaintChange?: (data: {
+    selectedRules: Record<string, { degree: number; judge: string }>;
+    supplementText: string;
+  }) => void;
 }
 
-const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, onWorstDegreeChange, onDirectToER, directToERSelected, age }) => {
+const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, onWorstDegreeChange, onDirectToER, directToERSelected, age, onChiefComplaintChange }) => {
   const [activeTab, setActiveTab] = useState<'t' | 'a'>('t');
 
   return (
@@ -29,6 +38,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymp
         onDirectToER={onDirectToER}
         directToERSelected={directToERSelected}
         age={age}
+        onChiefComplaintChange={onChiefComplaintChange}
       />
       <SymptomSelection
         selectedSymptoms={selectedSymptoms}
