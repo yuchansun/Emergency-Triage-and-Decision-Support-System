@@ -2,7 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers.counts import router as counts_router
 from routers.triagehierarchy import router as triage_router
-from routers.triagesave import router as triage_save_router  # ← 新增
+from routers.triagesave import router as triage_save_router 
+from routers.patients import router as patient_router
+from routers.login import router as login_router  # 1. 新增導入
 
 app = FastAPI()
 
@@ -17,6 +19,11 @@ app.add_middleware(
 def read_root():
     return {"message": "FastAPI is running"}
 
+app.include_router(login_router)
+app.include_router(patient_router)
 app.include_router(counts_router)
 app.include_router(triage_router)
-app.include_router(triage_save_router)  # ← 新增
+app.include_router(triage_save_router)
+  # 2. 註冊登入路由
+
+# 如果你按照上面的 prefix 設定，API 路徑會是: /auth/login

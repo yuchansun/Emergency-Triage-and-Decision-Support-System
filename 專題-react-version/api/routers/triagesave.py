@@ -8,9 +8,17 @@ import secrets
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-def generate_medical_number(patient_id: int | None) -> str:
+def generate_medical_number(patient_id: str | None) -> str:
     date_part = datetime.now().strftime("%Y%m%d")
-    pid_part = f"{patient_id:06d}" if patient_id else "000000"
+    
+    # 處理 patient_id，如果是字串就取最後 6 位，如果不夠就補 0
+    if patient_id:
+        # 移除可能非數字的字元，只留數字部分來補零，或者直接取後六位
+        clean_id = str(patient_id).replace("P", "") 
+        pid_part = clean_id.zfill(6)[-6:] 
+    else:
+        pid_part = "000000"
+        
     rand_part = secrets.token_hex(2).upper()
     return f"MRN-{date_part}-{pid_part}-{rand_part}"
 
