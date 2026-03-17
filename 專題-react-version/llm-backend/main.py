@@ -5,23 +5,31 @@ import json
 import os
 import requests
 from database import fetch_all
+from rag_pipeline import rag_pipeline
+from knowledge_base import knowledge_base
 
 app = FastAPI()
 def call_local_llm(prompt: str):
-
-    url = "http://localhost:11434/api/generate"
-
-    payload = {
-        "model": "llama3",
-        "prompt": prompt,
-        "stream": False
-    }
-
-    response = requests.post(url, json=payload)
-
-    result = response.json()
-
-    return result.get("response", "")
+    try:
+        url = "http://localhost:11434/api/generate"
+        
+        payload = {
+            "model": "llama3",
+            "prompt": prompt,
+            "stream": False
+        }
+        
+        response = requests.post(url, json=payload, timeout=30)
+        response.raise_for_status()
+        
+        result = response.json()
+        return result.get("response", "")
+    except requests.exceptions.RequestException as e:
+        print(f"❌ LLM API 呼叫失敗: {e}")
+        return ""
+    except Exception as e:
+        print(f"❌ LLM 處理失敗: {e}")
+        return ""
 
 app.add_middleware(
     CORSMiddleware,
@@ -56,28 +64,57 @@ async def summarize_cc(body: SummarizeRequest):
     raw = body.text or ""
 
     try:
+        # 使用 RAG 增強的 prompt
+        enhanced_prompt = rag_pipeline.enhance_symptom_summary(raw)
+        summary = call_local_llm(enhanced_prompt).strip()
         
-        prompt = (
-            "你是一位急診分級護理師的助手。現在有一段由病患或家屬口述的原始主訴，"
-            "內容可能冗長、重複或不夠有結構。請你從這段原始主訴中，整理出『主要症狀關鍵詞』，"
-            "例如：頭痛、頭暈、全身不適、發燒、胸痛、噁心嘔吐等。"
-            "請只輸出症狀關鍵詞本身，使用頓號（、）分隔，例如：『頭痛、頭暈、全身不適』，"
-            "不要加上『患者主訴』或任何其他說明句子，也不要加入時間、原因或推論。"
-            "若原始主訴中沒有明確症狀，則盡量從語意中推測一到兩個最可能的症狀關鍵詞即可。\n\n"
-            "嚴禁回傳原始內容或其長句，即使你不確定。\n"
-            "原始主訴：" + raw + "\n\n症狀關鍵詞："
-        )
-        summary = call_local_llm(prompt).strip()
-
-        # 若模型回傳空字串，退回原文作為保底，避免前端出現空白主訴。
+        # 後處理：統一分隔符為頓號
+        if summary:
+            # 將各種分隔符統一為頓號
+            summary = summary.replace('•', '、')  # 點點
+            summary = summary.replace('·', '、')  # 中間點
+            summary = summary.replace(',', '、')  # 逗號
+            summary = summary.replace('，', '、')  # 全形逗號
+            summary = summary.replace(' ', '')      # 移除空格
+            # 移除重複的頓號
+            while '、、' in summary:
+                summary = summary.replace('、、', '、')
+        
+        # 若模型回傳空字串，退回原文作為保底
         if not summary:
             summary = raw
     except Exception as e:
         print("LLM error:", e)
-        # 出錯時無法取得真正摘要，退回原文作為保底。
         summary = raw
 
     return SummarizeResponse(summary=summary)
+# @app.post("/api/summarize-chief-complaint", response_model=SummarizeResponse)
+# async def summarize_cc(body: SummarizeRequest):
+#     raw = body.text or ""
+
+#     try:
+        
+#         prompt = (
+#             "你是一位急診分級護理師的助手。現在有一段由病患或家屬口述的原始主訴，"
+#             "內容可能冗長、重複或不夠有結構。請你從這段原始主訴中，整理出『主要症狀關鍵詞』，"
+#             "例如：頭痛、頭暈、全身不適、發燒、胸痛、噁心嘔吐等。"
+#             "請只輸出症狀關鍵詞本身，使用頓號（、）分隔，例如：『頭痛、頭暈、全身不適』，"
+#             "不要加上『患者主訴』或任何其他說明句子，也不要加入時間、原因或推論。"
+#             "若原始主訴中沒有明確症狀，則盡量從語意中推測一到兩個最可能的症狀關鍵詞即可。\n\n"
+#             "嚴禁回傳原始內容或其長句，即使你不確定。\n"
+#             "原始主訴：" + raw + "\n\n症狀關鍵詞："
+#         )
+#         summary = call_local_llm(prompt).strip()
+
+#         # 若模型回傳空字串，退回原文作為保底，避免前端出現空白主訴。
+#         if not summary:
+#             summary = raw
+#     except Exception as e:
+#         print("LLM error:", e)
+#         # 出錯時無法取得真正摘要，退回原文作為保底。
+#         summary = raw
+
+#     return SummarizeResponse(summary=summary)
 
 
 @app.post("/api/recommend-symptoms", response_model=RecommendSymptomsResponse)
@@ -105,7 +142,7 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
             f"請你從候選清單中選出 1 到 {max_results} 個最適合的症狀。"\
             "如果候選清單裡沒有跟主訴明顯相關的症狀，請回傳空的 JSON 陣列 []，"\
             "不要勉強選一個不相干的診斷。"\
-            "請只輸出 JSON 陣列，不要加任何多餘說明。範例：\n"\
+            "請嚴格只輸出 JSON 陣列格式，不要加任何解釋文字。範例：\n"\
             "[\"頭痛\", \"胸痛\"]"
         )
 
@@ -133,6 +170,36 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
                     data = json.loads(bracket_part)
                 except Exception as parse_err2:
                     print("LLM recommend bracket parse error:", parse_err2, "bracket_part=", bracket_part)
+        
+        # 第三次嘗試：處理 Python set 格式 {"item1", "item2"}
+        if data is None:
+            # 尋找 { ... } 格式
+            start = raw.find("{")
+            end = raw.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                set_part = raw[start : end + 1]
+                try:
+                    # 轉換 Python set 格式為 JSON 陣列
+                    set_content = set_part[1:-1]  # 移除 { }
+                    items = [item.strip().strip('"').strip("'") for item in set_content.split(",")]
+                    # 過濾空項目
+                    data = [item for item in items if item]
+                except Exception as parse_err3:
+                    print("LLM recommend set parse error:", parse_err3, "set_part=", set_part)
+        
+        # 第四次嘗試：處理純文字清單
+        if data is None:
+            # 如果回傳的是純文字，嘗試按行或逗號分割
+            lines = raw.split('\n')
+            items = []
+            for line in lines:
+                line = line.strip()
+                # 移除編號和符號
+                line = line.lstrip('0123456789.-* ')
+                if line and line in candidates:
+                    items.append(line)
+            if items:
+                data = items
 
         if isinstance(data, list):
             recommended = [str(x) for x in data]
@@ -157,7 +224,7 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
         print("LLM recommend error:", e)
         return RecommendSymptomsResponse(recommended_symptoms=[])
 
-# 新增一個 API，用來抓取那 5 個隨機病患
+# 新增一個 API，用來抓取那 5 個隨機病患 (誒這是啥呀)
 @app.get("/api/patients")
 async def get_patients():
     query = "SELECT patient_id, name, id_number, birth_date, medical_number, gender FROM patients"
@@ -167,3 +234,53 @@ async def get_patients():
         return {"message": "目前沒有病患資料或連線失敗"}
             
     return patients
+
+# 初始化知識庫（只在啟動時執行一次）
+@app.on_event("startup")
+async def startup_event():
+    print("🚀 初始化 RAG 知識庫...")
+    knowledge_base.initialize_knowledge_base()
+
+class RAGSearchRequest(BaseModel):
+    query: str
+    category: str = None
+    n_results: int = 5
+
+class RAGSearchResponse(BaseModel):
+    results: list[dict]
+
+@app.post("/api/rag-search", response_model=RAGSearchResponse)
+async def rag_search(body: RAGSearchRequest):
+    """RAG 知識搜尋 API"""
+    try:
+        results = rag_pipeline.retrieve_relevant_knowledge(
+            body.query, 
+            body.category, 
+            body.n_results
+        )
+        return RAGSearchResponse(results=results)
+    except Exception as e:
+        print("RAG search error:", e)
+        return RAGSearchResponse(results=[])
+
+class TriageAdviceRequest(BaseModel):
+    symptoms: list[str]
+    vitals: dict = None
+
+class TriageAdviceResponse(BaseModel):
+    advice: str
+
+@app.post("/api/triage-advice", response_model=TriageAdviceResponse)
+async def triage_advice(body: TriageAdviceRequest):
+    """RAG 增強檢傷建議 API"""
+    try:
+        enhanced_prompt = rag_pipeline.enhance_triage_recommendation(
+            body.symptoms, 
+            body.vitals
+        )
+        advice = call_local_llm(enhanced_prompt).strip()
+        return TriageAdviceResponse(advice=advice)
+    except Exception as e:
+        print("Triage advice error:", e)
+        return TriageAdviceResponse(advice="系統暫時無法提供建議")
+
