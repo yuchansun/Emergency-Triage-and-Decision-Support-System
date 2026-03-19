@@ -88,7 +88,7 @@ export default function EmergencyTriageReport({ onBack }: Props) {
 
       <div className="bg-white border rounded">
         <Editor
-          apiKey="你的_api_key"
+          apiKey="o0kc5i3tv655cpqx4e0to83ci2l0ic1ep5pw0f9flef12vyr"
           value={content}
           onEditorChange={(newValue) => setContent(newValue)}
           init={{
