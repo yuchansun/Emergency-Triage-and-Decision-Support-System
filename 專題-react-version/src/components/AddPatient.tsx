@@ -1,20 +1,13 @@
 import { useState } from "react";
 
-// 用於傳輸病患資料到下一步驟的介面 
-//只是測試
 export interface PatientData {
   name: string;
   idNumber: string;
   birthDate: string;
-  medicalNumber: string;
+  triage_id: string; 
   gender: "男" | "女" | "不詳" | "";
   icCard: boolean;
-  search: boolean;
-  fallingPatient: boolean;
-  idUnknown: boolean;
-  birthUnknown: boolean;
-  tsmcTransfer: boolean;
-  age?: number;
+  patient_id?: string; 
 }
 
 export default function AddPatient({
@@ -25,263 +18,170 @@ export default function AddPatient({
   const [name, setName] = useState("");
   const [idNumber, setIdNumber] = useState("");
   const [birthDate, setBirthDate] = useState("");
-  const [medicalNumber, setMedicalNumber] = useState("");
   const [gender, setGender] = useState<"男" | "女" | "不詳" | "">("");
   const [icCard, setIcCard] = useState(false);
-  const [search, setSearch] = useState(false);
-  const [fallingPatient, setFallingPatient] = useState(false);
-  const [idUnknown, setIdUnknown] = useState(false);
-  const [birthUnknown, setBirthUnknown] = useState(false);
-  const [tsmcTransfer, setTsmcTransfer] = useState(false);
-  const [age, setAge] = useState<number | null>(null);
+  const [existingPatientId, setExistingPatientId] = useState<string | null>(null);
 
-  // -------------------- IC卡功能 --------------------
-  const handleReadICCard = async () => {
+  // 1. 自動搜尋現有病人 (手打身分證後觸發)
+  const checkPatient = async (id: string) => {
+    if (!id || id.length < 5) return;
     try {
-      const res = await fetch("http://127.0.0.1:8000/");
-      const data = await res.json();
-
-      if (!data || data.length === 0) {
-        alert("未偵測到健保卡，請確認已插入讀卡機！");
-        return;
+      const res = await fetch(`http://127.0.0.1:8000/patients/search/${id}`);
+      const result = await res.json();
+      if (result.success && result.data) {
+        const p = result.data;
+        setName(p.name);
+        setBirthDate(p.birth_date || "");
+        setGender(p.gender === "M" ? "男" : p.gender === "F" ? "女" : "不詳");
+        setExistingPatientId(p.patient_id);
       }
-
-      const card = data[0];
-      setName(card.full_name || "");
-      setIdNumber(card.id_no || "");
-      setBirthDate(card.birth_date || "");
-      const sexConvert =
-        card.sex === "M" ? "男" : card.sex === "F" ? "女" : "不詳";
-      setGender(sexConvert);
-
-      // 更新出生日期同時更新年齡
-      updateBirthDate(card.birth_date || "");
-
-      alert("已成功讀取 IC 卡資料！");
-    } catch (error) {
-      console.error(error);
-      alert("讀取 IC 卡失敗，請確認服務是否正在執行。");
+    } catch (e) {
+      console.log("新病人");
     }
   };
 
-  // -------------------- 清除表單 ------------------
+  // 2. IC 卡讀取
+  const handleReadICCard = async () => {
+    try {
+      const res = await fetch("http://127.0.0.1:8000/"); 
+      const data = await res.json();
+      if (!data || data.length === 0) {
+        alert("未偵測到健保卡！");
+        return;
+      }
+      const card = data[0];
+      setIcCard(true);
+      setName(card.full_name || "");
+      setIdNumber(card.id_no || "");
+      
+      let bDate = card.birth_date || "";
+      if (/^\d{8}$/.test(bDate)) {
+        bDate = `${bDate.slice(0, 4)}-${bDate.slice(4, 6)}-${bDate.slice(6, 8)}`;
+      }
+      setBirthDate(bDate);
+      setGender(card.sex === "M" ? "男" : card.sex === "F" ? "女" : "不詳");
+      
+      // 讀完卡立刻查一次資料庫
+      checkPatient(card.id_no);
+    } catch (error) {
+      alert("讀取 IC 卡失敗。");
+    }
+  };
+
   const handleClear = () => {
     setName("");
     setIdNumber("");
     setBirthDate("");
-    setMedicalNumber("");
     setGender("");
     setIcCard(false);
-    setSearch(false);
-    setFallingPatient(false);
-    setIdUnknown(false);
-    setBirthUnknown(false);
-    setTsmcTransfer(false);
-    setAge(null);
+    setExistingPatientId(null);
   };
 
-  // -------------------- 確認按鈕 --------------------
-  const handleConfirm = () => {
-    onNext({
-      name,
-      idNumber,
-      birthDate,
-      medicalNumber,
-      gender,
-      icCard,
-      search,
-      fallingPatient,
-      idUnknown,
-      birthUnknown,
-      tsmcTransfer,
-      age: age ?? undefined,
-    });
-  };
+  // 3. 確認掛號
+  const handleConfirm = async () => {
+    try {
+      // Step A: 儲存病人
+      const pResponse = await fetch("http://127.0.0.1:8000/patients/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          patient_id: existingPatientId, // 如果是舊病人，帶入 ID
+          name: name || "匿名", 
+          id_number: idNumber, 
+          birth_date: birthDate || null, 
+          gender: gender === "男" ? "M" : gender === "女" ? "F" : "U" 
+        }),
+      });
+      const pResult = await pResponse.json();
+      if (!pResult.patient_id) throw new Error("病人存檔失敗");
 
-  // -------------------- 出生日期改變時更新年齡 --------------------
-  const updateBirthDate = (value: string) => {
-    setBirthDate(value);
+      // Step B: 建立檢傷紀錄 
+      // 注意：這裡傳送的結構必須符合你那個複雜的後端 triagesave.py
+      const tResponse = await fetch("http://127.0.0.1:8000/triagesave", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          patientId: pResult.patient_id, 
+          nurseId: "N01",
+          vitals: {}, // 給予空物件防止後端噴錯
+          result: {}, 
+          bed: "",
+          patientSource: "自行就醫",
+          majorIncident: "否",
+          visitTime: new Date().toISOString()
+        }),
+      });
+      const tResult = await tResponse.json();
 
-    if (value) {
-      let normalized = value.trim();
-      // 支援 IC 卡常見的 YYYYMMDD 格式，轉成 YYYY-MM-DD
-      if (/^\d{8}$/.test(normalized)) {
-        const y = normalized.slice(0, 4);
-        const m = normalized.slice(4, 6);
-        const d = normalized.slice(6, 8);
-        normalized = `${y}-${m}-${d}`;
+      if (tResult.success) {
+        alert(`掛號成功！\n編號: ${tResult.triageId}`);
+        onNext({
+          name,
+          idNumber,
+          birthDate,
+          triage_id: tResult.triageId,
+          gender,
+          icCard,
+          patient_id: pResult.patient_id,
+        });
+      } else {
+        alert("掛號失敗：" + tResult.detail);
       }
-
-      // 若只輸入西元年（YYYY），以年份粗略計算年齡，不要求月日
-      if (/^\d{4}$/.test(normalized)) {
-        const year = parseInt(normalized, 10);
-        const thisYear = new Date().getFullYear();
-        let approxAge = thisYear - year;
-        if (approxAge < 0) approxAge = 0;
-        setAge(approxAge);
-        return;
-      }
-
-      const birth = new Date(normalized);
-      if (isNaN(birth.getTime())) {
-        // 解析失敗時，不更新 age，維持原本值避免誤判
-        return;
-      }
-
-      const today = new Date();
-      let calculatedAge = today.getFullYear() - birth.getFullYear();
-
-      const m = today.getMonth() - birth.getMonth();
-      if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
-        calculatedAge--;
-      }
-
-      // 保證一歲以下也顯示 0
-      if (calculatedAge < 0) calculatedAge = 0;
-
-      setAge(calculatedAge);
-    } else {
-      setAge(null);
+    } catch (error) {
+      console.error(error);
+      alert("連線失敗，請檢查後端 Terminal 報錯訊息");
     }
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100 p-6">
-      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-lg p-8">
-        <h1 className="text-3xl font-bold text-center mb-8 text-blue-700">
-          新增病患資料
-        </h1>
+    <div className="flex items-center justify-center min-h-screen bg-gray-50 p-6">
+      <div className="w-full max-w-xl bg-white rounded-3xl shadow-xl p-10">
+        <h1 className="text-3xl font-extrabold text-center mb-10 text-slate-800">急診掛號系統</h1>
 
-        {/* IC卡 / 搜尋 */}
-        <div className="flex gap-4 mb-4">
-          <button
-            type="button"
-            className="flex-1 bg-gray-200 py-2 rounded-lg hover:bg-gray-300 transition"
-            onClick={() => {
-              setIcCard(!icCard);
-              handleReadICCard(); // 點 IC 卡時讀取
-            }}
-          >
-            IC卡
-          </button>
+        <button onClick={handleReadICCard} className="w-full py-4 mb-8 rounded-2xl bg-indigo-600 text-white hover:bg-indigo-700 font-bold text-xl shadow-lg transition-all active:scale-95">
+          讀取健保卡 (IC)
+        </button>
 
-          <button
-            type="button"
-            className="flex-1 bg-gray-200 py-2 rounded-lg hover:bg-gray-300 transition"
-            onClick={() => setSearch(!search)}
-          >
-            搜尋
-          </button>
+        <div className="space-y-6">
+          <div>
+            <label className="block text-slate-500 mb-2 font-bold text-sm">姓名</label>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-400 outline-none bg-slate-50" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-slate-500 mb-2 font-bold text-sm">身分證字號</label>
+              <input 
+                type="text" 
+                value={idNumber} 
+                onChange={(e) => setIdNumber(e.target.value.toUpperCase())} 
+                onBlur={() => checkPatient(idNumber)}
+                className="w-full border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-400 outline-none bg-slate-50" 
+              />
+            </div>
+            <div>
+              <label className="block text-slate-500 mb-2 font-bold text-sm">性別</label>
+              <select value={gender} onChange={(e) => setGender(e.target.value as any)} className="w-full border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-400 outline-none bg-slate-50">
+                <option value="">請選擇</option>
+                <option value="男">男</option>
+                <option value="女">女</option>
+                <option value="不詳">不詳</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-slate-500 mb-2 font-bold text-sm">出生日期</label>
+            <input type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} className="w-full border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-400 outline-none bg-slate-50" />
+          </div>
         </div>
 
-        {/* 姓名 / 路倒病人 / 病歷號 */}
-        <div className="flex gap-4 mb-4">
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="姓名"
-            className="flex-1 border rounded-lg px-4 py-2"
-          />
-
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={fallingPatient}
-              onChange={() => setFallingPatient(!fallingPatient)}
-            />
-            路倒病人
-          </label>
-
-          <input
-            type="text"
-            value={medicalNumber}
-            onChange={(e) => setMedicalNumber(e.target.value)}
-            placeholder="病歷號"
-            className="flex-1 border rounded-lg px-4 py-2"
-          />
-        </div>
-
-        {/* 身分證 / 不詳 / 性別 */}
-        <div className="flex gap-4 mb-4">
-          <input
-            type="text"
-            value={idNumber}
-            onChange={(e) => setIdNumber(e.target.value)}
-            placeholder="身分證號"
-            className="flex-1 border rounded-lg px-4 py-2"
-          />
-
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={idUnknown}
-              onChange={() => setIdUnknown(!idUnknown)}
-            />
-            身分證不詳
-          </label>
-
-          <select
-            value={gender}
-            onChange={(e) =>
-              setGender(e.target.value as "男" | "女" | "不詳" | "")
-            }
-            className="border rounded-lg px-4 py-2"
-          >
-            <option value="">性別</option>
-            <option value="男">男</option>
-            <option value="女">女</option>
-            <option value="不詳">不詳</option>
-          </select>
-        </div>
-
-        {/* 出生日期 / 不詳 */}
-        <div className="flex gap-4 mb-4">
-          <input
-            type="date"
-            value={birthDate}
-            onChange={(e) => updateBirthDate(e.target.value)}
-            className="flex-1 border rounded-lg px-4 py-2"
-          />
-
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={birthUnknown}
-              onChange={() => setBirthUnknown(!birthUnknown)}
-            />
-            出生不詳
-          </label>
-        </div>
-
-        {/* 泰山檢疫所轉入 */}
-        <div className="flex gap-4 mb-4">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={tsmcTransfer}
-              onChange={() => setTsmcTransfer(!tsmcTransfer)}
-            />
-            泰山檢疫所法傳轉入
-          </label>
-        </div>
-
-        {/* 按鈕區 */}
-        <div className="flex gap-4 mt-6">
-          <button
-            type="button"
-            onClick={handleClear}
-            className="flex-1 bg-gray-300 py-3 rounded-lg hover:bg-gray-400 transition"
-          >
+        <div className="flex gap-4 mt-12">
+          <button onClick={handleClear} className="flex-1 bg-slate-100 py-4 rounded-2xl hover:bg-slate-200 transition font-bold text-slate-500">
             清除
           </button>
-
-          <button
-            type="button"
-            onClick={handleConfirm} // 呼叫 handleConfirm 傳資料給父元件
-            className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition"
-          >
-            確認
+          <button onClick={handleConfirm} className="flex-[2] bg-emerald-500 text-white py-4 rounded-2xl hover:bg-emerald-600 shadow-lg transition-all font-bold text-xl active:scale-95">
+            確認掛號
           </button>
         </div>
       </div>
