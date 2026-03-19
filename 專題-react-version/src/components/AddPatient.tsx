@@ -78,14 +78,14 @@ export default function AddPatient({
   };
 
   // 3. 確認掛號
-  const handleConfirm = async () => {
+const handleConfirm = async () => {
     try {
       // Step A: 儲存病人
       const pResponse = await fetch("http://127.0.0.1:8000/patients/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          patient_id: existingPatientId, // 如果是舊病人，帶入 ID
+          patient_id: existingPatientId, 
           name: name || "匿名", 
           id_number: idNumber, 
           birth_date: birthDate || null, 
@@ -96,14 +96,13 @@ export default function AddPatient({
       if (!pResult.patient_id) throw new Error("病人存檔失敗");
 
       // Step B: 建立檢傷紀錄 
-      // 注意：這裡傳送的結構必須符合你那個複雜的後端 triagesave.py
       const tResponse = await fetch("http://127.0.0.1:8000/triagesave", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           patientId: pResult.patient_id, 
           nurseId: "N01",
-          vitals: {}, // 給予空物件防止後端噴錯
+          vitals: {}, 
           result: {}, 
           bed: "",
           patientSource: "自行就醫",
@@ -114,7 +113,12 @@ export default function AddPatient({
       const tResult = await tResponse.json();
 
       if (tResult.success) {
-        alert(`掛號成功！\n編號: ${tResult.triageId}`);
+        // --- 重點修改區域 ---
+        // 使用 pResult.message (後端回傳的初診/回診訊息) 加上 tResult.triageId
+        const statusMsg = pResult.is_returning ? "【回診】" : "【初診】";
+        alert(`掛號成功！${statusMsg}\n編號: ${tResult.triageId}`);
+        // ------------------
+
         onNext({
           name,
           idNumber,
