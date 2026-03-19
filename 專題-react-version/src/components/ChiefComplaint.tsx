@@ -538,10 +538,8 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       if (!transcript) return;
 
       const base = voiceBufferRef.current || '';
-      // 若這次辨識結果已經完整出現在目前累積內容中，就不要再重複新增
-      if (!base.includes(transcript)) {
-        voiceBufferRef.current = base ? base + (base.endsWith('\n') ? '' : '\n') + transcript : transcript;
-      }
+      // 修復：總是累積新的語音內容，即使有重複也不跳過
+      voiceBufferRef.current = base ? base + (base.endsWith('\n') ? '' : '\n') + transcript : transcript;
       console.log('[VOICE] buffer now =', voiceBufferRef.current);
     };
 
