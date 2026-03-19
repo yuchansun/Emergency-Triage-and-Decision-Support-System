@@ -224,7 +224,7 @@ function App() {
         )}
 
         {stage === "triageReport" && (
-          <EmergencyTriageReport patientData={patientData} inputText={inputText} selectedSymptoms={selectedSymptoms} worstSelectedDegree={worstSelectedDegree} bed={bed} patientSource={patientSource} majorIncident={majorIncident} onBack={() => setStage('main')} />
+          <EmergencyTriageReport patientData={patientData} onBack={() => setStage('main')} />
         )}
       </main>
     </div>

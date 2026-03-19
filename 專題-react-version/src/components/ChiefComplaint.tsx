@@ -94,7 +94,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
   const summarizeChiefComplaint = async (raw: string): Promise<string> => {
     try {
       console.log('[LLM] sending raw chief complaint to backend:', raw);
-      const res = await fetch('http://localhost:9000/api/summarize-chief-complaint', {
+      const res = await fetch('http://localhost:8001/api/summarize-chief-complaint', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -352,7 +352,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
 
     try {
       console.log('[LLM] requesting symptom recommendations with summary:', summary);
-      const res = await fetch('http://localhost:3001/api/recommend-symptoms', {
+      const res = await fetch('http://localhost:8001/api/recommend-symptoms', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

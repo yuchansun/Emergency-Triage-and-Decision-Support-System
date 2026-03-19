@@ -2,3 +2,11 @@ fastapi
 uvicorn[standard]
 google-genai
 google-generativeai
+chromadb
+sentence-transformers
+numpy
+python-dotenv
+requests
+mysql-connector-python
+PyPDF2
+pandas

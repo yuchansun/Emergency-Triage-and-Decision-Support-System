@@ -8,6 +8,7 @@ export interface PatientData {
   gender: "男" | "女" | "不詳" | "";
   icCard: boolean;
   patient_id?: string; 
+  age?: number;
 }
 
 export default function AddPatient({
