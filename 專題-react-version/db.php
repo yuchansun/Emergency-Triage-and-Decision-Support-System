@@ -3,7 +3,7 @@
 $servername = "localhost";
 $username   = "root";
 $password   = "";          // 若你有替 XAMPP MySQL 設定密碼，請改這裡
-$dbname     = "triage"; // 你在 phpMyAdmin 建的資料庫名稱
+$dbname     = "medical_triage_system"; // 你在 phpMyAdmin 建的資料庫名稱
 
 $conn = new mysqli($servername, $username, $password, $dbname);
 

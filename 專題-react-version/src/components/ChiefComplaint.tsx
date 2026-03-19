@@ -11,6 +11,7 @@ interface ChiefComplaintProps {
   onDirectToER?: () => void;
   directToERSelected?: boolean;
   age?: number;
+  llmMode: 'cloud' | 'local';
   onChiefComplaintChange?: (data: {
     selectedRules: Record<string, { 
       degree: number; 
@@ -22,7 +23,9 @@ interface ChiefComplaintProps {
   }) => void;
 }
 
+
 const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ 
+  
   selectedSymptoms, 
   setSelectedSymptoms, 
   inputText, 
@@ -33,6 +36,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
   onDirectToER, 
   directToERSelected, 
   age,
+  llmMode, 
   onChiefComplaintChange,  // ← 新增解構
 }) => {
   interface TriageRow {
@@ -46,6 +50,11 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     ttas_degree: string;
     nhi_degree: string;
   }
+  const LLM_BASE_URL =
+  llmMode === 'cloud'
+    ? 'http://your-cloud-api.com'   // 👉 之後你雲端放這
+    : 'http://localhost:8001';      // 👉 本地
+
 
   const [triageRows, setTriageRows] = useState<TriageRow[] | null>(null);
   const [triageError, setTriageError] = useState<string | null>(null);
@@ -64,14 +73,22 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     const loadFromDb = async () => {
       try {
         const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+        console.log('[DB] VITE_API_BASE_URL =', API_BASE_URL);
+
         const res = await fetch(`${API_BASE_URL}/triage_hierarchy`);
+        console.log('[DB] fetch triage_hierarchy status =', res.status);
+
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
         const data: TriageRow[] = await res.json();
+        console.log('[DB] triage rows count =', data?.length ?? 0);
+      console.log('[DB] triage rows preview =', (data ?? []).slice(0, 5));
+
         if (cancelled) return;
         setTriageRows(data ?? []);
       } catch (err: any) {
+        console.error('[DB] load triage_hierarchy error =', err);
         if (cancelled) return;
         setTriageError(err?.message ?? '載入 triage_hierarchy（資料庫）失敗');
       }
@@ -94,13 +111,16 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
   const summarizeChiefComplaint = async (raw: string): Promise<string> => {
     try {
       console.log('[LLM] sending raw chief complaint to backend:', raw);
-      const res = await fetch('http://localhost:8001/api/summarize-chief-complaint', {
+
+
+      const res = await fetch(`${LLM_BASE_URL}/api/summarize-chief-complaint`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ text: raw }),
       });
+      
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         console.error('[LLM] backend returned non-OK status', res.status, text);
@@ -347,12 +367,16 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     }
 
     const candidates = Array.from(candidateSet);
+    console.log('[LLM] tab =', tab);
+    console.log('[LLM] summary =', summary);
+    console.log('[LLM] candidates count =', candidates.length);
+    console.log('[LLM] candidates preview =', candidates.slice(0, 20));
 
     if (!candidates.length) return null;
 
     try {
       console.log('[LLM] requesting symptom recommendations with summary:', summary);
-      const res = await fetch('http://localhost:8001/api/recommend-symptoms', {
+      const res = await fetch(`${LLM_BASE_URL}/api/recommend-symptoms`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -370,6 +394,8 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       }
 
       const data = await res.json();
+      console.log('[LLM] raw recommend response =', data);
+      
       const list: string[] = Array.isArray(data?.recommended_symptoms)
         ? data.recommended_symptoms
         : [];
@@ -416,13 +442,21 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     setLlmNonTraumaSymptoms(nonTraumaList ?? []);
 
     // 依當下 Tab 選擇要顯示哪一組推薦；若該組沒有 LLM 結果，則退回關鍵字推薦
-    if (activeTab === 't' && traumaList && traumaList.length) {
-      setRecommendedSymptoms(traumaList);
-    } else if (activeTab === 'a' && nonTraumaList && nonTraumaList.length) {
-      setRecommendedSymptoms(nonTraumaList);
-    } else {
-      searchSymptoms(source);
-    }
+    if (activeTab === 't') {
+  if (traumaList && traumaList.length) {
+    setRecommendedSymptoms(traumaList);
+  } else {
+    console.log('[LLM] trauma recommend empty, fallback to keyword search');
+    searchSymptoms(summary);
+  }
+} else {
+  if (nonTraumaList && nonTraumaList.length) {
+    setRecommendedSymptoms(nonTraumaList);
+  } else {
+    console.log('[LLM] non-trauma recommend empty, fallback to keyword search');
+    searchSymptoms(summary);
+  }
+}
   };
 
   const isSymptomSelectedByLabel = (label: string) => {
@@ -433,11 +467,11 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
   };
 
   // 處理輸入變化
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleInputChange = async (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value;
     setInputText(text);
     // 即時搜尋，無論是新輸入還是繼續輸入
-    searchSymptoms(text);
+    await runLlmSummarizeAndRecommend(text);
   };
 
   // 處理鍵盤事件
