@@ -248,7 +248,10 @@ function App() {
         )}
 
         {stage === "triageReport" && (
-          <EmergencyTriageReport patientData={patientData} onBack={() => setStage('main')} />
+          <EmergencyTriageReport
+            patientData={patientData}
+            onBack={() => setStage("addpatient")}  // ← 改這裡
+          />
         )}
       </main>
     </div>
