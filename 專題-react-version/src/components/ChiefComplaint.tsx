@@ -50,10 +50,8 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     ttas_degree: string;
     nhi_degree: string;
   }
-  const LLM_BASE_URL =
-  llmMode === 'cloud'
-    ? 'http://your-cloud-api.com'   // 👉 之後你雲端放這
-    : 'http://localhost:8001';      // 👉 本地
+  const LLM_BASE_URL = 'http://localhost:9000';    
+    
 
 
   const [triageRows, setTriageRows] = useState<TriageRow[] | null>(null);
@@ -118,7 +116,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ text: raw }),
+        body: JSON.stringify({ text: raw, llm_mode: llmMode }),
       });
       
       if (!res.ok) {
@@ -385,6 +383,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
           text: summary,
           symptom_candidates: candidates,
           max_results: 10,
+          llm_mode: llmMode,
         }),
       });
 
@@ -467,11 +466,11 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
   };
 
   // 處理輸入變化
-  const handleInputChange = async (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value;
     setInputText(text);
     // 即時搜尋，無論是新輸入還是繼續輸入
-    await runLlmSummarizeAndRecommend(text);
+    searchSymptoms(text);
   };
 
   // 處理鍵盤事件

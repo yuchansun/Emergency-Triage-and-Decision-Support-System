@@ -34,7 +34,8 @@ function App() {
   // 控制側邊欄收縮 (預設收起)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  const [llmMode, setLlmMode] = useState<'cloud' | 'local'>('cloud'); //新加
+  //const [llmMode, setLlmMode] = useState<'cloud' | 'local'>('cloud'); //新加
+  const [llmMode, setLlmMode] = useState<'cloud' | 'local'>('local'); // 預設為地端模式，開發階段方便測試
 
   const [selectedSymptoms, setSelectedSymptoms] = useState<Set<string>>(new Set());
   const [inputText, setInputText] = useState<string>('');

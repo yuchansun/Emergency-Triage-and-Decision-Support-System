@@ -7,6 +7,19 @@ import requests
 from database import fetch_all
 from rag_pipeline import rag_pipeline
 from knowledge_base import knowledge_base
+#新加
+from google import genai as genai_new
+from dotenv import load_dotenv
+
+load_dotenv()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    client = genai_new.Client(api_key=GEMINI_API_KEY)
+    print("✅ Gemini API Key 載入成功")
+else:
+    client = None
+    print("⚠️ 找不到 GEMINI_API_KEY，雲端模式無法使用")
+
 
 app = FastAPI()
 def call_local_llm(prompt: str):
@@ -19,17 +32,34 @@ def call_local_llm(prompt: str):
             "stream": False
         }
         
-        response = requests.post(url, json=payload, timeout=30)
+        response = requests.post(url, json=payload, timeout=120)
         response.raise_for_status()
         
         result = response.json()
         return result.get("response", "")
     except requests.exceptions.RequestException as e:
-        print(f"❌ LLM API 呼叫失敗: {e}")
+        print(f"❌ 本地端LLM API 呼叫失敗: {e}")
         return ""
     except Exception as e:
-        print(f"❌ LLM 處理失敗: {e}")
+        print(f"❌ 本地端LLM 處理失敗: {e}")
         return ""
+
+def call_gemini_llm(prompt: str) -> str:
+    try:
+        if client is None:
+            print("❌ Gemini client 未初始化")
+            return ""
+        
+        response = client.models.generate_content(
+            
+            model="models/gemini-1.5-flash",
+            contents=prompt
+        )
+        return response.text
+    except Exception as e:
+        print(f"❌ Gemini API 呼叫失敗: {e}")
+        return ""
+    
 
 app.add_middleware(
     CORSMiddleware,
@@ -43,6 +73,7 @@ app.add_middleware(
 
 class SummarizeRequest(BaseModel):
     text: str
+    llm_mode: str = "local"
 
 
 class SummarizeResponse(BaseModel):
@@ -53,6 +84,7 @@ class RecommendSymptomsRequest(BaseModel):
     text: str
     symptom_candidates: list[str]
     max_results: int = 10
+    llm_mode: str = "local"
 
 
 class RecommendSymptomsResponse(BaseModel):
@@ -65,8 +97,17 @@ async def summarize_cc(body: SummarizeRequest):
 
     try:
         # 使用 RAG 增強的 prompt
-        enhanced_prompt = rag_pipeline.enhance_symptom_summary(raw)
-        summary = call_local_llm(enhanced_prompt).strip()
+        llm_fn = call_gemini_llm if body.llm_mode == "cloud" else call_local_llm
+        if body.llm_mode == "cloud":
+            prompt = (
+                "你是一位急診分級護理師的助手。請從以下原始主訴中，整理出主要症狀關鍵詞，"
+                "使用頓號（、）分隔，例如：『頭痛、頭暈、胸悶』。"
+                "只輸出症狀關鍵詞，不要加任何說明句子。\n\n"
+                "原始主訴：" + raw + "\n\n症狀關鍵詞："
+                )
+        else:
+            prompt = rag_pipeline.enhance_symptom_summary(raw)
+        summary = llm_fn(prompt).strip()
         
         # 後處理：統一分隔符為頓號
         if summary:
@@ -146,7 +187,8 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
             "[\"頭痛\", \"胸痛\"]"
         )
 
-        raw = call_local_llm(prompt).strip()
+        llm_fn = call_gemini_llm if body.llm_mode == "cloud" else call_local_llm
+        raw = llm_fn(prompt).strip()
 
 
         print("LLM recommend raw:", raw)
