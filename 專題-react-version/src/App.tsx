@@ -34,6 +34,9 @@ function App() {
   // 控制側邊欄收縮 (預設收起)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  //const [llmMode, setLlmMode] = useState<'cloud' | 'local'>('cloud'); //新加
+  const [llmMode, setLlmMode] = useState<'cloud' | 'local'>('local'); // 預設為地端模式，開發階段方便測試
+
   const [selectedSymptoms, setSelectedSymptoms] = useState<Set<string>>(new Set());
   const [inputText, setInputText] = useState<string>('');
   const [worstSelectedDegree, setWorstSelectedDegree] = useState<number | null>(null);
@@ -85,13 +88,15 @@ function App() {
 
   const handleLogin = async (username: string, password: string) => {
     try {
-      const API_BASE_URL = "http://127.0.0.1:8000"; 
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:9000";
       const res = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       });
       const data = await res.json();
+      console.log("login response:", data);
+      
       if (res.ok && data.success) {
         localStorage.setItem("isLoggedIn", "true");
         localStorage.setItem("userData", JSON.stringify(data.user));
@@ -126,7 +131,7 @@ function App() {
       timestamp: new Date().toISOString(),
     };
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:9000";
       const res = await fetch(`${API_BASE_URL}/triagesave`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -184,6 +189,21 @@ function App() {
           ))}
         </nav>
 
+        <div className="px-3 mt-4">
+          <button
+            onClick={() => setLlmMode(prev => prev === 'cloud' ? 'local' : 'cloud')}
+            className="w-full flex items-center justify-center p-3 rounded-xl text-white font-bold shadow-md transition-all"
+            style={{
+              backgroundColor: llmMode === 'cloud' ? '#16a34a' : '#2563eb'
+            }}
+            title={llmMode === 'cloud' ? '目前是雲端模式，點擊切換成地端模式' : '目前是地端模式，點擊切換成雲端模式'}
+          >
+            {isSidebarOpen
+              ? (llmMode === 'cloud' ? '🌐 雲端模式' : '💻 地端模式')
+              : (llmMode === 'cloud' ? '🌐' : '💻')}
+          </button>
+        </div>
+
         <div className="p-3 border-t border-gray-100 dark:border-gray-800">
           <button onClick={handleLogout} className="w-full flex items-center p-3 text-red-500 hover:bg-red-50 rounded-xl font-bold group" title="登出系統">
             <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
@@ -204,7 +224,7 @@ function App() {
               <PatientInfo patient={patientData} bed={bed} setBed={setBed} patientSource={patientSource} setPatientSource={setPatientSource} majorIncident={majorIncident} setMajorIncident={setMajorIncident} onToccChange={setTocc} />
             </div>
             <div className="col-span-6">
-              <LeftPanel selectedSymptoms={selectedSymptoms} setSelectedSymptoms={setSelectedSymptoms} inputText={inputText} setInputText={setInputText} onWorstDegreeChange={setWorstSelectedDegree} onDirectToER={handleDirectToER} directToERSelected={directToERSelected} age={patientData?.age} onChiefComplaintChange={handleChiefComplaintChange} />
+              <LeftPanel selectedSymptoms={selectedSymptoms} setSelectedSymptoms={setSelectedSymptoms} inputText={inputText} setInputText={setInputText} onWorstDegreeChange={setWorstSelectedDegree} onDirectToER={handleDirectToER} directToERSelected={directToERSelected} age={patientData?.age} onChiefComplaintChange={handleChiefComplaintChange} llmMode={llmMode}/>
             </div>
             <div className="col-span-4 flex flex-col gap-6">
               <SystemRecommendation selectedSymptoms={selectedSymptoms} inputText={inputText} worstSelectedDegree={worstSelectedDegree} forceLevel1={forceLevel1} onSubmitLevel={resetMainScreen} onOpenTriageReport={() => setStage("triageReport")} onConfirmAndSave={handleConfirmAndSaveTriage} />

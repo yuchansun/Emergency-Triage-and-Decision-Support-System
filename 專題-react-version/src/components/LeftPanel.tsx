@@ -11,6 +11,7 @@ interface LeftPanelProps {
   onDirectToER: () => void;
   directToERSelected: boolean;
   age?: number;
+  llmMode: 'cloud' | 'local'; //新加
   onChiefComplaintChange?: (data: {
     selectedRules: Record<string, { 
       degree: number; 
@@ -22,7 +23,7 @@ interface LeftPanelProps {
   }) => void;
 }
 
-const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, onWorstDegreeChange, onDirectToER, directToERSelected, age, onChiefComplaintChange }) => {
+const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, onWorstDegreeChange, onDirectToER, directToERSelected, age, llmMode,onChiefComplaintChange }) => {
   const [activeTab, setActiveTab] = useState<'t' | 'a'>('t');
 
   return (
@@ -39,6 +40,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymp
         directToERSelected={directToERSelected}
         age={age}
         onChiefComplaintChange={onChiefComplaintChange}
+        llmMode={llmMode} //新加
       />
       <SymptomSelection
         selectedSymptoms={selectedSymptoms}
