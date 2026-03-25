@@ -95,20 +95,22 @@ async def create_triagesave(triagesave_data: dict):
             result = triagesave_data.get("result", {})
             rule_codes = [c.strip() for c in (result.get("rule_code") or "").split(";") if c.strip()]
             notes = result.get("notes") or ""
+            chief_complaint = (result.get("chief_complaint") or triagesave_data.get("inputText") or "").strip()
 
             logger.info(f"[triagesave] result={result}")
             logger.info(f"[triagesave] rule_codes={rule_codes}")
+            logger.info(f"[triagesave] chief_complaint={chief_complaint}")
 
             if rule_codes:
                 for rule_code in rule_codes:
                     cur.execute(
-                        "INSERT INTO triage_result (triage_id, rule_code, notes) VALUES (%s, %s, %s)",
-                        (triage_id, rule_code, notes)
+                        "INSERT INTO triage_result (triage_id, rule_code, chief_complaint, notes) VALUES (%s, %s, %s, %s)",
+                        (triage_id, rule_code, chief_complaint, notes)
                     )
-            elif notes:
+            elif notes or chief_complaint:
                 cur.execute(
-                    "INSERT INTO triage_result (triage_id, rule_code, notes) VALUES (%s, %s, %s)",
-                    (triage_id, None, notes)
+                    "INSERT INTO triage_result (triage_id, rule_code, chief_complaint, notes) VALUES (%s, %s, %s, %s)",
+                    (triage_id, None, chief_complaint, notes)
                 )
 
             # 時間格式轉換
@@ -193,7 +195,7 @@ async def get_triagesave(triage_id: str):
                     t.triage_id, t.patient_id, t.nurse_id,
                     v.*, 
                     e.*,
-                    r.rule_code, r.notes
+                    r.rule_code, r.chief_complaint, r.notes
                 FROM triage_record t
                 LEFT JOIN vital_signs v ON t.triage_id = v.triage_id
                 LEFT JOIN encounter_extra e ON t.triage_id = e.triage_id
