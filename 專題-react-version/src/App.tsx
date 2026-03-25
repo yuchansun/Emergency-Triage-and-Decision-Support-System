@@ -118,7 +118,11 @@ function App() {
       tocc_contact_items: tocc.contactItems.join(', '), tocc_cluster_items: tocc.clusterItems.join(', '),
       tocc_cluster_other: tocc.clusterOther, tocc_symptoms: tocc.symptoms.join(', '),
       selectedSymptoms: Array.from(selectedSymptoms), inputText, worstSelectedDegree, selectedLevel: triageData.selectedLevel,
-      result: { rule_code: Object.keys(chiefComplaintData.selectedRules).join(';'), notes: chiefComplaintData.supplementText },
+      result: {
+        rule_code: Object.keys(chiefComplaintData.selectedRules).join(';'),
+        chief_complaint: inputText?.trim() || null, // ✅ 新增
+        notes: chiefComplaintData.supplementText
+      },
       vitals: {
         temperature: parseFloat(vitals.temperature), heart_rate: parseInt(vitals.heartRate),
         spo2: parseInt(vitals.spo2), respiratory_rate: parseInt(vitals.respRate),
