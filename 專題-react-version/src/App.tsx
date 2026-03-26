@@ -275,12 +275,12 @@ function App() {
             onDemo={() => {
               setPatientData({
                 name: "教學測試病患",
-                idNumber: "A123456789",
-                birthDate: "2015-03-20",
+                idNumber: "(測試帶入)",
+                birthDate: "1900-1-1",
                 triage_id: "DEMO-001",
-                gender: "男",
+                gender: "",
                 icCard: false,
-                patient_id: "DEMO-PATIENT",
+                visitNumber: "DEMO-PATIENT",
                 age: 11,
               });
               setIsDemoMode(true);

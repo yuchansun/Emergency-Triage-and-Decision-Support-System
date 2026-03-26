@@ -159,17 +159,17 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
 
           {patient.medicalId
             ? <span>病歷號: {patient.medicalId}</span>
-            : <span className="text-gray-400">病歷號: 278378(自動帶入)</span>
+            : <span className="text-gray-400">病歷號:(測試帶入)</span>
           }
 
           {patient.idNumber
             ? <span>身分證號: {patient.idNumber}</span>
-            : <span className="text-gray-400">身分證號: 無資料</span>
+            : <span className="text-gray-400">身分證號:(測試帶入)</span>
           }
 
           {patient.visitNumber
             ? <span>就診號: {patient.visitNumber}</span>
-            : <span className="text-gray-400">就診號: 00832(自動帶入)</span>
+            : <span className="text-gray-400">就診號: (測試帶入)</span>
           }
         </div>
 
@@ -528,7 +528,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
             onChange={(e) => setBed(e.target.value)}
             className="px-2 py-0.5 rounded bg-blue-100 text-slate-800 text-xs font-medium border border-blue-300 w-20"
           />
-          {/* 看診時間（自動生成） */}
+          {/* 看診時間 */}
           <span className="px-2 py-0.5 rounded bg-blue-100 text-slate-800 text-xs font-medium">
             看診時間: {new Date().toLocaleString()}
           </span>
