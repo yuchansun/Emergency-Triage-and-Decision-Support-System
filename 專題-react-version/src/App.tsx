@@ -44,6 +44,7 @@ function App() {
   const [directToERSelected, setDirectToERSelected] = useState<boolean>(false);
 
   const [patientData, setPatientData] = useState<PatientData | null>(null);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [bed, setBed] = useState<string>('');
   const [patientSource, setPatientSource] = useState<string>('');
   const [majorIncident, setMajorIncident] = useState<string>('');
@@ -111,6 +112,11 @@ function App() {
   };
 
   const handleConfirmAndSaveTriage = async (triageData: any) => {
+    if (isDemoMode) {
+      alert("教學/模擬模式：不會送出或儲存檢傷資料");
+      return; // ✅ 直接擋送出
+    }
+
     const fullPayload = {
       bed, patientSource, majorIncident, visitTime,
       tocc_travel: tocc.travel, tocc_travel_start: tocc.travelStart, tocc_travel_end: tocc.travelEnd,
@@ -182,9 +188,9 @@ function App() {
 
         <nav className="flex-1 px-3 space-y-2 mt-4">
           {[
-            { id: 'main', label: '當前檢傷作業', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
-            { id: 'history', label: '過去病史查詢', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
-            { id: 'addpatient', label: '新病患掛號', icon: 'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z' }
+            { id: 'addpatient', label: '新病患掛號', icon: 'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z' },
+            { id: 'history', label: '過去病史查詢', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' }
+            
           ].map((item) => (
             <button key={item.id} onClick={() => setStage(item.id as any)} className={`w-full flex items-center p-3 rounded-xl transition-all ${stage === item.id ? "bg-blue-600 text-white shadow-lg" : "text-gray-500 hover:bg-gray-100"}`} title={item.label}>
               <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.icon} /></svg>
@@ -219,7 +225,18 @@ function App() {
       {/* === 右側主內容 === */}
       <main className="flex-1 relative overflow-y-auto bg-[#F8FAFC]">
         {stage === "addpatient" && (
-          <AddPatient onNext={(data) => { setPatientData(data); setStage("main"); }} />
+          <AddPatient
+            onNext={(data) => {
+              setPatientData(data);
+              setIsDemoMode(false);
+              setStage("main");
+            }}
+            onDemo={() => {
+              setPatientData(null);
+              setIsDemoMode(true);
+              setStage("main"); // ✅ 教學模式進主頁，不進報告頁
+            }}
+          />
         )}
 
         {stage === "main" && (
@@ -231,7 +248,21 @@ function App() {
               <LeftPanel selectedSymptoms={selectedSymptoms} setSelectedSymptoms={setSelectedSymptoms} inputText={inputText} setInputText={setInputText} onWorstDegreeChange={setWorstSelectedDegree} onDirectToER={handleDirectToER} directToERSelected={directToERSelected} age={patientData?.age} onChiefComplaintChange={handleChiefComplaintChange} llmMode={llmMode}/>
             </div>
             <div className="col-span-4 flex flex-col gap-6">
-              <SystemRecommendation selectedSymptoms={selectedSymptoms} inputText={inputText} worstSelectedDegree={worstSelectedDegree} forceLevel1={forceLevel1} onSubmitLevel={resetMainScreen} onOpenTriageReport={() => setStage("triageReport")} onConfirmAndSave={handleConfirmAndSaveTriage} />
+              <SystemRecommendation
+                selectedSymptoms={selectedSymptoms}
+                inputText={inputText}
+                worstSelectedDegree={worstSelectedDegree}
+                forceLevel1={forceLevel1}
+                onSubmitLevel={resetMainScreen}
+                onOpenTriageReport={() => {
+                  if (isDemoMode) {
+                    alert("教學/模擬模式：不開啟檢傷報告頁");
+                    return; // ✅ 擋進報告頁
+                  }
+                  setStage("triageReport");
+                }}
+                onConfirmAndSave={handleConfirmAndSaveTriage}
+              />
               <Vitals gender={patientData?.gender} vitals={vitals} setVitals={setVitals} />
             </div>
           </div>
@@ -250,7 +281,7 @@ function App() {
         {stage === "triageReport" && (
           <EmergencyTriageReport
             patientData={patientData}
-            onBack={() => setStage("addpatient")}  // ← 改這裡
+            onBack={() => setStage("addpatient")} 
           />
         )}
       </main>

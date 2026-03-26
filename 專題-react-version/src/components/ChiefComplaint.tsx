@@ -987,22 +987,33 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
                       const isSelected = !!selectedRules[item.rule_code];
                       return (
                         <button
-                          key={item.rule_code}  // ← 改成 rule_code，比較穩定
+                          key={item.rule_code}
                           type="button"
                           onClick={() =>
                             setSelectedRules(prev => {
-                              const existing = prev[item.rule_code];
                               const next = { ...prev };
+                              const existing = prev[item.rule_code];
+
+                              // 先移除同一症狀已選的其他規則
+                              Object.keys(next).forEach(ruleCode => {
+                                if (next[ruleCode].symptom_name === display) {
+                                  delete next[ruleCode];
+                                }
+                              });
+
+                              // 如果原本點的這顆就是已選狀態，代表取消，不重加
                               if (existing) {
-                                delete next[item.rule_code];
-                              } else {
-                                next[item.rule_code] = {
-                                  degree: item.degree,
-                                  judge: item.judge,
-                                  rule_code: item.rule_code,
-                                  symptom_name: display,
-                                };
+                                return next;
                               }
+
+                              // 否則改成這個症狀目前唯一選中的規則
+                              next[item.rule_code] = {
+                                degree: item.degree,
+                                judge: item.judge,
+                                rule_code: item.rule_code,
+                                symptom_name: display,
+                              };
+
                               return next;
                             })
                           }
