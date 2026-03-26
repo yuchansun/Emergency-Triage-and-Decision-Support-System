@@ -13,8 +13,10 @@ export interface PatientData {
 
 export default function AddPatient({
   onNext,
+  onDemo,
 }: {
   onNext: (data: PatientData) => void;
+  onDemo: () => void;
 }) {
   const [name, setName] = useState("");
   const [idNumber, setIdNumber] = useState("");
@@ -186,6 +188,14 @@ export default function AddPatient({
           </button>
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={onDemo}
+        className="fixed right-6 bottom-6 px-5 py-3 rounded-2xl bg-amber-500 text-white font-bold shadow-lg hover:bg-amber-600 active:scale-95"
+      >
+        教學/模擬檢傷（不存檔）
+      </button>
     </div>
   );
 }
