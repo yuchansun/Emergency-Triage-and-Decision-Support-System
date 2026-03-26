@@ -114,10 +114,18 @@ function App() {
   const handleConfirmAndSaveTriage = async (triageData: any) => {
     if (isDemoMode) {
       alert("教學/模擬模式：不會送出或儲存檢傷資料");
-      return; // ✅ 直接擋送出
+      return;
     }
 
     const fullPayload = {
+      // ✅ 關鍵：沿用既有紀錄，不要每次新開
+      triage_id: patientData?.triage_id ?? null,
+      triageId: patientData?.triage_id ?? null,
+      patientId: patientData?.patient_id ?? null,
+      patient_id: patientData?.patient_id ?? null,
+      nurseId: currentUser?.nurseId ?? null,
+      nurse_id: currentUser?.nurseId ?? null,
+
       bed, patientSource, majorIncident, visitTime,
       tocc_travel: tocc.travel, tocc_travel_start: tocc.travelStart, tocc_travel_end: tocc.travelEnd,
       tocc_occupation: tocc.occupation, tocc_occupation_other: tocc.occupationOther,
@@ -126,7 +134,7 @@ function App() {
       selectedSymptoms: Array.from(selectedSymptoms), inputText, worstSelectedDegree, selectedLevel: triageData.selectedLevel,
       result: {
         rule_code: Object.keys(chiefComplaintData.selectedRules).join(';'),
-        chief_complaint: inputText?.trim() || null, // ✅ 新增
+        chief_complaint: inputText?.trim() || null,
         notes: chiefComplaintData.supplementText
       },
       vitals: {
@@ -149,6 +157,13 @@ function App() {
       });
       if (res.ok) {
         const responseData = await res.json();
+
+        setPatientData(prev =>
+          prev
+            ? { ...prev, triage_id: responseData.triageId }
+            : prev
+        );
+
         alert(`檢傷資料已儲存，ID: ${responseData.triageId}`);
       } else {
         const errorData = await res.json();
