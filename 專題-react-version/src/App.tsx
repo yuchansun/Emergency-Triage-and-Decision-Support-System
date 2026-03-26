@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import './App.css';
 import PatientInfo from './components/PatientInfo';
 import LeftPanel from './components/LeftPanel';
@@ -89,7 +89,7 @@ function App() {
 
   const handleLogin = async (username: string, password: string) => {
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:9000";
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
       const res = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -141,7 +141,7 @@ function App() {
       timestamp: new Date().toISOString(),
     };
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:9000";
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
       const res = await fetch(`${API_BASE_URL}/triagesave`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -170,6 +170,47 @@ function App() {
   const handleChiefComplaintChange = useCallback((data: any) => {
     setChiefComplaintData(data);
   }, []);
+
+  // Fetch patient detail when patientData changes and is not demo mode
+  useEffect(() => {
+    if (!patientData?.patient_id) return;
+    if (isDemoMode) return;
+
+    const fetchPatientDetail = async () => {
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+        const res = await fetch(`${API_BASE_URL}/patients/${patientData.patient_id}`);
+        const result = await res.json();
+
+        if (!res.ok || !result.success || !result.data) return;
+
+        const p = result.data;
+
+        setPatientData(prev => {
+          if (!prev) return prev;
+
+          return {
+            ...prev,
+            name: p.name ?? prev.name,
+            idNumber: p.id_number ?? prev.idNumber,
+            birthDate: p.birth_date ?? prev.birthDate,
+            gender:
+              p.gender === "M" ? "男" :
+              p.gender === "F" ? "女" :
+              p.gender === "U" ? "不詳" :
+              prev.gender,
+            age: p.age ?? prev.age,
+            medicalId: p.medical_id ?? prev.medicalId,
+            visitNumber: p.visit_number ?? prev.visitNumber,
+          };
+        });
+      } catch (error) {
+        console.error("抓病患詳細資料失敗:", error);
+      }
+    };
+
+    fetchPatientDetail();
+  }, [patientData?.patient_id, isDemoMode]);
 
   // === 3. 渲染判斷 ===
   if (stage === "login") return <Login onLogin={handleLogin} />;
@@ -232,9 +273,18 @@ function App() {
               setStage("main");
             }}
             onDemo={() => {
-              setPatientData(null);
+              setPatientData({
+                name: "教學測試病患",
+                idNumber: "A123456789",
+                birthDate: "2015-03-20",
+                triage_id: "DEMO-001",
+                gender: "男",
+                icCard: false,
+                patient_id: "DEMO-PATIENT",
+                age: 11,
+              });
               setIsDemoMode(true);
-              setStage("main"); // ✅ 教學模式進主頁，不進報告頁
+              setStage("main");
             }}
           />
         )}

@@ -9,6 +9,8 @@ export interface PatientData {
   icCard: boolean;
   patient_id?: string; 
   age?: number;
+  medicalId?: string;
+  visitNumber?: string;
 }
 
 export default function AddPatient({
