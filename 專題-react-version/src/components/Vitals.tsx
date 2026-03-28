@@ -53,7 +53,13 @@ const Vitals: React.FC<VitalsProps> = ({
   // 例如：原本 const [temperature, setTemperature] = useState<string>('');
   // 現在改成：
   const temperature = vitals.temperature || '';
-  const setTemperature = (val: string) => setVitals({ ...vitals, temperature: val });
+  const setTemperature = (val: string) => {
+    console.log('[Vitals] setTemperature called with:', val);
+    console.log('[Vitals] current vitals before update:', vitals);
+    const newVitals = { ...vitals, temperature: val };
+    console.log('[Vitals] new vitals after update:', newVitals);
+    setVitals(newVitals);
+  };
 
   const heartRate = vitals.heartRate || '';
   const setHeartRate = (val: string) => setVitals({ ...vitals, heartRate: val });

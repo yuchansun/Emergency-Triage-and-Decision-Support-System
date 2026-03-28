@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import './App.css';
 import PatientInfo from './components/PatientInfo';
 import LeftPanel from './components/LeftPanel';
@@ -51,6 +51,17 @@ function App() {
     gcsEye: null, gcsVerbal: null, gcsMotor: null, obHistory: null,
     pastHistory: [], drugAllergy: null, painScore: null, doNotTreat: '', sentiment: null,
   });
+
+  // 添加調試來監控 vitals 變化
+  const debugSetVitals = (newVitals: any) => {
+    console.log('[App] setVitals called with:', newVitals);
+    setVitals(newVitals);
+  };
+
+  // 監控 vitals 狀態變化
+  useEffect(() => {
+    console.log('[App] vitals state updated:', vitals);
+  }, [vitals]);
 
   const [chiefComplaintData, setChiefComplaintData] = useState({
     selectedRules: {} as Record<string, { degree: number; judge: string; rule_code: string; symptom_name: string }>,
@@ -204,11 +215,11 @@ function App() {
               <PatientInfo patient={patientData} bed={bed} setBed={setBed} patientSource={patientSource} setPatientSource={setPatientSource} majorIncident={majorIncident} setMajorIncident={setMajorIncident} onToccChange={setTocc} />
             </div>
             <div className="col-span-6">
-              <LeftPanel selectedSymptoms={selectedSymptoms} setSelectedSymptoms={setSelectedSymptoms} inputText={inputText} setInputText={setInputText} onWorstDegreeChange={setWorstSelectedDegree} onDirectToER={handleDirectToER} directToERSelected={directToERSelected} age={patientData?.age} onChiefComplaintChange={handleChiefComplaintChange} />
+              <LeftPanel selectedSymptoms={selectedSymptoms} setSelectedSymptoms={setSelectedSymptoms} inputText={inputText} setInputText={setInputText} onWorstDegreeChange={setWorstSelectedDegree} onDirectToER={handleDirectToER} directToERSelected={directToERSelected} age={patientData?.age} vitals={vitals} onChiefComplaintChange={handleChiefComplaintChange} />
             </div>
             <div className="col-span-4 flex flex-col gap-6">
               <SystemRecommendation selectedSymptoms={selectedSymptoms} inputText={inputText} worstSelectedDegree={worstSelectedDegree} forceLevel1={forceLevel1} onSubmitLevel={resetMainScreen} onOpenTriageReport={() => setStage("triageReport")} onConfirmAndSave={handleConfirmAndSaveTriage} />
-              <Vitals gender={patientData?.gender} vitals={vitals} setVitals={setVitals} />
+              <Vitals gender={patientData?.gender} vitals={vitals} setVitals={debugSetVitals} />
             </div>
           </div>
         )}

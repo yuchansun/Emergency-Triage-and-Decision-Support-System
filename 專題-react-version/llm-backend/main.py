@@ -7,6 +7,7 @@ import requests
 from database import fetch_all
 from rag_pipeline import rag_pipeline
 from knowledge_base import knowledge_base
+from vitals_analyzer import vitals_analyzer
 
 app = FastAPI()
 def call_local_llm(prompt: str):
@@ -16,10 +17,17 @@ def call_local_llm(prompt: str):
         payload = {
             "model": "llama3",
             "prompt": prompt,
-            "stream": False
+            "stream": False,
+            "options": {
+                "temperature": 0.3,  # 稍微提高溫度增加靈活性
+                "top_p": 0.8,        # 提高生成效率
+                "max_tokens": 30,     # 進一步限制確保快速
+                "num_predict": 30,    # 預測token數限制
+                "repeat_penalty": 1.1  # 避免重複
+            }
         }
         
-        response = requests.post(url, json=payload, timeout=30)
+        response = requests.post(url, json=payload, timeout=8)  # 稍微增加超時時間
         response.raise_for_status()
         
         result = response.json()
@@ -43,6 +51,7 @@ app.add_middleware(
 
 class SummarizeRequest(BaseModel):
     text: str
+    vitals: dict = None
 
 
 class SummarizeResponse(BaseModel):
@@ -53,6 +62,7 @@ class RecommendSymptomsRequest(BaseModel):
     text: str
     symptom_candidates: list[str]
     max_results: int = 10
+    vitals: dict = None
 
 
 class RecommendSymptomsResponse(BaseModel):
@@ -61,33 +71,92 @@ class RecommendSymptomsResponse(BaseModel):
 
 @app.post("/api/summarize-chief-complaint", response_model=SummarizeResponse)
 async def summarize_cc(body: SummarizeRequest):
-    raw = body.text or ""
-
     try:
-        # 使用 RAG 增強的 prompt
-        enhanced_prompt = rag_pipeline.enhance_symptom_summary(raw)
-        summary = call_local_llm(enhanced_prompt).strip()
+        raw = body.text.strip()
+        vitals = body.vitals
         
-        # 後處理：統一分隔符為頓號
-        if summary:
-            # 將各種分隔符統一為頓號
-            summary = summary.replace('•', '、')  # 點點
-            summary = summary.replace('·', '、')  # 中間點
-            summary = summary.replace(',', '、')  # 逗號
-            summary = summary.replace('，', '、')  # 全形逗號
-            summary = summary.replace(' ', '')      # 移除空格
-            # 移除重複的頓號
-            while '、、' in summary:
-                summary = summary.replace('、、', '、')
+        # 分析生命徵象異常
+        vitals_symptoms = []
+        if vitals:
+            vitals_symptoms, _ = vitals_analyzer.analyze_vitals(vitals)
         
-        # 若模型回傳空字串，退回原文作為保底
-        if not summary:
-            summary = raw
-    except Exception as e:
-        print("LLM error:", e)
-        summary = raw
+        # 如果沒有文字輸入但有生命徵象異常，直接使用生命徵象分析結果
+        if not raw and vitals_symptoms:
+            summary = "、".join(vitals_symptoms)
+            print(f"[LLM] 純生命徵象輸入，快速返回：{summary}")
+            return SummarizeResponse(summary=summary)
+        
+        # 如果有文字輸入也有生命徵象異常，簡化處理
+        if raw and vitals_symptoms:
+            print(f"[LLM] 處理混合輸入：'{raw}' + 生命徵象")
+            
+            # 先用LLM統整語音內容
+            voice_prompt = f"""
+你是一位急診分級護理師助手。請從以下主訴中整理出主要症狀關鍵詞：
 
-    return SummarizeResponse(summary=summary)
+原始主訴：{raw}
+
+請嚴格使用頓號（、）分隔症狀，不要使用其他符號。
+範例格式：頭痛、胸悶、胸痛
+
+請只回傳症狀關鍵詞，不要加任何解釋。
+"""
+            
+            voice_summary = ""
+            try:
+                voice_summary = call_local_llm(voice_prompt).strip()
+                print(f"[LLM] 語音統整原始結果：'{voice_summary}'")
+                
+                # 檢查LLM結果是否有效
+                if not voice_summary or len(voice_summary) == 0:
+                    print("[LLM] 語音統整返回空結果，使用原始內容")
+                    voice_summary = ""
+                elif voice_summary == raw:
+                    print("[LLM] 語音統整返回原文，嘗試重新整理")
+                    # 如果返回原文，嘗試簡單處理
+                    if "我覺得" in voice_summary:
+                        voice_summary = voice_summary.replace("我覺得", "")
+                    if "我" in voice_summary:
+                        voice_summary = voice_summary.replace("我", "")
+                    voice_summary = voice_summary.strip()
+                    print(f"[LLM] 簡單處理後：'{voice_summary}'")
+                
+            except Exception as e:
+                print(f"[LLM] 語音統整失敗：{e}")
+                voice_summary = ""
+            
+            # 決定使用哪個語音內容
+            if voice_summary and len(voice_summary) > 0:
+                print(f"[LLM] 使用LLM統整的語音：{voice_summary}")
+                existing_symptoms = [symptom.strip() for symptom in voice_summary.split("、") if symptom.strip()]
+            else:
+                print(f"[LLM] 語音統整失敗，使用原始內容：{raw}")
+                existing_symptoms = [symptom.strip() for symptom in raw.split("、") if symptom.strip()]
+            
+            # 添加生命徵象症狀，避免重複
+            for vital_symptom in vitals_symptoms:
+                if vital_symptom not in existing_symptoms:
+                    existing_symptoms.append(vital_symptom)
+            
+            summary = "、".join(existing_symptoms)
+            print(f"[LLM] 最終合併結果：{summary}")
+            return SummarizeResponse(summary=summary)
+        
+        # 正常的 LLM 處理流程（只有文字輸入或沒有生命徵象異常）
+        print(f"[LLM] 使用 LLM 處理：'{raw}'")
+        enhanced_prompt = rag_pipeline.enhance_symptom_summary(raw, vitals=vitals)
+        response = call_local_llm(enhanced_prompt).strip()
+        
+        # 清理回應，確保格式正確
+        if response and len(response) > 0:
+            summary = response
+        else:
+            summary = raw
+            
+        return SummarizeResponse(summary=summary)
+    except Exception as e:
+        print("Summarize error:", e)
+        return SummarizeResponse(summary=body.text)
 # @app.post("/api/summarize-chief-complaint", response_model=SummarizeResponse)
 # async def summarize_cc(body: SummarizeRequest):
 #     raw = body.text or ""
@@ -114,114 +183,107 @@ async def summarize_cc(body: SummarizeRequest):
 #         # 出錯時無法取得真正摘要，退回原文作為保底。
 #         summary = raw
 
-#     return SummarizeResponse(summary=summary)
-
 
 @app.post("/api/recommend-symptoms", response_model=RecommendSymptomsResponse)
 async def recommend_symptoms(body: RecommendSymptomsRequest):
-    text = body.text or ""
-    candidates = body.symptom_candidates or []
-    max_results = body.max_results or 10
-
-    if not candidates:
-        return RecommendSymptomsResponse(recommended_symptoms=[])
-
     try:
-       
-
-        # 建立候選症狀清單（編號只是幫助理解，實際輸出仍以名稱為主）
-        candidate_lines = "\n".join(f"- {name}" for name in candidates)
-
-        prompt = (
-            "你是一位熟悉台灣急診分級系統的護理師助手。"\
-            "目前已經有一段整理過的主訴內容，請你從提供的『候選症狀清單』中，"\
-            "選出最符合這段主訴的幾個症狀作為建議，不要發明清單裡沒有的症狀。"\
-            "\n\n"\
-            "主訴內容：" + text + "\n\n"\
-            "候選症狀清單（只能從這些裡面選）：\n" + candidate_lines + "\n\n"\
-            f"請你從候選清單中選出 1 到 {max_results} 個最適合的症狀。"\
-            "如果候選清單裡沒有跟主訴明顯相關的症狀，請回傳空的 JSON 陣列 []，"\
-            "不要勉強選一個不相干的診斷。"\
-            "請嚴格只輸出 JSON 陣列格式，不要加任何解釋文字。範例：\n"\
-            "[\"頭痛\", \"胸痛\"]"
-        )
-
-        raw = call_local_llm(prompt).strip()
-
-
-        print("LLM recommend raw:", raw)
-
-        recommended: list[str] = []
-        data = None
-
-        # 第一次嘗試：直接把整個回應當作 JSON 解析
+        text = body.text.strip()
+        candidates = body.symptom_candidates
+        max_results = body.max_results
+        vitals = body.vitals
+        
+        # 分析生命徵象異常
+        vitals_symptoms = []
+        if vitals:
+            vitals_symptoms, _ = vitals_analyzer.analyze_vitals(vitals)
+        
+        # 如果是純生命徵象輸入（沒有文字），使用直接的症狀映射
+        if not text and vitals_symptoms:
+            # 建立生命徵象症狀到症狀庫的映射
+            vitals_to_symptoms_mapping = {
+                "發燒": ["發燒", "體溫過高", "發熱"],
+                "高燒": ["高燒", "體溫過高", "發熱", "發燒"],
+                "超高熱": ["超高熱", "體溫過高", "發熱", "高燒", "發燒"],
+                "輕度高血壓": ["輕度高血壓", "高血壓", "血壓過高"],
+                "重度高血壓": ["重度高血壓", "高血壓", "血壓過高", "嚴重高血壓"],
+                "嚴重高血壓": ["嚴重高血壓", "高血壓", "血壓過高", "重度高血壓"],
+                "舒張期高血壓": ["舒張期高血壓", "高血壓", "血壓過高"],
+                "低血壓": ["低血壓", "血壓過低"],
+                "心跳過速": ["心跳過速", "心悸", "心跳快"],
+                "心跳過緩": ["心跳過緩", "心跳慢"],
+                "輕微低血氧": ["輕微低血氧", "低血氧", "血氧過低"],
+                "嚴重低血氧": ["嚴重低血氧", "低血氧", "血氧過低", "缺氧"],
+                "呼吸急促": ["呼吸急促", "呼吸困難", "呼吸快"],
+                "呼吸過緩": ["呼吸過緩", "呼吸慢"],
+                "高血糖": ["高血糖", "血糖過高"],
+                "低血糖": ["低血糖", "血糖過低", "血糖偏低"]
+            }
+            
+            # 找到匹配的症狀
+            matched_symptoms = []
+            for vital_symptom in vitals_symptoms:
+                possible_symptoms = vitals_to_symptoms_mapping.get(vital_symptom, [vital_symptom])
+                for symptom in possible_symptoms:
+                    if symptom in candidates:
+                        matched_symptoms.append(symptom)
+                        break
+            
+            print(f"[LLM] 純生命徵象推薦：{vitals_symptoms} → {matched_symptoms}")
+            return RecommendSymptomsResponse(recommended_symptoms=matched_symptoms)
+        
+        # 如果有文字輸入也有生命徵象異常，也要考慮生命徵象
+        if text and vitals_symptoms:
+            # 建立生命徵象症狀到症狀庫的映射
+            vitals_to_symptoms_mapping = {
+                "發燒": ["發燒", "體溫過高", "發熱"],
+                "高燒": ["高燒", "體溫過高", "發熱", "發燒"],
+                "超高熱": ["超高熱", "體溫過高", "發熱", "高燒", "發燒"],
+                "輕度高血壓": ["輕度高血壓", "高血壓", "血壓過高"],
+                "重度高血壓": ["重度高血壓", "高血壓", "血壓過高", "嚴重高血壓"],
+                "嚴重高血壓": ["嚴重高血壓", "高血壓", "血壓過高", "重度高血壓"],
+                "舒張期高血壓": ["舒張期高血壓", "高血壓", "血壓過高"],
+                "低血壓": ["低血壓", "血壓過低"],
+                "心跳過速": ["心跳過速", "心悸", "心跳快"],
+                "心跳過緩": ["心跳過緩", "心跳慢"],
+                "輕微低血氧": ["輕微低血氧", "低血氧", "血氧過低"],
+                "嚴重低血氧": ["嚴重低血氧", "低血氧", "血氧過低", "缺氧"],
+                "呼吸急促": ["呼吸急促", "呼吸困難", "呼吸快"],
+                "呼吸過緩": ["呼吸過緩", "呼吸慢"],
+                "高血糖": ["高血糖", "血糖過高"],
+                "低血糖": ["低血糖", "血糖過低", "血糖偏低"]
+            }
+            
+            # 找到匹配的生命徵象症狀
+            vital_matched = []
+            for vital_symptom in vitals_symptoms:
+                possible_symptoms = vitals_to_symptoms_mapping.get(vital_symptom, [vital_symptom])
+                for symptom in possible_symptoms:
+                    if symptom in candidates:
+                        vital_matched.append(symptom)
+                        break
+            
+            # 如果找到生命徵象相關症狀，優先返回這些
+            if vital_matched:
+                print(f"[LLM] 混合輸入推薦（優先生命徵象）：{vitals_symptoms} + '{text}' → {vital_matched}")
+                return RecommendSymptomsResponse(recommended_symptoms=vital_matched)
+        
+        # 正常的 RAG 處理流程
+        enhanced_prompt = rag_pipeline.enhance_symptom_recommendations(text, candidates, vitals, max_results)
+        response = call_local_llm(enhanced_prompt).strip()
+        
+        # 解析 JSON 回應
         try:
-            data = json.loads(raw)
-        except Exception as parse_err:
-            print("LLM recommend json.loads error:", parse_err)
-
-        # 第二次嘗試：抓出第一組 [...] 再解析
-        if data is None:
-            start = raw.find("[")
-            end = raw.rfind("]")
-            if start != -1 and end != -1 and end > start:
-                bracket_part = raw[start : end + 1]
-                try:
-                    data = json.loads(bracket_part)
-                except Exception as parse_err2:
-                    print("LLM recommend bracket parse error:", parse_err2, "bracket_part=", bracket_part)
+            if response.startswith('[') and response.endswith(']'):
+                recommended = json.loads(response)
+                if isinstance(recommended, list):
+                    return RecommendSymptomsResponse(recommended_symptoms=recommended)
+        except json.JSONDecodeError:
+            print(f"[LLM] JSON 解析失敗：{response}")
         
-        # 第三次嘗試：處理 Python set 格式 {"item1", "item2"}
-        if data is None:
-            # 尋找 { ... } 格式
-            start = raw.find("{")
-            end = raw.rfind("}")
-            if start != -1 and end != -1 and end > start:
-                set_part = raw[start : end + 1]
-                try:
-                    # 轉換 Python set 格式為 JSON 陣列
-                    set_content = set_part[1:-1]  # 移除 { }
-                    items = [item.strip().strip('"').strip("'") for item in set_content.split(",")]
-                    # 過濾空項目
-                    data = [item for item in items if item]
-                except Exception as parse_err3:
-                    print("LLM recommend set parse error:", parse_err3, "set_part=", set_part)
-        
-        # 第四次嘗試：處理純文字清單
-        if data is None:
-            # 如果回傳的是純文字，嘗試按行或逗號分割
-            lines = raw.split('\n')
-            items = []
-            for line in lines:
-                line = line.strip()
-                # 移除編號和符號
-                line = line.lstrip('0123456789.-* ')
-                if line and line in candidates:
-                    items.append(line)
-            if items:
-                data = items
-
-        if isinstance(data, list):
-            recommended = [str(x) for x in data]
-        elif isinstance(data, dict) and "recommended_symptoms" in data:
-            value = data.get("recommended_symptoms")
-            if isinstance(value, list):
-                recommended = [str(x) for x in value]
-
-        # 僅保留在候選清單中的項目，並去重、限制數量
-        candidate_set = set(candidates)
-        filtered: list[str] = []
-        for name in recommended:
-            if name in candidate_set and name not in filtered:
-                filtered.append(name)
-            if len(filtered) >= max_results:
-                break
-
-        # 允許回傳空陣列，前端會在這種情況下退回關鍵字推薦，避免出現明顯不相干的 LLM 建議。
-        return RecommendSymptomsResponse(recommended_symptoms=filtered)
-
+        # 如果 JSON 解析失敗，返回空陣列
+        return RecommendSymptomsResponse(recommended_symptoms=[])
     except Exception as e:
-        print("LLM recommend error:", e)
+        print("Recommend symptoms error:", e)
         return RecommendSymptomsResponse(recommended_symptoms=[])
 
 # 新增一個 API，用來抓取那 5 個隨機病患 (誒這是啥呀)

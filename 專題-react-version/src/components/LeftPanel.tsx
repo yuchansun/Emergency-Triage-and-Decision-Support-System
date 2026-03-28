@@ -11,6 +11,26 @@ interface LeftPanelProps {
   onDirectToER: () => void;
   directToERSelected: boolean;
   age?: number;
+  vitals?: {
+    temperature: string;
+    heartRate: string;
+    spo2: string;
+    respRate: string;
+    weight: string;
+    systolicBP: string;
+    diastolicBP: string;
+    bloodSugar: string;
+    bloodSugarLevel: string | null;
+    gcsEye: string | null;
+    gcsVerbal: string | null;
+    gcsMotor: string | null;
+    obHistory: string | null;
+    pastHistory: string[];
+    drugAllergy: string | null;
+    painScore: number | null;
+    doNotTreat: string;
+    sentiment: number | null;
+  };
   onChiefComplaintChange?: (data: {
     selectedRules: Record<string, { 
       degree: number; 
@@ -22,7 +42,7 @@ interface LeftPanelProps {
   }) => void;
 }
 
-const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, onWorstDegreeChange, onDirectToER, directToERSelected, age, onChiefComplaintChange }) => {
+const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, onWorstDegreeChange, onDirectToER, directToERSelected, age, vitals, onChiefComplaintChange }) => {
   const [activeTab, setActiveTab] = useState<'t' | 'a'>('t');
 
   return (
@@ -38,6 +58,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymp
         onDirectToER={onDirectToER}
         directToERSelected={directToERSelected}
         age={age}
+        vitals={vitals}
         onChiefComplaintChange={onChiefComplaintChange}
       />
       <SymptomSelection
