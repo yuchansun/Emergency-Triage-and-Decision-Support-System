@@ -321,7 +321,7 @@ function App() {
               <PatientInfo patient={patientData} bed={bed} setBed={setBed} patientSource={patientSource} setPatientSource={setPatientSource} majorIncident={majorIncident} setMajorIncident={setMajorIncident} onToccChange={setTocc} />
             </div>
             <div className="col-span-6">
-              <LeftPanel selectedSymptoms={selectedSymptoms} setSelectedSymptoms={setSelectedSymptoms} inputText={inputText} setInputText={setInputText} onWorstDegreeChange={setWorstSelectedDegree} onDirectToER={handleDirectToER} directToERSelected={directToERSelected} age={patientData?.age} onChiefComplaintChange={handleChiefComplaintChange} llmMode={llmMode}/>
+              <LeftPanel selectedSymptoms={selectedSymptoms} setSelectedSymptoms={setSelectedSymptoms} inputText={inputText} setInputText={setInputText} onWorstDegreeChange={setWorstSelectedDegree} onDirectToER={handleDirectToER} directToERSelected={directToERSelected} age={patientData?.age} vitals={vitals} onChiefComplaintChange={handleChiefComplaintChange} llmMode={llmMode}/>
             </div>
             <div className="col-span-4 flex flex-col gap-6">
               <SystemRecommendation

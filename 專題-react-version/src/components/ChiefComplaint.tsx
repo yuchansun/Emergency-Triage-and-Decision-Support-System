@@ -325,7 +325,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       // 如果沒有文字輸入，傳遞空字串給後端，讓後端專門處理生命徵象
       const textToSend = raw || '';
       
-      const res = await fetch('${LLM_BASE_URL}/api/summarize-chief-complaint', {
+      const res = await fetch(`${LLM_BASE_URL}/api/summarize-chief-complaint`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -593,7 +593,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     try {
       console.log('[LLM] requesting symptom recommendations with summary:', summary);
       console.log('[LLM] requesting with vitals:', vitals);
-      const res = await fetch('${LLM_BASE_URL}/api/recommend-symptoms', {
+      const res = await fetch(`${LLM_BASE_URL}/api/recommend-symptoms`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
