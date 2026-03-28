@@ -104,9 +104,14 @@ class RecommendSymptomsResponse(BaseModel):
 @app.post("/api/summarize-chief-complaint", response_model=SummarizeResponse)
 async def summarize_cc(body: SummarizeRequest):
     try:
+        # 先獲取輸入參數
+        raw = body.text.strip()
+        vitals = body.vitals
+        llm_mode = getattr(body, 'llm_mode', 'local')
+        
         # 使用 RAG 增強的 prompt
-        llm_fn = call_gemini_llm if body.llm_mode == "cloud" else call_local_llm
-        if body.llm_mode == "cloud":
+        llm_fn = call_gemini_llm if llm_mode == "cloud" else call_local_llm
+        if llm_mode == "cloud":
             prompt = (
                 "你是一位急診分級護理師的助手。請從以下原始主訴中，整理出主要症狀關鍵詞，"
                 "使用頓號（、）分隔，例如：『頭痛、頭暈、胸悶』。"
@@ -116,8 +121,6 @@ async def summarize_cc(body: SummarizeRequest):
         else:
             prompt = rag_pipeline.enhance_symptom_summary(raw)
         summary = llm_fn(prompt).strip()
-        raw = body.text.strip()
-        vitals = body.vitals
         
         # 分析生命徵象異常
         vitals_symptoms = []
