@@ -56,6 +56,17 @@ function App() {
     pastHistory: [], drugAllergy: null, painScore: null, doNotTreat: '', sentiment: null,
   });
 
+  // 添加調試來監控 vitals 變化
+  const debugSetVitals = (newVitals: any) => {
+    console.log('[App] setVitals called with:', newVitals);
+    setVitals(newVitals);
+  };
+
+  // 監控 vitals 狀態變化
+  useEffect(() => {
+    console.log('[App] vitals state updated:', vitals);
+  }, [vitals]);
+
   const [chiefComplaintData, setChiefComplaintData] = useState({
     selectedRules: {} as Record<string, { degree: number; judge: string; rule_code: string; symptom_name: string }>,
     supplementText: '',
@@ -328,7 +339,7 @@ function App() {
                 }}
                 onConfirmAndSave={handleConfirmAndSaveTriage}
               />
-              <Vitals gender={patientData?.gender} vitals={vitals} setVitals={setVitals} />
+              <Vitals gender={patientData?.gender} vitals={vitals} setVitals={debugSetVitals} />
             </div>
           </div>
         )}
