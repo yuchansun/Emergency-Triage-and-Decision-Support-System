@@ -5,6 +5,7 @@ from routers.triagehierarchy import router as triage_router
 from routers.triagesave import router as triage_save_router 
 from routers.patients import router as patient_router
 from routers.login import router as login_router  # 1. 新增導入
+from routers.symptoms import router as symptoms_router  # 2. 新增導入
 
 app = FastAPI()
 
@@ -24,6 +25,8 @@ app.include_router(patient_router)
 app.include_router(counts_router)
 app.include_router(triage_router)
 app.include_router(triage_save_router)
+app.include_router(symptoms_router)
+
   # 2. 註冊登入路由
 
 # 如果你按照上面的 prefix 設定，API 路徑會是: /auth/login
