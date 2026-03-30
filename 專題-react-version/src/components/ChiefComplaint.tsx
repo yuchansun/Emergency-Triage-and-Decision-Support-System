@@ -273,18 +273,33 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
           return base ? base + (base.endsWith('\n') ? '' : '\n') + currentVoiceText : currentVoiceText;
         });
         
-        // 不設置輸入框內容，直接統整
+        // 累積整段錄音
+        fullVoiceRef.current = fullVoiceRef.current
+          ? fullVoiceRef.current + (fullVoiceRef.current.endsWith('\n') ? '' : '\n') + currentVoiceText
+          : currentVoiceText;
+        
+        // 清空語音緩衝
+        voiceBufferRef.current = '';
+        
+        // 直接處理語音內容，不依賴 onend 事件
+        console.log('[INTEGRATE] 直接處理語音內容');
         void runLlmSummarizeAndRecommend(currentVoiceText);
       } else {
         // 沒有語音內容，直接統整
         performIntegrate();
       }
     } else {
-      // 沒有在錄音，直接統整
-      // 等待一個tick確保狀態更新完成
-      setTimeout(() => {
-        performIntegrate();
-      }, 50);
+      // 沒有在錄音，檢查是否有未處理的語音內容
+      const unprocessedVoice = fullVoiceRef.current?.trim() || '';
+      if (unprocessedVoice && !voiceProcessedRef.current) {
+        console.log('[INTEGRATE] 發現未處理的語音內容，直接統整');
+        void runLlmSummarizeAndRecommend(unprocessedVoice);
+      } else {
+        // 沒有語音內容或已處理過，直接統整
+        setTimeout(() => {
+          performIntegrate();
+        }, 50);
+      }
     }
   };
   
@@ -645,9 +660,29 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     // 一鍵統整時，優先使用傳入的 rawText，其次使用目前主訴欄位
     let source = '';
     
-    // 如果有傳入 rawText（一鍵統整按鈕），使用傳入的內容
+    // 如果有傳入 rawText（一鍵統整按鈕），需要與現有主訴合併
     if (rawText !== undefined) {
-      source = rawText.trim();
+      const currentInput = inputText.trim();
+      const newVoice = rawText.trim();
+      
+      // 檢查新語音是否已經在現有主訴中
+      const isAlreadyProcessed = currentInput.includes(newVoice) || 
+        newVoice.split(/[、，,]/).some(part => currentInput.includes(part.trim()));
+      
+      if (isAlreadyProcessed) {
+        console.log('[LLM] 語音內容已處理過，跳過合併');
+        source = currentInput; // 只使用現有主訴
+      } else if (currentInput && newVoice) {
+        // 如果都有內容且未處理過，合併處理
+        source = `${currentInput}；${newVoice}`;
+        console.log('[LLM] 合併現有主訴和新的語音內容');
+      } else if (newVoice) {
+        // 只有新語音
+        source = newVoice;
+      } else {
+        // 只有現有主訴
+        source = currentInput;
+      }
     } 
     // 如果有語音內容且還沒清空，使用語音內容
     else if (fullVoiceRef.current) {
@@ -767,7 +802,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
     recognition.lang = speechLangRef.current;
-    recognition.interimResults = false;
+    recognition.interimResults = false;  // 改回 false，只處理最終結果
     recognition.continuous = true;
     recognition.maxAlternatives = 1;
 
@@ -855,21 +890,20 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
         // 直接處理語音，不考慮生命徵象
         console.log('[VOICE] 正常處理語音');
         handleVoiceOnly(raw);
+        
+        // 處理完成後清空 fullVoiceRef，避免重複處理
+        fullVoiceRef.current = '';
       }
-      fullVoiceRef.current = '';
     };
 
     recognition.onresult = (event: any) => {
-      console.log('[VOICE] result event:', event);
       // 只取最新一個 result，避免每次都從 results[0] 取而造成整句重複累積
       const lastIndex = event.results.length - 1;
       const transcript = (event.results[lastIndex][0].transcript as string) || '';
-      console.log('[VOICE] transcript =', transcript);
       if (!transcript) return;
 
       const base = voiceBufferRef.current || '';
       voiceBufferRef.current = base ? base + (base.endsWith('\n') ? '' : '\n') + transcript : transcript;
-      console.log('[VOICE] buffer now =', voiceBufferRef.current);
     };
 
     recognition.onerror = (e: any) => {
