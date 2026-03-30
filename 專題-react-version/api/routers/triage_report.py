@@ -158,12 +158,32 @@ async def get_triage_report(triage_id: str):
                 if item.get("notes"):
                     notes_list.append(item["notes"])
 
+            # 4-1) 由 rule_code -> triage_hierarchy.ttas_degree 取得檢傷級數（最嚴重取 MIN）
+            triage_level = None
+            cur.execute(
+                """
+                SELECT MIN(h.ttas_degree) AS triage_level
+                FROM triage_result r
+                JOIN triage_hierarchy h ON h.rule_code = r.rule_code
+                WHERE r.triage_id = %s
+                  AND h.ttas_degree IS NOT NULL
+                """,
+                (triage_id,)
+            )
+            lv_row = cur.fetchone()
+            if lv_row:
+                if isinstance(lv_row, dict):
+                    triage_level = lv_row.get("triage_level")
+                else:
+                    triage_level = lv_row[0]
+
             birth_date = p_row.get("birth_date")
             data = {
                 "triage_id": base_row.get("triage_id"),
                 "patient_id": resolved_patient_id,
                 "nurse_id": base_row.get("nurse_id"),
                 "created_at": base_row.get("created_at"),
+                "triage_level": triage_level,  # ✅ 新增
 
                 "name": p_row.get("name"),
                 "id_number": p_row.get("id_number"),
