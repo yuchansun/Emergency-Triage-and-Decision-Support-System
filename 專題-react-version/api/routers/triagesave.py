@@ -32,39 +32,44 @@ async def create_triagesave(triagesave_data: dict):
         with conn.cursor() as cur:
             cur.execute("START TRANSACTION")
 
-            patient_id = triagesave_data.get("patientId")
-            nurse_id = triagesave_data.get("nurseId")
+            # ✅ 同時吃 camelCase / snake_case
+            patient_id = triagesave_data.get("patientId") or triagesave_data.get("patient_id")
+            nurse_id = triagesave_data.get("nurseId") or triagesave_data.get("nurse_id")
+            triage_id = triagesave_data.get("triage_id") or triagesave_data.get("triageId")
 
-            # 直接產生字串型 triage_id
-            triage_id = None
-            for _ in range(10):
-                candidate = generate_medical_number(patient_id)
-                cur.execute(
-                    "SELECT triage_id FROM triage_record WHERE triage_id = %s",
-                    (candidate,)
-                )
-                exists = cur.fetchone()
-                if not exists:
-                    triage_id = candidate
-                    break
+            if not patient_id:
+                raise HTTPException(status_code=400, detail="patient_id 不可為空")
 
+            # ✅ 若前端沒帶 triage_id 才新產生
             if not triage_id:
-                raise HTTPException(status_code=500, detail="triage_id 產生失敗")
+                for _ in range(10):
+                    candidate = generate_medical_number(patient_id)
+                    cur.execute("SELECT triage_id FROM triage_record WHERE triage_id = %s", (candidate,))
+                    if not cur.fetchone():
+                        triage_id = candidate
+                        break
+                if not triage_id:
+                    raise HTTPException(status_code=500, detail="triage_id 產生失敗")
 
-            logger.info(f"[triagesave] triage_id={triage_id}")
-
+            # ✅ 同一 triage_id: 更新，不新增第二筆
             cur.execute(
-                "INSERT INTO triage_record (triage_id, patient_id, nurse_id) VALUES (%s, %s, %s)",
+                """
+                INSERT INTO triage_record (triage_id, patient_id, nurse_id)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                  patient_id = VALUES(patient_id),
+                  nurse_id = VALUES(nurse_id)
+                """,
                 (triage_id, patient_id, nurse_id)
             )
 
+            # --- vital_signs：先刪舊再寫新，避免同 triage_id 多筆 ---
+            cur.execute("DELETE FROM vital_signs WHERE triage_id = %s", (triage_id,))
             vitals = triagesave_data.get("vitals", {})
-            # 在第62行之前加入
             do_not_treat = vitals.get("do_not_treat")
             if do_not_treat == '' or do_not_treat is None:
-                do_not_treat = 0  # 或者 None，看資料庫欄位定義
- 
-            
+                do_not_treat = 0
+
             cur.execute(
                 """INSERT INTO vital_signs (
                     triage_id, temperature, heart_rate, spo2, respiratory_rate, weight,
@@ -73,44 +78,36 @@ async def create_triagesave(triagesave_data: dict):
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     triage_id,
-                    vitals.get("temperature"),
-                    vitals.get("heart_rate"),
-                    vitals.get("spo2"),
-                    vitals.get("respiratory_rate"),
-                    vitals.get("weight"),
-                    vitals.get("blood_pressure_sys"),
-                    vitals.get("blood_pressure_dia"),
-                    vitals.get("blood_sugar"),
-                    vitals.get("gcs_eye"),
-                    vitals.get("gcs_verbal"),
-                    vitals.get("gcs_motor"),
-                    vitals.get("past_medical_history"),
-                    do_not_treat,
-                    vitals.get("allergy"),
-                    vitals.get("pain_score"),
-                    vitals.get("sentiment"),
+                    vitals.get("temperature"), vitals.get("heart_rate"), vitals.get("spo2"),
+                    vitals.get("respiratory_rate"), vitals.get("weight"),
+                    vitals.get("blood_pressure_sys"), vitals.get("blood_pressure_dia"),
+                    vitals.get("blood_sugar"), vitals.get("gcs_eye"), vitals.get("gcs_verbal"),
+                    vitals.get("gcs_motor"), vitals.get("past_medical_history"),
+                    do_not_treat, vitals.get("allergy"), vitals.get("pain_score"), vitals.get("sentiment"),
                 )
             )
 
+            # --- triage_result：先刪舊再寫新 ---
+            cur.execute("DELETE FROM triage_result WHERE triage_id = %s", (triage_id,))
             result = triagesave_data.get("result", {})
             rule_codes = [c.strip() for c in (result.get("rule_code") or "").split(";") if c.strip()]
             notes = result.get("notes") or ""
-
-            logger.info(f"[triagesave] result={result}")
-            logger.info(f"[triagesave] rule_codes={rule_codes}")
+            chief_complaint = (result.get("chief_complaint") or triagesave_data.get("inputText") or "").strip()
 
             if rule_codes:
                 for rule_code in rule_codes:
                     cur.execute(
-                        "INSERT INTO triage_result (triage_id, rule_code, notes) VALUES (%s, %s, %s)",
-                        (triage_id, rule_code, notes)
+                        "INSERT INTO triage_result (triage_id, rule_code, chief_complaint, notes) VALUES (%s, %s, %s, %s)",
+                        (triage_id, rule_code, chief_complaint, notes)
                     )
-            elif notes:
+            elif notes or chief_complaint:
                 cur.execute(
-                    "INSERT INTO triage_result (triage_id, rule_code, notes) VALUES (%s, %s, %s)",
-                    (triage_id, None, notes)
+                    "INSERT INTO triage_result (triage_id, rule_code, chief_complaint, notes) VALUES (%s, %s, %s, %s)",
+                    (triage_id, None, chief_complaint, notes)
                 )
 
+            # --- encounter_extra：先刪舊再寫新 ---
+            cur.execute("DELETE FROM encounter_extra WHERE triage_id = %s", (triage_id,))
             # 時間格式轉換
             visit_time = triagesave_data.get("visitTime")
             if visit_time:
@@ -167,11 +164,7 @@ async def create_triagesave(triagesave_data: dict):
 
             conn.commit()
 
-        return {
-            "success": True,
-            "message": "檢傷資料已儲存",
-            "triageId": triage_id
-        }
+        return {"success": True, "message": "檢傷資料已儲存", "triageId": triage_id}
 
     except pymysql.MySQLError as e:
         if conn:
@@ -193,7 +186,7 @@ async def get_triagesave(triage_id: str):
                     t.triage_id, t.patient_id, t.nurse_id,
                     v.*, 
                     e.*,
-                    r.rule_code, r.notes
+                    r.rule_code, r.chief_complaint, r.notes
                 FROM triage_record t
                 LEFT JOIN vital_signs v ON t.triage_id = v.triage_id
                 LEFT JOIN encounter_extra e ON t.triage_id = e.triage_id

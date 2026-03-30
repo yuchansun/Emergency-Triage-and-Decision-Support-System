@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import './App.css';
 import PatientInfo from './components/PatientInfo';
 import LeftPanel from './components/LeftPanel';
@@ -34,6 +34,9 @@ function App() {
   // 控制側邊欄收縮 (預設收起)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  //const [llmMode, setLlmMode] = useState<'cloud' | 'local'>('cloud'); //新加
+  const [llmMode, setLlmMode] = useState<'cloud' | 'local'>('local'); // 預設為地端模式，開發階段方便測試
+
   const [selectedSymptoms, setSelectedSymptoms] = useState<Set<string>>(new Set());
   const [inputText, setInputText] = useState<string>('');
   const [worstSelectedDegree, setWorstSelectedDegree] = useState<number | null>(null);
@@ -41,6 +44,7 @@ function App() {
   const [directToERSelected, setDirectToERSelected] = useState<boolean>(false);
 
   const [patientData, setPatientData] = useState<PatientData | null>(null);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [bed, setBed] = useState<string>('');
   const [patientSource, setPatientSource] = useState<string>('');
   const [majorIncident, setMajorIncident] = useState<string>('');
@@ -51,6 +55,17 @@ function App() {
     gcsEye: null, gcsVerbal: null, gcsMotor: null, obHistory: null,
     pastHistory: [], drugAllergy: null, painScore: null, doNotTreat: '', sentiment: null,
   });
+
+  // 添加調試來監控 vitals 變化
+  const debugSetVitals = (newVitals: any) => {
+    console.log('[App] setVitals called with:', newVitals);
+    setVitals(newVitals);
+  };
+
+  // 監控 vitals 狀態變化
+  useEffect(() => {
+    console.log('[App] vitals state updated:', vitals);
+  }, [vitals]);
 
   const [chiefComplaintData, setChiefComplaintData] = useState({
     selectedRules: {} as Record<string, { degree: number; judge: string; rule_code: string; symptom_name: string }>,
@@ -85,13 +100,15 @@ function App() {
 
   const handleLogin = async (username: string, password: string) => {
     try {
-      const API_BASE_URL = "http://127.0.0.1:8000"; 
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
       const res = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       });
       const data = await res.json();
+      console.log("login response:", data);
+      
       if (res.ok && data.success) {
         localStorage.setItem("isLoggedIn", "true");
         localStorage.setItem("userData", JSON.stringify(data.user));
@@ -106,14 +123,31 @@ function App() {
   };
 
   const handleConfirmAndSaveTriage = async (triageData: any) => {
+    if (isDemoMode) {
+      alert("教學/模擬模式：不會送出或儲存檢傷資料");
+      return;
+    }
+
     const fullPayload = {
+      // ✅ 關鍵：沿用既有紀錄，不要每次新開
+      triage_id: patientData?.triage_id ?? null,
+      triageId: patientData?.triage_id ?? null,
+      patientId: patientData?.patient_id ?? null,
+      patient_id: patientData?.patient_id ?? null,
+      nurseId: currentUser?.nurseId ?? null,
+      nurse_id: currentUser?.nurseId ?? null,
+
       bed, patientSource, majorIncident, visitTime,
       tocc_travel: tocc.travel, tocc_travel_start: tocc.travelStart, tocc_travel_end: tocc.travelEnd,
       tocc_occupation: tocc.occupation, tocc_occupation_other: tocc.occupationOther,
       tocc_contact_items: tocc.contactItems.join(', '), tocc_cluster_items: tocc.clusterItems.join(', '),
       tocc_cluster_other: tocc.clusterOther, tocc_symptoms: tocc.symptoms.join(', '),
       selectedSymptoms: Array.from(selectedSymptoms), inputText, worstSelectedDegree, selectedLevel: triageData.selectedLevel,
-      result: { rule_code: Object.keys(chiefComplaintData.selectedRules).join(';'), notes: chiefComplaintData.supplementText },
+      result: {
+        rule_code: Object.keys(chiefComplaintData.selectedRules).join(';'),
+        chief_complaint: inputText?.trim() || null,
+        notes: chiefComplaintData.supplementText
+      },
       vitals: {
         temperature: parseFloat(vitals.temperature), heart_rate: parseInt(vitals.heartRate),
         spo2: parseInt(vitals.spo2), respiratory_rate: parseInt(vitals.respRate),
@@ -134,6 +168,13 @@ function App() {
       });
       if (res.ok) {
         const responseData = await res.json();
+
+        setPatientData(prev =>
+          prev
+            ? { ...prev, triage_id: responseData.triageId }
+            : prev
+        );
+
         alert(`檢傷資料已儲存，ID: ${responseData.triageId}`);
       } else {
         const errorData = await res.json();
@@ -156,6 +197,47 @@ function App() {
     setChiefComplaintData(data);
   }, []);
 
+  // Fetch patient detail when patientData changes and is not demo mode
+  useEffect(() => {
+    if (!patientData?.patient_id) return;
+    if (isDemoMode) return;
+
+    const fetchPatientDetail = async () => {
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+        const res = await fetch(`${API_BASE_URL}/patients/${patientData.patient_id}`);
+        const result = await res.json();
+
+        if (!res.ok || !result.success || !result.data) return;
+
+        const p = result.data;
+
+        setPatientData(prev => {
+          if (!prev) return prev;
+
+          return {
+            ...prev,
+            name: p.name ?? prev.name,
+            idNumber: p.id_number ?? prev.idNumber,
+            birthDate: p.birth_date ?? prev.birthDate,
+            gender:
+              p.gender === "M" ? "男" :
+              p.gender === "F" ? "女" :
+              p.gender === "U" ? "不詳" :
+              prev.gender,
+            age: p.age ?? prev.age,
+            medicalId: p.medical_id ?? prev.medicalId,
+            visitNumber: p.visit_number ?? prev.visitNumber,
+          };
+        });
+      } catch (error) {
+        console.error("抓病患詳細資料失敗:", error);
+      }
+    };
+
+    fetchPatientDetail();
+  }, [patientData?.patient_id, isDemoMode]);
+
   // === 3. 渲染判斷 ===
   if (stage === "login") return <Login onLogin={handleLogin} />;
 
@@ -173,9 +255,9 @@ function App() {
 
         <nav className="flex-1 px-3 space-y-2 mt-4">
           {[
-            { id: 'main', label: '當前檢傷作業', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
-            { id: 'history', label: '過去病史查詢', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
-            { id: 'addpatient', label: '新病患掛號', icon: 'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z' }
+            { id: 'addpatient', label: '新病患掛號', icon: 'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z' },
+            { id: 'history', label: '過去病史查詢', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' }
+            
           ].map((item) => (
             <button key={item.id} onClick={() => setStage(item.id as any)} className={`w-full flex items-center p-3 rounded-xl transition-all ${stage === item.id ? "bg-blue-600 text-white shadow-lg" : "text-gray-500 hover:bg-gray-100"}`} title={item.label}>
               <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.icon} /></svg>
@@ -183,6 +265,21 @@ function App() {
             </button>
           ))}
         </nav>
+
+        <div className="px-3 mt-4">
+          <button
+            onClick={() => setLlmMode(prev => prev === 'cloud' ? 'local' : 'cloud')}
+            className="w-full flex items-center justify-center p-3 rounded-xl text-white font-bold shadow-md transition-all"
+            style={{
+              backgroundColor: llmMode === 'cloud' ? '#16a34a' : '#2563eb'
+            }}
+            title={llmMode === 'cloud' ? '目前是雲端模式，點擊切換成地端模式' : '目前是地端模式，點擊切換成雲端模式'}
+          >
+            {isSidebarOpen
+              ? (llmMode === 'cloud' ? '🌐 雲端模式' : '💻 地端模式')
+              : (llmMode === 'cloud' ? '🌐' : '💻')}
+          </button>
+        </div>
 
         <div className="p-3 border-t border-gray-100 dark:border-gray-800">
           <button onClick={handleLogout} className="w-full flex items-center p-3 text-red-500 hover:bg-red-50 rounded-xl font-bold group" title="登出系統">
@@ -195,7 +292,27 @@ function App() {
       {/* === 右側主內容 === */}
       <main className="flex-1 relative overflow-y-auto bg-[#F8FAFC]">
         {stage === "addpatient" && (
-          <AddPatient onNext={(data) => { setPatientData(data); setStage("main"); }} />
+          <AddPatient
+            onNext={(data) => {
+              setPatientData(data);
+              setIsDemoMode(false);
+              setStage("main");
+            }}
+            onDemo={() => {
+              setPatientData({
+                name: "教學測試病患",
+                idNumber: "(測試帶入)",
+                birthDate: "1900-1-1",
+                triage_id: "DEMO-001",
+                gender: "",
+                icCard: false,
+                visitNumber: "DEMO-PATIENT",
+                age: 11,
+              });
+              setIsDemoMode(true);
+              setStage("main");
+            }}
+          />
         )}
 
         {stage === "main" && (
@@ -204,11 +321,25 @@ function App() {
               <PatientInfo patient={patientData} bed={bed} setBed={setBed} patientSource={patientSource} setPatientSource={setPatientSource} majorIncident={majorIncident} setMajorIncident={setMajorIncident} onToccChange={setTocc} />
             </div>
             <div className="col-span-6">
-              <LeftPanel selectedSymptoms={selectedSymptoms} setSelectedSymptoms={setSelectedSymptoms} inputText={inputText} setInputText={setInputText} onWorstDegreeChange={setWorstSelectedDegree} onDirectToER={handleDirectToER} directToERSelected={directToERSelected} age={patientData?.age} onChiefComplaintChange={handleChiefComplaintChange} />
+              <LeftPanel selectedSymptoms={selectedSymptoms} setSelectedSymptoms={setSelectedSymptoms} inputText={inputText} setInputText={setInputText} onWorstDegreeChange={setWorstSelectedDegree} onDirectToER={handleDirectToER} directToERSelected={directToERSelected} age={patientData?.age} vitals={vitals} onChiefComplaintChange={handleChiefComplaintChange} llmMode={llmMode}/>
             </div>
             <div className="col-span-4 flex flex-col gap-6">
-              <SystemRecommendation selectedSymptoms={selectedSymptoms} inputText={inputText} worstSelectedDegree={worstSelectedDegree} forceLevel1={forceLevel1} onSubmitLevel={resetMainScreen} onOpenTriageReport={() => setStage("triageReport")} onConfirmAndSave={handleConfirmAndSaveTriage} />
-              <Vitals gender={patientData?.gender} vitals={vitals} setVitals={setVitals} />
+              <SystemRecommendation
+                selectedSymptoms={selectedSymptoms}
+                inputText={inputText}
+                worstSelectedDegree={worstSelectedDegree}
+                forceLevel1={forceLevel1}
+                onSubmitLevel={resetMainScreen}
+                onOpenTriageReport={() => {
+                  if (isDemoMode) {
+                    alert("教學/模擬模式：不開啟檢傷報告頁");
+                    return; // ✅ 擋進報告頁
+                  }
+                  setStage("triageReport");
+                }}
+                onConfirmAndSave={handleConfirmAndSaveTriage}
+              />
+              <Vitals gender={patientData?.gender} vitals={vitals} setVitals={debugSetVitals} />
             </div>
           </div>
         )}
@@ -224,7 +355,10 @@ function App() {
         )}
 
         {stage === "triageReport" && (
-          <EmergencyTriageReport patientData={patientData} onBack={() => setStage('main')} />
+          <EmergencyTriageReport
+            patientData={patientData}
+            onBack={() => setStage("addpatient")} 
+          />
         )}
       </main>
     </div>

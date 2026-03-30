@@ -14,7 +14,8 @@ async def login(request: LoginRequest):
     try:
         with conn.cursor() as cur:
             # 查詢護理人員帳號密碼
-            sql = "SELECT nurse_id, name, role FROM staff WHERE username = %s AND password = %s"
+
+            sql = "SELECT nurse_id, username, 'nurse' as role FROM staff WHERE username = %s AND password = %s"
             cur.execute(sql, (request.username, request.password))
             user = cur.fetchone()
             

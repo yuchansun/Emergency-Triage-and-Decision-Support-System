@@ -11,6 +11,27 @@ interface ChiefComplaintProps {
   onDirectToER?: () => void;
   directToERSelected?: boolean;
   age?: number;
+  llmMode: 'cloud' | 'local';
+  vitals?: {
+    temperature: string;
+    heartRate: string;
+    spo2: string;
+    respRate: string;
+    weight: string;
+    systolicBP: string;
+    diastolicBP: string;
+    bloodSugar: string;
+    bloodSugarLevel: string | null;
+    gcsEye: string | null;
+    gcsVerbal: string | null;
+    gcsMotor: string | null;
+    obHistory: string | null;
+    pastHistory: string[];
+    drugAllergy: string | null;
+    painScore: number | null;
+    doNotTreat: string;
+    sentiment: number | null;
+  };
   onChiefComplaintChange?: (data: {
     selectedRules: Record<string, { 
       degree: number; 
@@ -22,7 +43,9 @@ interface ChiefComplaintProps {
   }) => void;
 }
 
+
 const ChiefComplaint: React.FC<ChiefComplaintProps> = ({ 
+  
   selectedSymptoms, 
   setSelectedSymptoms, 
   inputText, 
@@ -33,6 +56,8 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
   onDirectToER, 
   directToERSelected, 
   age,
+  llmMode, 
+  vitals,
   onChiefComplaintChange,  // ← 新增解構
 }) => {
   interface TriageRow {
@@ -46,6 +71,11 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     ttas_degree: string;
     nhi_degree: string;
   }
+  // const LLM_BASE_URL = 'http://localhost:9000';    
+  const LLM_BASE_URL = llmMode === 'cloud' 
+  ? 'http://localhost:9000'  // 雲端LLM
+  : 'http://localhost:8001'; // 本地端LLM
+
 
   const [triageRows, setTriageRows] = useState<TriageRow[] | null>(null);
   const [triageError, setTriageError] = useState<string | null>(null);
@@ -64,14 +94,22 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     const loadFromDb = async () => {
       try {
         const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+        console.log('[DB] VITE_API_BASE_URL =', API_BASE_URL);
+
         const res = await fetch(`${API_BASE_URL}/triage_hierarchy`);
+        console.log('[DB] fetch triage_hierarchy status =', res.status);
+
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
         const data: TriageRow[] = await res.json();
+        console.log('[DB] triage rows count =', data?.length ?? 0);
+      console.log('[DB] triage rows preview =', (data ?? []).slice(0, 5));
+
         if (cancelled) return;
         setTriageRows(data ?? []);
       } catch (err: any) {
+        console.error('[DB] load triage_hierarchy error =', err);
         if (cancelled) return;
         setTriageError(err?.message ?? '載入 triage_hierarchy（資料庫）失敗');
       }
@@ -84,6 +122,194 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     };
   }, []);
 
+  // 添加狀態來追蹤上次處理的生命徵象
+  const [lastProcessedVitals, setLastProcessedVitals] = useState<any>(null);
+
+  // 監聽生命徵象變化，當有異常時自動觸發分析
+  useEffect(() => {
+    if (!vitals) return;
+
+    // 如果正在錄音，不處理生命徵象更新，避免與語音結束處理衝突
+    if (isListening) {
+      console.log('[CC] 正在錄音，跳過生命徵象更新');
+      return;
+    }
+
+    // 檢查是否有生命徵象異常
+    const hasAbnormalVitals = Object.keys(vitals).some(key => {
+      const value = vitals[key as keyof typeof vitals];
+      if (value && typeof value === 'string' && value.trim() !== '') {
+        // 簡單檢查一些常見的異常值
+        if (key === 'temperature') {
+          const temp = parseFloat(value);
+          return !isNaN(temp) && temp >= 38.0;
+        }
+        if (key === 'systolicBP') {
+          const systolic = parseFloat(value);
+          return !isNaN(systolic) && systolic >= 140;
+        }
+        if (key === 'heartRate') {
+          const hr = parseFloat(value);
+          return !isNaN(hr) && (hr >= 120 || hr < 60);
+        }
+        if (key === 'spo2') {
+          const spo2 = parseFloat(value);
+          return !isNaN(spo2) && spo2 < 94;
+        }
+      }
+      return false;
+    });
+
+    // 如果有異常生命徵象，檢查是否需要更新主訴
+    if (hasAbnormalVitals) {
+      // 檢查當前主訴是否已經包含所有生命徵象症狀
+      const currentSymptoms = inputText.split('、').filter(s => s.trim());
+      let needsUpdate = false;
+      
+      // 檢查是否有新的生命徵象症狀沒有被包含在當前主訴中
+      Object.keys(vitals).forEach(key => {
+        const value = vitals[key as keyof typeof vitals];
+        if (value && typeof value === 'string' && value.trim() !== '') {
+          let vitalSymptom = '';
+          
+          if (key === 'temperature') {
+            const temp = parseFloat(value);
+            if (!isNaN(temp) && temp >= 38.0) {
+              vitalSymptom = '發燒';  // 統一為"發燒"
+            }
+          } else if (key === 'systolicBP') {
+            const systolic = parseFloat(value);
+            if (!isNaN(systolic) && systolic >= 140) {
+              if (systolic >= 160) vitalSymptom = '重度高血壓';
+              else vitalSymptom = '高血壓';
+            }
+          } else if (key === 'heartRate') {
+            const hr = parseFloat(value);
+            if (!isNaN(hr) && (hr >= 120 || hr < 60)) {
+              vitalSymptom = hr >= 120 ? '心跳過速' : '心跳過緩';
+            }
+          } else if (key === 'spo2') {
+            const spo2 = parseFloat(value);
+            if (!isNaN(spo2) && spo2 < 94) {
+              vitalSymptom = '低血氧';
+            }
+          }
+          
+          // 檢查這個生命徵象症狀是否已經在主訴中
+          if (vitalSymptom && !currentSymptoms.some(symptom => 
+            symptom.includes(vitalSymptom) || vitalSymptom.includes(symptom))) {
+            needsUpdate = true;
+          }
+        }
+      });
+      
+      // 檢查生命徵象是否有實際變化
+      const vitalsChanged = !lastProcessedVitals || 
+        JSON.stringify(vitals) !== JSON.stringify(lastProcessedVitals);
+      
+      // 當有生命徵象異常且有主訴內容時，總是要更新（確保合併）
+      if ((needsUpdate || inputText.trim()) && vitalsChanged) {
+        console.log('[CC] 檢測到新的生命徵象異常，需要更新主訴');
+        console.log('[CC] 當前 inputText:', inputText);
+        console.log('[CC] needsUpdate:', needsUpdate);
+        setLastProcessedVitals({...vitals}); // 更新上次處理的生命徵象
+        
+        // 縮短防抖時間，提高響應速度
+        const timer = setTimeout(() => {
+          // 如果當前有主訴內容，需要合併生命徵象
+          if (inputText.trim()) {
+            console.log('[CC] 合併現有主訴和生命徵象');
+            console.log('[CC] 當前主訴內容:', inputText);
+            console.log('[CC] 當前 vitals:', JSON.stringify(vitals, null, 2));
+            // 直接傳遞當前主訴，讓後端智能合併生命徵象
+            void runLlmSummarizeAndRecommend(inputText);
+          } else {
+            console.log('[CC] 只有生命徵象，沒有主訴內容');
+            console.log('[CC] 當前 vitals:', JSON.stringify(vitals, null, 2));
+            void runLlmSummarizeAndRecommend('');
+          }
+        }, 500); // 延長到 500ms，等待語音處理完成
+        
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [vitals, inputText, lastProcessedVitals, isListening]);
+
+  // 簡化語音處理，只處理語音辨識，統整成主訴
+  const handleVoiceOnly = (rawText: string) => {
+    console.log('[VOICE] 語音處理（僅語音）：', rawText);
+    // 不設置輸入框內容，等待LLM處理完成後再設置
+    void runLlmSummarizeAndRecommend(rawText);
+  };
+
+  // 一鍵統整功能
+  const handleOneClickIntegrate = () => {
+    console.log('[INTEGRATE] 一鍵統整觸發');
+    
+    // 如果正在錄音，先停止錄音並獲取語音內容
+    if (isListening && recognitionRef.current) {
+      console.log('[INTEGRATE] 正在錄音中，停止語音辨識');
+      
+      // 獲取當前語音緩衝內容
+      const currentVoiceText = voiceBufferRef.current?.trim() || '';
+      console.log('[INTEGRATE] 當前語音緩衝:', currentVoiceText);
+      
+      // 設置標記，防止語音結束事件重複處理
+      voiceProcessedRef.current = true;
+      
+      // 停止語音辨識
+      recognitionRef.current.stop();
+      setIsListening(false);
+      
+      // 手動設置補充資料（逐字稿）
+      if (currentVoiceText) {
+        setSupplementText(prev => {
+          const base = prev || '';
+          const lines = base.split('\n').filter(l => l.length > 0);
+          // 若任一行已經與這次錄音結果相同，就不要再重複新增
+          if (lines.includes(currentVoiceText)) {
+            return base;
+          }
+          return base ? base + (base.endsWith('\n') ? '' : '\n') + currentVoiceText : currentVoiceText;
+        });
+        
+        // 不設置輸入框內容，直接統整
+        void runLlmSummarizeAndRecommend(currentVoiceText);
+      } else {
+        // 沒有語音內容，直接統整
+        performIntegrate();
+      }
+    } else {
+      // 沒有在錄音，直接統整
+      // 等待一個tick確保狀態更新完成
+      setTimeout(() => {
+        performIntegrate();
+      }, 50);
+    }
+  };
+  
+  // 執行統整的實際邏輯
+  const performIntegrate = () => {
+    console.log('[INTEGRATE] 執行統整');
+    console.log('[INTEGRATE] 當前主訴:', inputText);
+    console.log('[INTEGRATE] 當前 vitals:', JSON.stringify(vitals, null, 2));
+    
+    // 檢查是否有內容需要統整
+    const hasContent = inputText.trim() || vitals && Object.keys(vitals).some(key => {
+      const value = vitals[key as keyof typeof vitals];
+      return value && typeof value === 'string' && value.trim() !== '';
+    });
+    
+    if (!hasContent) {
+      console.log('[INTEGRATE] 沒有內容需要統整');
+      return;
+    }
+    
+    // 使用當前輸入框的內容加上生命徵象一起統整
+    console.log('[INTEGRATE] 統整當前主訴內容:', inputText);
+    void runLlmSummarizeAndRecommend(inputText);
+  };
+
   const [recommendedSymptoms, setRecommendedSymptoms] = useState<string[]>([]);
   // LLM 事先為外傷 / 非外傷各自計算好的推薦症狀，切換 Tab 時直接使用
   const [llmTraumaSymptoms, setLlmTraumaSymptoms] = useState<string[] | null>(null);
@@ -94,13 +320,23 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
   const summarizeChiefComplaint = async (raw: string): Promise<string> => {
     try {
       console.log('[LLM] sending raw chief complaint to backend:', raw);
-      const res = await fetch('http://localhost:8001/api/summarize-chief-complaint', {
+      console.log('[LLM] sending vitals to backend:', vitals);
+      
+      // 如果沒有文字輸入，傳遞空字串給後端，讓後端專門處理生命徵象
+      const textToSend = raw || '';
+      
+      const res = await fetch(`${LLM_BASE_URL}/api/summarize-chief-complaint`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ text: raw }),
+        body: JSON.stringify({ 
+          text: textToSend,
+          llm_mode: llmMode,
+          vitals: vitals || {}
+        }),
       });
+      
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         console.error('[LLM] backend returned non-OK status', res.status, text);
@@ -347,12 +583,17 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     }
 
     const candidates = Array.from(candidateSet);
+    console.log('[LLM] tab =', tab);
+    console.log('[LLM] summary =', summary);
+    console.log('[LLM] candidates count =', candidates.length);
+    console.log('[LLM] candidates preview =', candidates.slice(0, 20));
 
     if (!candidates.length) return null;
 
     try {
       console.log('[LLM] requesting symptom recommendations with summary:', summary);
-      const res = await fetch('http://localhost:8001/api/recommend-symptoms', {
+      console.log('[LLM] requesting with vitals:', vitals);
+      const res = await fetch(`${LLM_BASE_URL}/api/recommend-symptoms`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -361,6 +602,8 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
           text: summary,
           symptom_candidates: candidates,
           max_results: 10,
+          llm_mode: llmMode,
+          vitals: vitals || {}
         }),
       });
 
@@ -370,6 +613,8 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       }
 
       const data = await res.json();
+      console.log('[LLM] raw recommend response =', data);
+      
       const list: string[] = Array.isArray(data?.recommended_symptoms)
         ? data.recommended_symptoms
         : [];
@@ -397,13 +642,60 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
 
   // 共用：用 LLM 先整理主訴，再更新推薦症狀
   const runLlmSummarizeAndRecommend = async (rawText?: string) => {
-    // 優先使用錄音整段逐字稿，其次使用呼叫方傳入的 rawText，最後才用目前主訴欄位
-    const source = (fullVoiceRef.current || rawText || inputText || '').trim();
-    if (!source) return;
+    // 一鍵統整時，優先使用傳入的 rawText，其次使用目前主訴欄位
+    let source = '';
+    
+    // 如果有傳入 rawText（一鍵統整按鈕），使用傳入的內容
+    if (rawText !== undefined) {
+      source = rawText.trim();
+    } 
+    // 如果有語音內容且還沒清空，使用語音內容
+    else if (fullVoiceRef.current) {
+      source = fullVoiceRef.current.trim();
+    } 
+    // 最後使用目前主訴欄位
+    else {
+      source = inputText.trim();
+    }
+    
+    console.log('[LLM] 整理主訴 source:', source);
+    console.log('[LLM] 使用 vitals:', vitals);
+    
+    // 檢查是否有生命徵象異常，即使沒有文字輸入也要處理
+    const hasAbnormalVitals = vitals && Object.keys(vitals).some(key => {
+      const value = vitals[key as keyof typeof vitals];
+      if (value && typeof value === 'string' && value.trim() !== '') {
+        // 簡單檢查一些常見的異常值
+        if (key === 'temperature') {
+          const temp = parseFloat(value);
+          return !isNaN(temp) && temp >= 38.0;
+        }
+        if (key === 'systolicBP') {
+          const systolic = parseFloat(value);
+          return !isNaN(systolic) && systolic >= 140;
+        }
+        if (key === 'heartRate') {
+          const hr = parseFloat(value);
+          return !isNaN(hr) && (hr >= 120 || hr < 60);
+        }
+        if (key === 'spo2') {
+          const spo2 = parseFloat(value);
+          return !isNaN(spo2) && spo2 < 94;
+        }
+      }
+      return false;
+    });
 
-    console.log('[CC] runLlmSummarizeAndRecommend activeTab =', activeTab, 'source =', source);
+    // 如果沒有文字輸入也沒有異常生命徵象，就不處理
+    if (!source && !hasAbnormalVitals) {
+      console.log('[CC] 沒有文字輸入也沒有異常生命徵象，跳過處理');
+      return;
+    }
+
+    console.log('[CC] runLlmSummarizeAndRecommend activeTab =', activeTab, 'source =', source, 'hasAbnormalVitals =', hasAbnormalVitals);
 
     const summary = await summarizeChiefComplaint(source);
+    // 設置統整後的主訴
     setInputText(summary);
 
     // 讓 LLM 針對外傷 / 非外傷各自產生一組推薦清單，之後切換 Tab 時直接使用
@@ -421,8 +713,14 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     } else if (activeTab === 'a' && nonTraumaList && nonTraumaList.length) {
       setRecommendedSymptoms(nonTraumaList);
     } else {
-      searchSymptoms(source);
+      // fallback: 關鍵字推薦
+      const keywords = summary.split(/[、，,]/).filter(k => k.trim());
+      const fallback = await requestLlmRecommendations(keywords.join(' '), activeTab);
+      setRecommendedSymptoms(fallback ?? []);
     }
+
+    // 清空語音緩衝
+    fullVoiceRef.current = '';
   };
 
   const isSymptomSelectedByLabel = (label: string) => {
@@ -444,8 +742,8 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      // Enter 觸發：用目前主訴呼叫 LLM 進行「整理＋推薦」
-      void runLlmSummarizeAndRecommend(inputText);
+      // Enter 不再自動觸發 LLM，等待用戶點擊一鍵統整
+      console.log('[KEY] Enter pressed, waiting for one-click integrate');
     }
   };
 
@@ -485,9 +783,18 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       setIsListening(false);
       recognitionRef.current = null;
 
+      // 如果已經被一鍵統整處理過，跳過
+      if (voiceProcessedRef.current) {
+        console.log('[VOICE] onend skipped due to one-click integrate');
+        voiceProcessedRef.current = false; // 重置標記
+        return;
+      }
+
       const raw = voiceBufferRef.current.trim();
       console.log('[VOICE] final raw text =', raw);
+      
       if (raw) {
+        // 設置補充資料（逐字稿）
         setSupplementText(prev => {
           const base = prev || '';
           const lines = base.split('\n').filter(l => l.length > 0);
@@ -510,21 +817,44 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
         console.log('[VOICE] onend due to lang switch, restarting with lang =', speechLangRef.current);
         langSwitchRef.current = false;
         voiceProcessedRef.current = false;
-        startSpeechRecognition();
+        startListening();
         return;
       }
-
-      // 防止重複執行：檢查是否已已经處理過（只在真正結束錄音時生效）
-      if (voiceProcessedRef.current) {
-        console.log('[VOICE] onend already processed, skip');
-        return;
-      }
-      voiceProcessedRef.current = true;
 
       // 錄音真正結束：用整段累積內容送給 LLM 做整理
-      const fullRaw = (fullVoiceRef.current || raw).trim();
-      if (fullRaw) {
-        void runLlmSummarizeAndRecommend(fullRaw);
+      if (raw) {
+        console.log('[VOICE] 語音結束，處理內容：', raw);
+        
+        // 檢查是否有生命徵象異常
+        const hasAbnormalVitals = vitals && Object.keys(vitals).some(key => {
+          const value = vitals[key as keyof typeof vitals];
+          if (value && typeof value === 'string' && value.trim() !== '') {
+            if (key === 'temperature') {
+              const temp = parseFloat(value);
+              return !isNaN(temp) && temp >= 38.0;
+            }
+            if (key === 'systolicBP') {
+              const systolic = parseFloat(value);
+              return !isNaN(systolic) && systolic >= 140;
+            }
+            if (key === 'heartRate') {
+              const hr = parseFloat(value);
+              return !isNaN(hr) && (hr >= 120 || hr < 60);
+            }
+            if (key === 'spo2') {
+              const spo2 = parseFloat(value);
+              return !isNaN(spo2) && spo2 < 94;
+            }
+          }
+          return false;
+        });
+        
+        console.log('[VOICE] 檢測到生命徵象異常：', hasAbnormalVitals);
+        console.log('[VOICE] 當前 vitals：', JSON.stringify(vitals, null, 2));
+        
+        // 直接處理語音，不考慮生命徵象
+        console.log('[VOICE] 正常處理語音');
+        handleVoiceOnly(raw);
       }
       fullVoiceRef.current = '';
     };
@@ -538,10 +868,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       if (!transcript) return;
 
       const base = voiceBufferRef.current || '';
-      // 若這次辨識結果已經完整出現在目前累積內容中，就不要再重複新增
-      if (!base.includes(transcript)) {
-        voiceBufferRef.current = base ? base + (base.endsWith('\n') ? '' : '\n') + transcript : transcript;
-      }
+      voiceBufferRef.current = base ? base + (base.endsWith('\n') ? '' : '\n') + transcript : transcript;
       console.log('[VOICE] buffer now =', voiceBufferRef.current);
     };
 
@@ -551,8 +878,20 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       recognitionRef.current = null;
     };
 
-    try {
+    const startListening = () => {
+      if (!recognition) {
+        console.error('[VOICE] SpeechRecognition not supported');
+        return;
+      }
+
+      setIsListening(true);
+      voiceProcessedRef.current = false; // 重置語音處理標記
       recognition.start();
+      console.log('[VOICE] start');
+    };
+
+    try {
+      startListening();
     } catch {
       // 有些瀏覽器若重複呼叫 start 會丟錯誤，這裡忽略即可
     }
@@ -792,19 +1131,28 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
 
       {/* 輸入區域 */}
       <div className="relative mb-4">
-        <textarea 
-          className="form-textarea w-full min-h-[100px] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark p-4 focus:ring-primary focus:border-primary resize-none" 
-          id="symptoms-detail" 
-          placeholder="請輸入患者主訴症狀，系統會根據所有關鍵字持續推薦相關症狀（如：患者主訴頭痛，昨天開始胸悶...）" 
-          value={inputText}
-          onChange={handleInputChange}
-          onKeyDown={handleKeyDown}
-          rows={3}
-        />
+        <div className="flex gap-2">
+          <textarea 
+            className="form-textarea flex-1 min-h-[80px] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark p-4 pr-28 focus:ring-primary focus:border-primary resize-none" 
+            id="symptoms-detail" 
+            placeholder="請輸入患者主訴症狀，系統會根據所有關鍵字持續推薦相關症狀（如：患者主訴頭痛，昨天開始胸悶...）" 
+            value={inputText}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            disabled={isListening}
+          />
+          <button
+            onClick={handleOneClickIntegrate}
+            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors text-sm font-medium whitespace-nowrap"
+            title="統整主訴與生命徵象"
+          >
+            一鍵統整
+          </button>
+        </div>
         <button
           type="button"
           onClick={handleVoiceInputClick}
-          className={`absolute bottom-3 right-3 flex items-center justify-center size-10 rounded-full text-white transition-all duration-200 shadow-md ${
+          className={`absolute bottom-3 right-28 flex items-center justify-center size-10 rounded-full text-white transition-all duration-200 shadow-md ${
             isListening
               ? 'bg-red-500 hover:bg-red-600 scale-110 shadow-red-500/50 animate-pulse'
               : 'bg-primary hover:bg-primary/90'
@@ -956,22 +1304,33 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
                       const isSelected = !!selectedRules[item.rule_code];
                       return (
                         <button
-                          key={item.rule_code}  // ← 改成 rule_code，比較穩定
+                          key={item.rule_code}
                           type="button"
                           onClick={() =>
                             setSelectedRules(prev => {
-                              const existing = prev[item.rule_code];
                               const next = { ...prev };
+                              const existing = prev[item.rule_code];
+
+                              // 先移除同一症狀已選的其他規則
+                              Object.keys(next).forEach(ruleCode => {
+                                if (next[ruleCode].symptom_name === display) {
+                                  delete next[ruleCode];
+                                }
+                              });
+
+                              // 如果原本點的這顆就是已選狀態，代表取消，不重加
                               if (existing) {
-                                delete next[item.rule_code];
-                              } else {
-                                next[item.rule_code] = {
-                                  degree: item.degree,
-                                  judge: item.judge,
-                                  rule_code: item.rule_code,
-                                  symptom_name: display,
-                                };
+                                return next;
                               }
+
+                              // 否則改成這個症狀目前唯一選中的規則
+                              next[item.rule_code] = {
+                                degree: item.degree,
+                                judge: item.judge,
+                                rule_code: item.rule_code,
+                                symptom_name: display,
+                              };
+
                               return next;
                             })
                           }
