@@ -380,6 +380,9 @@ export default function EmergencyTriageReport({ patientData, onBack }: Props) {
     setTimeout(() => { setShowSentModal(false); onBack(); }, 2000);
   };
 
+  const levelCellStyle = (level: any, n: number, color: string) =>
+  Number(level) === n ? `background:${color};font-weight:700;` : "";
+
   return (
     <div className="p-6 space-y-4">
       <h1 className="text-2xl font-bold text-gray-800">檢傷結果</h1>
