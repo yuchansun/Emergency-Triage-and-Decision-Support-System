@@ -48,36 +48,47 @@ function App() {
   const [bed, setBed] = useState<string>('');
   const [patientSource, setPatientSource] = useState<string>('');
   const [majorIncident, setMajorIncident] = useState<string>('');
+  const [visitTime, setVisitTime] = useState<string>(new Date().toISOString());
 
-  const [vitals, setVitals] = useState({
+  const getInitialVitals = () => ({
     temperature: '', heartRate: '', spo2: '', respRate: '', weight: '',
     systolicBP: '', diastolicBP: '', bloodSugar: '', bloodSugarLevel: null,
     gcsEye: null, gcsVerbal: null, gcsMotor: null, obHistory: null,
     pastHistory: [], drugAllergy: null, painScore: null, doNotTreat: '', sentiment: null,
   });
 
-  // 添加調試來監控 vitals 變化
-  const debugSetVitals = (newVitals: any) => {
-    console.log('[App] setVitals called with:', newVitals);
-    setVitals(newVitals);
-  };
+  const getInitialTocc = (): ToccState => ({
+    travel: "", travelStart: "", travelEnd: "", occupation: "", occupationOther: "",
+    contactItems: [], clusterItems: [], clusterOther: "", symptoms: [],
+  });
 
-  // 監控 vitals 狀態變化
-  useEffect(() => {
-    console.log('[App] vitals state updated:', vitals);
-  }, [vitals]);
+  const [vitals, setVitals] = useState(getInitialVitals());
+  const [tocc, setTocc] = useState<ToccState>(getInitialTocc());
 
   const [chiefComplaintData, setChiefComplaintData] = useState({
     selectedRules: {} as Record<string, { degree: number; judge: string; rule_code: string; symptom_name: string }>,
     supplementText: '',
   });
 
-  const [tocc, setTocc] = useState<ToccState>({
-    travel: "", travelStart: "", travelEnd: "", occupation: "", occupationOther: "",
-    contactItems: [], clusterItems: [], clusterOther: "", symptoms: [],
-  });
+  const resetAllTriageState = () => {
+    setSelectedSymptoms(new Set());
+    setInputText('');
+    setWorstSelectedDegree(null);
+    setForceLevel1(false);
+    setDirectToERSelected(false);
 
-  const [visitTime, setVisitTime] = useState<string>(new Date().toISOString());
+    setBed('');
+    setPatientSource('');
+    setMajorIncident('');
+    setVisitTime(new Date().toISOString());
+
+    setVitals(getInitialVitals());
+    setTocc(getInitialTocc());
+    setChiefComplaintData({
+      selectedRules: {},
+      supplementText: '',
+    });
+  };
 
   // === 2. 邏輯函式 ===
   const resetMainScreen = () => {
@@ -170,12 +181,13 @@ function App() {
         const responseData = await res.json();
 
         setPatientData(prev =>
-          prev
-            ? { ...prev, triage_id: responseData.triageId }
-            : prev
+          prev ? { ...prev, triage_id: responseData.triageId } : prev
         );
 
         alert(`檢傷資料已儲存，ID: ${responseData.triageId}`);
+
+        // ✅ 儲存後留在報告頁，不要立刻清空/跳走
+        setStage("triageReport");
       } else {
         const errorData = await res.json();
         alert(`儲存失敗: ${errorData.detail || '未知錯誤'}`);
@@ -238,6 +250,13 @@ function App() {
     fetchPatientDetail();
   }, [patientData?.patient_id, isDemoMode]);
 
+  const goToAddPatientClean = () => {
+    resetAllTriageState();
+    setPatientData(null);
+    setIsDemoMode(false);
+    setStage("addpatient");
+  };
+
   // === 3. 渲染判斷 ===
   if (stage === "login") return <Login onLogin={handleLogin} />;
 
@@ -294,11 +313,13 @@ function App() {
         {stage === "addpatient" && (
           <AddPatient
             onNext={(data) => {
+              resetAllTriageState(); // ✅ 清掉上一位
               setPatientData(data);
               setIsDemoMode(false);
               setStage("main");
             }}
             onDemo={() => {
+              resetAllTriageState(); // ✅ 清掉上一位
               setPatientData({
                 name: "教學測試病患",
                 idNumber: "(測試帶入)",
@@ -339,7 +360,7 @@ function App() {
                 }}
                 onConfirmAndSave={handleConfirmAndSaveTriage}
               />
-              <Vitals gender={patientData?.gender} vitals={vitals} setVitals={debugSetVitals} />
+              <Vitals gender={patientData?.gender} vitals={vitals} setVitals={setVitals} />
             </div>
           </div>
         )}
@@ -357,7 +378,7 @@ function App() {
         {stage === "triageReport" && (
           <EmergencyTriageReport
             patientData={patientData}
-            onBack={() => setStage("addpatient")} 
+            onBack={goToAddPatientClean}
           />
         )}
       </main>
