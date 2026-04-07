@@ -520,6 +520,126 @@ async def recommend_rules(body: RecommendRulesRequest):
         if not candidate_rules:
             return RecommendRulesResponse(recommended_rules=[])
 
+        # 生命徵象數值（未填即 None，不視為 0）
+        temp_val = None
+        spo2_val = None
+        bs_val = None
+        sbp_val = None
+        dbp_val = None
+        gcs_total = None
+        try:
+            if "temperature" in filled_vitals:
+                temp_val = float(filled_vitals["temperature"])
+        except Exception:
+            temp_val = None
+        try:
+            if "spo2" in filled_vitals:
+                spo2_val = float(filled_vitals["spo2"])
+        except Exception:
+            spo2_val = None
+        try:
+            if "bloodSugar" in filled_vitals:
+                bs_val = float(filled_vitals["bloodSugar"])
+        except Exception:
+            bs_val = None
+        try:
+            if "systolicBP" in filled_vitals:
+                sbp_val = float(filled_vitals["systolicBP"])
+            if "diastolicBP" in filled_vitals:
+                dbp_val = float(filled_vitals["diastolicBP"])
+        except Exception:
+            sbp_val = None
+            dbp_val = None
+        try:
+            if all(k in filled_vitals for k in ["gcsEye", "gcsVerbal", "gcsMotor"]):
+                gcs_total = int(filled_vitals["gcsEye"]) + int(filled_vitals["gcsVerbal"]) + int(filled_vitals["gcsMotor"])
+        except Exception:
+            gcs_total = None
+
+        def vitals_rule_score(judge_name: str) -> int:
+            """
+            依生命徵象給規則評分；若明顯矛盾回傳極低分（過濾）。
+            """
+            j = str(judge_name or "")
+            score = 0
+
+            # SpO2 規則一致性
+            if spo2_val is not None:
+                if "<90%" in j:
+                    if spo2_val < 90:
+                        score += 45
+                    else:
+                        return -999
+                if "<92%" in j:
+                    if spo2_val < 92:
+                        score += 35
+                    else:
+                        return -999
+                if "92-94%" in j or "92-94" in j:
+                    if 92 <= spo2_val <= 94:
+                        score += 25
+                    else:
+                        score -= 12
+                if "血氧" in j and spo2_val >= 95:
+                    score -= 10
+
+            # GCS 規則一致性
+            if gcs_total is not None:
+                if "GCS3-8" in j:
+                    if 3 <= gcs_total <= 8:
+                        score += 45
+                    else:
+                        return -999
+                if "GCS9-13" in j:
+                    if 9 <= gcs_total <= 13:
+                        score += 35
+                    else:
+                        return -999
+                if "GCS14-15" in j:
+                    if 14 <= gcs_total <= 15:
+                        score += 20
+                    else:
+                        score -= 8
+
+            # 體溫規則一致性
+            if temp_val is not None:
+                if "高燒" in j:
+                    if temp_val >= 39:
+                        score += 28
+                    else:
+                        return -999
+                if "發燒" in j and "高燒" not in j:
+                    if temp_val >= 38:
+                        score += 18
+                    else:
+                        return -999
+
+            # 血糖規則一致性
+            if bs_val is not None:
+                if "低血糖" in j:
+                    if bs_val < 70:
+                        score += 26
+                    else:
+                        return -999
+                if "高血糖" in j:
+                    if bs_val > 140:
+                        score += 20
+                    else:
+                        score -= 10
+
+            # 血壓規則一致性（沒有明確閾值文字時以關鍵字加權）
+            if sbp_val is not None or dbp_val is not None:
+                has_hypertension = ((sbp_val is not None and sbp_val >= 140) or (dbp_val is not None and dbp_val >= 90))
+                if "高血壓" in j or "血壓" in j:
+                    if has_hypertension:
+                        score += 20
+                    else:
+                        score -= 12
+
+            return score
+
+        code_to_rule = {r["rule_code"]: r for r in candidate_rules}
+
         candidate_lines = "\n".join(
             f'- {r["symptom_name"]} (第{r["ttas_degree"]}級): {r["judge_name"]} [{r["rule_code"]}]'
             for r in candidate_rules
@@ -564,46 +684,41 @@ async def recommend_rules(body: RecommendRulesRequest):
                 code = row.get("rule_code")
                 if code not in allowed_codes:
                     continue
-                validated.append({
-                    "rule_code": code,
-                    "symptom_name": str(row.get("symptom_name", "")),
-                    "judge_name": str(row.get("judge_name", "")),
-                    "ttas_degree": int(row.get("ttas_degree", 5)),
-                })
+                # 以後端候選規則資料為準，避免 LLM 回傳錯誤 symptom/judge 配對
+                base_rule = code_to_rule.get(code)
+                if not base_rule:
+                    continue
+                vscore = vitals_rule_score(base_rule["judge_name"])
+                if vscore <= -900:
+                    continue
+                validated.append((vscore, base_rule))
             if validated:
-                return RecommendRulesResponse(recommended_rules=validated[:3])
+                validated.sort(key=lambda x: (x[0], 6 - int(x[1]["ttas_degree"])), reverse=True)
+                dedup = []
+                used_symptom = set()
+                for _, rule in validated:
+                    if rule["symptom_name"] in used_symptom:
+                        continue
+                    used_symptom.add(rule["symptom_name"])
+                    dedup.append(rule)
+                    if len(dedup) >= 3:
+                        break
+                if dedup:
+                    return RecommendRulesResponse(recommended_rules=dedup)
         except Exception:
             pass
 
         # LLM 失敗 fallback：僅從已選症狀規則中挑選
         scored = []
-        temp_val = None
-        try:
-            if "temperature" in filled_vitals:
-                temp_val = float(filled_vitals["temperature"])
-        except Exception:
-            temp_val = None
-
-        gcs_total = None
-        try:
-            if all(k in filled_vitals for k in ["gcsEye", "gcsVerbal", "gcsMotor"]):
-                gcs_total = int(filled_vitals["gcsEye"]) + int(filled_vitals["gcsVerbal"]) + int(filled_vitals["gcsMotor"])
-        except Exception:
-            gcs_total = None
 
         for r in candidate_rules:
             score = 0
             if r["symptom_name"] in selected_symptoms:
                 score += 30
-            # 僅在有填該生命徵象時加權，未填不影響
-            if temp_val is not None:
-                if temp_val >= 39 and ("高燒" in r["judge_name"] or "發燒" in r["judge_name"]):
-                    score += 20
-                elif temp_val >= 38 and "發燒" in r["judge_name"]:
-                    score += 12
-            if gcs_total is not None and gcs_total <= 13:
-                if "意識" in r["judge_name"] or "GCS" in r["judge_name"]:
-                    score += 20
+            vital_score = vitals_rule_score(r["judge_name"])
+            if vital_score <= -900:
+                continue
+            score += vital_score
             score += max(0, 6 - int(r["ttas_degree"]))
             scored.append((score, r))
 
