@@ -329,6 +329,10 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
   // LLM 事先為外傷 / 非外傷各自計算好的推薦症狀，切換 Tab 時直接使用
   const [llmTraumaSymptoms, setLlmTraumaSymptoms] = useState<string[] | null>(null);
   const [llmNonTraumaSymptoms, setLlmNonTraumaSymptoms] = useState<string[] | null>(null);
+  const [isLlmIntegrating, setIsLlmIntegrating] = useState<boolean>(false);
+  const [lastLlmSummary, setLastLlmSummary] = useState<string>('');
+  const [recommendationSource, setRecommendationSource] = useState<'llm' | 'fallback' | 'none'>('none');
+  const lastRecommendOnlyKeyRef = useRef<string>('');
   const [isSupplementOpen, setIsSupplementOpen] = useState<boolean>(false);
   const [supplementText, setSupplementText] = useState<string>('');
 
@@ -415,19 +419,23 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       return;
     }
 
-    if (activeTab === 't' && llmTraumaSymptoms && llmTraumaSymptoms.length) {
-      setRecommendedSymptoms(llmTraumaSymptoms);
+    // 一鍵統整流程進行中時，避免即時關鍵字推薦覆蓋 LLM 結果
+    if (isLlmIntegrating) return;
+
+    const hasAnyLlmResult = recommendationSource !== 'none';
+    const isLlmResultForCurrentInput = trimmed === lastLlmSummary;
+    if (isLlmResultForCurrentInput || hasAnyLlmResult) {
+      if (activeTab === 't') {
+        setRecommendedSymptoms(llmTraumaSymptoms ?? []);
+        return;
+      }
+      setRecommendedSymptoms(llmNonTraumaSymptoms ?? []);
       return;
     }
 
-    if (activeTab === 'a' && llmNonTraumaSymptoms && llmNonTraumaSymptoms.length) {
-      setRecommendedSymptoms(llmNonTraumaSymptoms);
-      return;
-    }
-
-    // 若該 Tab 尚無 LLM 結果，則使用關鍵字推薦
+    // 只要主訴被手動修改（不等於上次 LLM summary），就即時重跑關鍵字推薦
     searchSymptoms(trimmed);
-  }, [activeTab, inputText, llmTraumaSymptoms, llmNonTraumaSymptoms]);
+  }, [activeTab, inputText, llmTraumaSymptoms, llmNonTraumaSymptoms, isLlmIntegrating, lastLlmSummary, recommendationSource]);
 
   // 每個症狀出現過的類別（外傷/非外傷）
   const symptomCategoryIndex = useMemo(() => {
@@ -480,7 +488,128 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     return map;
   }, [triageRows, age]);
 
-  // 搜尋推薦症狀（基於輸入框中的所有關鍵字）
+  const extractMeaningfulTokens = (text: string): string[] => {
+    return text
+      // 加入「、」分隔，避免「頭痛、發燒、胸悶」被當成單一 token
+      .replace(/[\s\n\r\t,，、。！？；：「」『』（）()\[\]{}]/g, ' ')
+      .split(/\s+/)
+      .map(token => token.trim())
+      .filter(token => token.length >= 2)
+      .filter((token, index, arr) => arr.indexOf(token) === index);
+  };
+
+  const expandClinicalTerms = (terms: string[]): string[] => {
+    const synonymMap: Record<string, string[]> = {
+      '胃痛': ['胃痛', '腹痛', '上腹痛', '腹部痛', '腹部不適'],
+      '胸悶': ['胸悶', '胸痛', '胸痛/胸悶'],
+      '發燒': ['發燒', '發燒/畏寒', '高燒'],
+    };
+    const expanded = new Set<string>();
+    for (const term of terms) {
+      expanded.add(term);
+      const mapped = synonymMap[term];
+      if (mapped) mapped.forEach(item => expanded.add(item));
+    }
+    return Array.from(expanded);
+  };
+
+  const normalizeForRecommend = (text: string): string => {
+    return text.replace(/[、，,\s]+$/g, '').trim();
+  };
+
+  const getVitalDrivenTerms = (): string[] => {
+    if (!vitals) return [];
+    const terms: string[] = [];
+    const temp = parseFloat(vitals.temperature || '');
+    const sugar = parseFloat(vitals.bloodSugar || '');
+    if (!Number.isNaN(temp) && temp >= 38) terms.push('發燒', '發燒/畏寒');
+    if (!Number.isNaN(sugar) && sugar > 0 && sugar < 70) terms.push('低血糖');
+    return Array.from(new Set(terms));
+  };
+
+  const isSymptomRelevantToTerms = (symptom: string, terms: string[]): boolean => {
+    if (!terms.length) return true;
+    return terms.some(term => {
+      if (symptom.includes(term) || term.includes(symptom)) return true;
+      // 兼容「發燒」與「發燒/畏寒」這種字串不完全相等的情況
+      const parts = symptom.split(/[\/、，,]/).map(s => s.trim()).filter(Boolean);
+      return parts.some(part => part.includes(term) || term.includes(part));
+    });
+  };
+
+  const buildMustIncludeSymptoms = (summary: string): string[] => {
+    if (!triageRows) return [];
+    const isAdult = age !== undefined ? age >= 18 : true;
+    const terms = expandClinicalTerms(Array.from(new Set([...extractMeaningfulTokens(summary), ...getVitalDrivenTerms()])));
+    if (!terms.length) return [];
+
+    const pool = new Set<string>();
+    for (const row of triageRows) {
+      const code = row.system_code || '';
+      if (!code.startsWith('A') && !code.startsWith('P') && !code.startsWith('T') && !code.startsWith('E')) continue;
+      if (code.startsWith('A') && !isAdult) continue;
+      if (code.startsWith('P') && isAdult) continue;
+      pool.add(row.symptom_name);
+    }
+
+    const mustInclude: string[] = [];
+    for (const term of terms) {
+      const exact = Array.from(pool).find(symptom => symptom === term);
+      if (exact) {
+        mustInclude.push(exact);
+        continue;
+      }
+      const partial = Array.from(pool).find(symptom => isSymptomRelevantToTerms(symptom, [term]));
+      if (partial) mustInclude.push(partial);
+    }
+    return Array.from(new Set(mustInclude));
+  };
+
+  const filterSymptomsByComplaintRelevance = (symptoms: string[], complaint: string): string[] => {
+    const tokens = expandClinicalTerms(extractMeaningfulTokens(complaint));
+    if (!tokens.length) return symptoms;
+    return symptoms.filter(symptom =>
+      tokens.some(token => symptom.includes(token) || token.includes(symptom))
+    );
+  };
+
+  const getSafeFallbackByTab = (summary: string, tab: 't' | 'a'): string[] => {
+    const tokens = extractMeaningfulTokens(summary);
+    if (!tokens.length || !triageRows) return [];
+
+    const isAdult = age !== undefined ? age >= 18 : true;
+    const selectedSet = selectedSymptoms;
+    const seen = new Set<string>();
+    const results: string[] = [];
+
+    const addIfValid = (symptom: string) => {
+      if (seen.has(symptom)) return;
+      const alreadySelected = Array.from(selectedSet).some(selected => {
+        const cleanSelected = selected.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
+        return cleanSelected === symptom;
+      });
+      if (alreadySelected) return;
+      if (!tokens.some(token => symptom.includes(token) || token.includes(symptom))) return;
+      seen.add(symptom);
+      results.push(symptom);
+    };
+
+    for (const row of triageRows) {
+      const code = row.system_code || '';
+      if (tab === 't') {
+        if (!code.startsWith('T') && !code.startsWith('E')) continue;
+      } else {
+        if (!code.startsWith('A') && !code.startsWith('P')) continue;
+        if (code.startsWith('A') && !isAdult) continue;
+        if (code.startsWith('P') && isAdult) continue;
+      }
+      addIfValid(row.symptom_name);
+      if (results.length >= 5) break;
+    }
+    return results;
+  };
+
+  // 搜尋推薦症狀（基於輸入框中的關鍵詞）
   const searchSymptoms = (text: string, selectedOverride?: Set<string>) => {
     if (!symptomDatabase.length) {
       setRecommendedSymptoms([]);
@@ -491,17 +620,8 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       return;
     }
     
-    // 提取所有可能的關鍵字（包括中文字符、英文單詞）
-    const allKeywords = text
-      .replace(/[\s\n\r\t,，。！？；：「」『』（）()\[\]{}]/g, ' ') // 替換標點符號為空格
-      .split(/\s+/) // 按空格分割
-      .filter(keyword => keyword.length > 0) // 移除空字符串
-      .flatMap(keyword => {
-        // 對於每個關鍵字，也提取單個中文字符
-        const chars = keyword.split('').filter(char => /[\u4e00-\u9fff]/.test(char));
-        return [keyword, ...chars];
-      })
-      .filter((keyword, index, array) => array.indexOf(keyword) === index && keyword.length > 0); // 去重
+    // 關鍵詞至少 2 字，避免「發」這類單字造成誤推薦
+    const allKeywords = extractMeaningfulTokens(text);
     
     if (allKeywords.length === 0) {
       setRecommendedSymptoms([]);
@@ -556,51 +676,48 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       ).length;
       return bMatches - aMatches;
     })
-    .slice(0, 10); // 增加到10個推薦
+    .slice(0, 5); // 限制為5個推薦，與LLM推薦一致
     
     setRecommendedSymptoms(matches);
   };
 
-  // 透過後端 LLM 從候選清單中推薦症狀
-  // 回傳該 Tab 對應的推薦症狀陣列（若無合理結果則回傳 null）
-  const requestLlmRecommendations = async (summary: string, tab: 't' | 'a'): Promise<string[] | null> => {
+  // 統一呼叫一次 RAG + LLM，回傳完整推薦症狀，再由前端分類
+  const requestUnifiedRecommendations = async (summary: string): Promise<string[] | null> => {
     if (!triageRows) return null;
     if (!summary.trim()) return null;
 
-    const currentCategory = tab === 't' ? '外傷' : '非外傷';
-    console.log('[CC] requestLlmRecommendations tab =', tab, 'current category =', currentCategory);
-
-    // 只提供目前類別的症狀給 LLM 當候選：
-    // 直接從 triageRows 過濾，使用與其他地方一致的年齡/類別邏輯
+    // 提供完整候選清單給 LLM（包含外傷 + 非外傷）
     const isAdult = age !== undefined ? age >= 18 : true;
     const candidateSet = new Set<string>();
 
     for (const row of triageRows) {
-      if (row.category !== currentCategory) continue;
-
       const code = row.system_code || '';
-
-      // 進一步用 system_code 嚴格區分外傷/非外傷：
-      // - 非外傷：只接受 A*/P*，排除 T*/E*
-      // - 外傷：只接受 T*/E*，排除 A*/P*
-      if (currentCategory === '非外傷') {
-        if (!code.startsWith('A') && !code.startsWith('P')) continue;
-
-        // 非外傷症狀依 A*/P* 與年齡切換
-        if (code.startsWith('A') && !isAdult) continue;
-        if (code.startsWith('P') && isAdult) continue;
-      } else {
-        // 外傷模式下，僅接受 T*/E* 系統
-        if (!code.startsWith('T') && !code.startsWith('E')) continue;
-      }
+      // 只保留可用症狀系統：外傷(T/E) + 非外傷(A/P)
+      if (!code.startsWith('A') && !code.startsWith('P') && !code.startsWith('T') && !code.startsWith('E')) continue;
+      // 非外傷症狀依年齡過濾，外傷不受年齡影響
+      if (code.startsWith('A') && !isAdult) continue;
+      if (code.startsWith('P') && isAdult) continue;
 
       candidateSet.add(row.symptom_name);
     }
 
-    const candidates = Array.from(candidateSet);
-    console.log('[LLM] tab =', tab);
+    const allCandidates = Array.from(candidateSet);
+    const relevanceTerms = expandClinicalTerms(Array.from(new Set([...extractMeaningfulTokens(summary), ...getVitalDrivenTerms()])));
+    const candidates = allCandidates
+      .map(symptom => ({
+        symptom,
+        score: relevanceTerms.reduce((acc, term) => {
+          if (isSymptomRelevantToTerms(symptom, [term])) return acc + 1;
+          return acc;
+        }, 0),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 80) // 縮小候選集合，降低 LLM 負擔、提升速度
+      .map(item => item.symptom);
+
+    console.log('[LLM] unified recommendation');
     console.log('[LLM] summary =', summary);
-    console.log('[LLM] candidates count =', candidates.length);
+    console.log('[LLM] candidates count =', candidates.length, '(from', allCandidates.length, ')');
     console.log('[LLM] candidates preview =', candidates.slice(0, 20));
 
     if (!candidates.length) return null;
@@ -616,7 +733,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
         body: JSON.stringify({
           text: summary,
           symptom_candidates: candidates,
-          max_results: 10,
+          max_results: 5,  // 限制最多5個推薦
           llm_mode: llmMode,
           vitals: vitals || {}
         }),
@@ -639,13 +756,16 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       if (!list.length) return null;
 
       // 過濾掉已經選中的症狀，並限制顯示數量
-      const filtered = list.filter(name => {
+      const filtered = list.filter((name, index, arr) => {
+        const isFirst = arr.indexOf(name) === index;
+        if (!isFirst) return false;
         const already = Array.from(selectedSymptoms).some(selected => {
           const cleanSelected = selected.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
           return cleanSelected === name;
         });
-        return !already;
-      }).slice(0, 10);
+        if (already) return false;
+        return isSymptomRelevantToTerms(name, relevanceTerms);
+      }).slice(0, 5); // 限制為5個推薦，與LLM推薦一致
 
       return filtered.length > 0 ? filtered : null;
     } catch (err) {
@@ -653,6 +773,30 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       return null;
     }
     return null;
+  };
+
+  const splitRecommendationsByTab = (list: string[]): { trauma: string[]; nonTrauma: string[] } => {
+    const isAdult = age !== undefined ? age >= 18 : true;
+    const trauma: string[] = [];
+    const nonTrauma: string[] = [];
+
+    for (const symptom of list) {
+      const sysTypes = symptomSystemTypeIndex.get(symptom);
+      if (!sysTypes) continue;
+
+      const isTrauma = sysTypes.has('T') || sysTypes.has('E');
+      const isNonTraumaAdult = isAdult && sysTypes.has('A');
+      const isNonTraumaPediatric = !isAdult && sysTypes.has('P');
+      const isNonTrauma = isNonTraumaAdult || isNonTraumaPediatric;
+
+      if (isTrauma) trauma.push(symptom);
+      if (isNonTrauma) nonTrauma.push(symptom);
+    }
+
+    return {
+      trauma: trauma.slice(0, 5),
+      nonTrauma: nonTrauma.slice(0, 5),
+    };
   };
 
   // 共用：用 LLM 先整理主訴，再更新推薦症狀
@@ -729,34 +873,94 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
 
     console.log('[CC] runLlmSummarizeAndRecommend activeTab =', activeTab, 'source =', source, 'hasAbnormalVitals =', hasAbnormalVitals);
 
-    const summary = await summarizeChiefComplaint(source);
-    // 設置統整後的主訴
-    setInputText(summary);
+    setIsLlmIntegrating(true);
+    try {
+      const summary = await summarizeChiefComplaint(source);
+      setLastLlmSummary(summary.trim());
+      // 設置統整後的主訴
+      setInputText(summary);
 
-    // 讓 LLM 針對外傷 / 非外傷各自產生一組推薦清單，之後切換 Tab 時直接使用
-    const [traumaList, nonTraumaList] = await Promise.all([
-      requestLlmRecommendations(summary, 't'),
-      requestLlmRecommendations(summary, 'a'),
-    ]);
+      // 真正 unified RAG：一次檢索 + 一次推薦，再前端分類
+      const unifiedList = await requestUnifiedRecommendations(summary);
+      const relevantUnified = filterSymptomsByComplaintRelevance(unifiedList ?? [], summary);
+      const mustInclude = buildMustIncludeSymptoms(summary);
+      console.log('[LLM] must include symptoms =', mustInclude);
+      const mergedUnified = Array.from(new Set([...mustInclude, ...relevantUnified]));
+      const split = splitRecommendationsByTab(mergedUnified);
+      const llmHasResult = split.trauma.length > 0 || split.nonTrauma.length > 0;
+      const traumaList = split.trauma.length ? split.trauma : getSafeFallbackByTab(summary, 't');
+      const nonTraumaList = split.nonTrauma.length ? split.nonTrauma : getSafeFallbackByTab(summary, 'a');
 
-    setLlmTraumaSymptoms(traumaList ?? []);
-    setLlmNonTraumaSymptoms(nonTraumaList ?? []);
+      setLlmTraumaSymptoms(traumaList);
+      setLlmNonTraumaSymptoms(nonTraumaList);
+      setRecommendationSource(llmHasResult ? 'llm' : (traumaList.length || nonTraumaList.length ? 'fallback' : 'none'));
+      console.log('[LLM] recommendation source =', llmHasResult ? 'llm' : (traumaList.length || nonTraumaList.length ? 'fallback' : 'none'));
 
-    // 依當下 Tab 選擇要顯示哪一組推薦；若該組沒有 LLM 結果，則退回關鍵字推薦
-    if (activeTab === 't' && traumaList && traumaList.length) {
-      setRecommendedSymptoms(traumaList);
-    } else if (activeTab === 'a' && nonTraumaList && nonTraumaList.length) {
-      setRecommendedSymptoms(nonTraumaList);
-    } else {
-      // fallback: 關鍵字推薦
-      const keywords = summary.split(/[、，,]/).filter(k => k.trim());
-      const fallback = await requestLlmRecommendations(keywords.join(' '), activeTab);
-      setRecommendedSymptoms(fallback ?? []);
+      // 一鍵統整後只顯示 LLM 結果，不回退關鍵字推薦
+      if (activeTab === 't') {
+        setRecommendedSymptoms(traumaList);
+      } else {
+        setRecommendedSymptoms(nonTraumaList);
+      }
+    } finally {
+      setIsLlmIntegrating(false);
     }
 
     // 清空語音緩衝
     fullVoiceRef.current = '';
   };
+
+  // 手動編輯主訴後：只重跑 LLM 推薦，不改寫主訴文字本身
+  const runLlmRecommendOnly = async (text: string) => {
+    const source = text.replace(/[、，,\s]+$/g, '').trim();
+    if (!source) {
+      setRecommendedSymptoms([]);
+      setRecommendationSource('none');
+      return;
+    }
+
+    setIsLlmIntegrating(true);
+    try {
+      const unifiedList = await requestUnifiedRecommendations(source);
+      const relevantUnified = filterSymptomsByComplaintRelevance(unifiedList ?? [], source);
+      const mustInclude = buildMustIncludeSymptoms(source);
+      console.log('[LLM] recommend-only must include symptoms =', mustInclude);
+      const mergedUnified = Array.from(new Set([...mustInclude, ...relevantUnified]));
+      const split = splitRecommendationsByTab(mergedUnified);
+      const llmHasResult = split.trauma.length > 0 || split.nonTrauma.length > 0;
+      const traumaList = split.trauma.length ? split.trauma : getSafeFallbackByTab(source, 't');
+      const nonTraumaList = split.nonTrauma.length ? split.nonTrauma : getSafeFallbackByTab(source, 'a');
+
+      setLlmTraumaSymptoms(traumaList);
+      setLlmNonTraumaSymptoms(nonTraumaList);
+      setRecommendationSource(llmHasResult ? 'llm' : (traumaList.length || nonTraumaList.length ? 'fallback' : 'none'));
+
+      if (activeTab === 't') {
+        setRecommendedSymptoms(traumaList);
+      } else {
+        setRecommendedSymptoms(nonTraumaList);
+      }
+    } finally {
+      setIsLlmIntegrating(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isListening || isLlmIntegrating) return;
+    const trimmed = normalizeForRecommend(inputText);
+    if (!trimmed) return;
+    // 與上一輪統整內容相同時，不重跑 recommend-only
+    if (trimmed === normalizeForRecommend(lastLlmSummary)) return;
+    const requestKey = `${trimmed}::${llmMode}::${JSON.stringify(vitals || {})}`;
+    if (lastRecommendOnlyKeyRef.current === requestKey) return;
+
+    const timer = setTimeout(() => {
+      lastRecommendOnlyKeyRef.current = requestKey;
+      void runLlmRecommendOnly(trimmed);
+    }, 700);
+
+    return () => clearTimeout(timer);
+  }, [inputText, isListening, isLlmIntegrating, lastLlmSummary, llmMode, vitals]);
 
   const isSymptomSelectedByLabel = (label: string) => {
     return Array.from(selectedSymptoms).some(selected => {
@@ -769,7 +973,18 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value;
     setInputText(text);
-    // 即時搜尋，無論是新輸入還是繼續輸入
+    // 不立即把 recommendationSource 清空，避免輸入中的排序抖動
+    // 若目前已有 LLM 結果，輸入中先維持 LLM 顯示，避免順序抖動
+    if (recommendationSource !== 'none') {
+      if (activeTab === 't') {
+        setRecommendedSymptoms(llmTraumaSymptoms ?? []);
+      } else {
+        setRecommendedSymptoms(llmNonTraumaSymptoms ?? []);
+      }
+      return;
+    }
+
+    // 尚無 LLM 結果時才用關鍵字即時搜尋
     searchSymptoms(text);
   };
 
@@ -781,6 +996,10 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       console.log('[KEY] Enter pressed, waiting for one-click integrate');
     }
   };
+
+  // 注意：
+  // 手動輸入主訴時只做推薦更新，不自動改寫主訴內容。
+  // 主訴統整（可能改變順序/措辭）僅在按下「一鍵統整」時執行。
 
   const startSpeechRecognition = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;

@@ -234,44 +234,32 @@ async def summarize_cc(body: SummarizeRequest):
 @app.post("/api/recommend-symptoms", response_model=RecommendSymptomsResponse)
 async def recommend_symptoms(body: RecommendSymptomsRequest):
     try:
-       
-
-        # 建立候選症狀清單（編號只是幫助理解，實際輸出仍以名稱為主）
-        candidate_lines = "\n".join(f"- {name}" for name in candidates)
-
-        prompt = (
-            "你是一位熟悉台灣急診分級系統的護理師助手。"\
-            "目前已經有一段整理過的主訴內容，請你從提供的『候選症狀清單』中，"\
-            "選出最符合這段主訴的幾個症狀作為建議，不要發明清單裡沒有的症狀。"\
-            "\n\n"\
-            "主訴內容：" + text + "\n\n"\
-            "候選症狀清單（只能從這些裡面選）：\n" + candidate_lines + "\n\n"\
-            f"請你從候選清單中選出 1 到 {max_results} 個最適合的症狀。"\
-            "如果候選清單裡沒有跟主訴明顯相關的症狀，請回傳空的 JSON 陣列 []，"\
-            "不要勉強選一個不相干的診斷。"\
-            "請嚴格只輸出 JSON 陣列格式，不要加任何解釋文字。範例：\n"\
-            "[\"頭痛\", \"胸痛\"]"
-        )
-
-        llm_fn = call_gemini_llm if body.llm_mode == "cloud" else call_local_llm
-        raw = llm_fn(prompt).strip()
-
-
-        print("LLM recommend raw:", raw)
-
-        recommended: list[str] = []
-        data = None
-
-        # 第一次嘗試：直接把整個回應當作 JSON 解析
         text = body.text.strip()
         candidates = body.symptom_candidates
-        max_results = body.max_results
+        max_results = min(body.max_results, 5)  # 限制最多5個推薦
         vitals = body.vitals
+        
+        print(f"[LLM] 開始推薦症狀，主訴：{text}，候選數量：{len(candidates)}")
         
         # 分析生命徵象異常
         vitals_symptoms = []
         if vitals:
             vitals_symptoms, _ = vitals_analyzer.analyze_vitals(vitals)
+            print(f"[LLM] 生命徵象分析：{vitals_symptoms}")
+        
+        # 使用RAG檢索相關醫學知識
+        relevant_knowledge = []
+        if text:
+            try:
+                # 根據主訴檢索相關知識
+                relevant_knowledge = rag_pipeline.retrieve_relevant_knowledge(
+                    query=text, 
+                    category=None, 
+                    n_results=3
+                )
+                print(f"[LLM] 檢索到 {len(relevant_knowledge)} 條相關知識")
+            except Exception as e:
+                print(f"[LLM] RAG檢索失敗: {e}")
         
         # 如果是純生命徵象輸入（沒有文字），使用直接的症狀映射
         if not text and vitals_symptoms:
@@ -305,61 +293,108 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
                         break
             
             print(f"[LLM] 純生命徵象推薦：{vitals_symptoms} → {matched_symptoms}")
-            return RecommendSymptomsResponse(recommended_symptoms=matched_symptoms)
+            return RecommendSymptomsResponse(recommended_symptoms=matched_symptoms[:max_results])
         
-        # 如果有文字輸入也有生命徵象異常，也要考慮生命徵象
-        if text and vitals_symptoms:
-            # 建立生命徵象症狀到症狀庫的映射
-            vitals_to_symptoms_mapping = {
-                "發燒": ["發燒", "體溫過高", "發熱"],
-                "高燒": ["高燒", "體溫過高", "發熱", "發燒"],
-                "超高熱": ["超高熱", "體溫過高", "發熱", "高燒", "發燒"],
-                "輕度高血壓": ["輕度高血壓", "高血壓", "血壓過高"],
-                "重度高血壓": ["重度高血壓", "高血壓", "血壓過高", "嚴重高血壓"],
-                "嚴重高血壓": ["嚴重高血壓", "高血壓", "血壓過高", "重度高血壓"],
-                "舒張期高血壓": ["舒張期高血壓", "高血壓", "血壓過高"],
-                "低血壓": ["低血壓", "血壓過低"],
-                "心跳過速": ["心跳過速", "心悸", "心跳快"],
-                "心跳過緩": ["心跳過緩", "心跳慢"],
-                "輕微低血氧": ["輕微低血氧", "低血氧", "血氧過低"],
-                "嚴重低血氧": ["嚴重低血氧", "低血氧", "血氧過低", "缺氧"],
-                "呼吸急促": ["呼吸急促", "呼吸困難", "呼吸快"],
-                "呼吸過緩": ["呼吸過緩", "呼吸慢"],
-                "高血糖": ["高血糖", "血糖過高"],
-                "低血糖": ["低血糖", "血糖過低", "血糖偏低"]
-            }
+        # 如果有文字輸入，使用RAG增強的推薦
+        if text:
+            # 格式化檢索到的知識
+            context = ""
+            if relevant_knowledge:
+                context = rag_pipeline.format_context_for_llm(relevant_knowledge)
+                print(f"[LLM] 使用RAG上下文：{context[:200]}...")
             
-            # 找到匹配的生命徵象症狀
-            vital_matched = []
-            for vital_symptom in vitals_symptoms:
-                possible_symptoms = vitals_to_symptoms_mapping.get(vital_symptom, [vital_symptom])
-                for symptom in possible_symptoms:
-                    if symptom in candidates:
-                        vital_matched.append(symptom)
-                        break
+            # 建立候選症狀清單
+            candidate_lines = "\n".join(f"- {name}" for name in candidates)
             
-            # 如果找到生命徵象相關症狀，優先返回這些
-            if vital_matched:
-                print(f"[LLM] 混合輸入推薦（優先生命徵象）：{vitals_symptoms} + '{text}' → {vital_matched}")
-                return RecommendSymptomsResponse(recommended_symptoms=vital_matched)
-        
-        # 正常的 RAG 處理流程
-        enhanced_prompt = rag_pipeline.enhance_symptom_recommendations(text, candidates, vitals, max_results)
-        response = call_local_llm(enhanced_prompt).strip()
-        
-        # 解析 JSON 回應
-        try:
-            if response.startswith('[') and response.endswith(']'):
-                recommended = json.loads(response)
+            # 建構包含RAG知識的提示
+            prompt = (
+                "你是一位熟悉台灣急診分級系統的專業護理師。"
+                "請根據以下資訊，從候選症狀清單中推薦最相關的症狀。\n\n"
+                f"患者主訴：{text}\n"
+            )
+            
+            # 添加生命徵象信息
+            if vitals_symptoms:
+                prompt += f"生命徵象異常：{', '.join(vitals_symptoms)}\n"
+            
+            # 添加RAG檢索的醫學知識
+            if context:
+                prompt += f"\n相關醫學知識：\n{context}\n"
+            
+            prompt += (
+                f"\n候選症狀清單（只能從這些裡面選）：\n{candidate_lines}\n\n"
+                f"請從候選清單中選出 1 到 {max_results} 個最相關且重要的症狀。"
+                "考慮以下原則：\n"
+                "1. 症狀必須與主訴高度相關\n"
+                "2. 優先考慮緊急或危險的症狀\n"
+                "3. 避免推薦不相關或重複的症狀\n"
+                "4. 如果候選清單中沒有明顯相關的症狀，請回傳空陣列 []\n\n"
+                "請嚴格只輸出 JSON 陣列格式，不要加任何解釋文字。範例：\n"
+                "[\"頭痛\", \"胸痛\"]"
+            )
+            
+            llm_fn = call_gemini_llm if body.llm_mode == "cloud" else call_local_llm
+            raw = llm_fn(prompt).strip()
+            
+            print(f"[LLM] RAG增強推薦原始回應：{raw}")
+            
+            # 解析LLM回應
+            try:
+                recommended = json.loads(raw)
                 if isinstance(recommended, list):
-                    return RecommendSymptomsResponse(recommended_symptoms=recommended)
-        except json.JSONDecodeError:
-            print(f"[LLM] JSON 解析失敗：{response}")
+                    # 過濾確保都在候選清單中
+                    filtered_recommendations = [
+                        symptom for symptom in recommended 
+                        if symptom in candidates
+                    ]
+                    print(f"[LLM] RAG增強推薦結果：{filtered_recommendations}")
+                    return RecommendSymptomsResponse(recommended_symptoms=filtered_recommendations[:max_results])
+            except json.JSONDecodeError:
+                print(f"[LLM] JSON解析失敗，回應：{raw}")
+            
+            # 如果RAG增強失敗，回退到傳統方法
+            print("[LLM] RAG增強失敗，使用傳統推薦方法")
         
-        # 如果 JSON 解析失敗，返回空陣列
+        # 傳統推薦方法（作為備選）
+        candidate_lines = "\n".join(f"- {name}" for name in candidates)
+        
+        prompt = (
+            "你是一位熟悉台灣急診分級系統的護理師助手。"
+            "目前已經有一段整理過的主訴內容，請你從提供的『候選症狀清單』中，"
+            "選出最符合這段主訴的幾個症狀作為建議，不要發明清單裡沒有的症狀。\n\n"
+            f"主訴內容：{text}\n\n"
+            f"候選症狀清單（只能從這些裡面選）：\n{candidate_lines}\n\n"
+            f"請你從候選清單中選出 1 到 {max_results} 個最適合的症狀。"
+            "如果候選清單裡沒有跟主訴明顯相關的症狀，請回傳空的 JSON 陣列 []，"
+            "不要勉強選一個不相干的診斷。"
+            "請嚴格只輸出 JSON 陣列格式，不要加任何解釋文字。範例：\n"
+            "[\"頭痛\", \"胸痛\"]"
+        )
+        
+        llm_fn = call_gemini_llm if body.llm_mode == "cloud" else call_local_llm
+        raw = llm_fn(prompt).strip()
+        
+        print(f"[LLM] 傳統推薦原始回應：{raw}")
+        
+        # 解析傳統方法的回應
+        try:
+            recommended = json.loads(raw)
+            if isinstance(recommended, list):
+                filtered_recommendations = [
+                    symptom for symptom in recommended 
+                    if symptom in candidates
+                ]
+                print(f"[LLM] 傳統推薦結果：{filtered_recommendations}")
+                return RecommendSymptomsResponse(recommended_symptoms=filtered_recommendations[:max_results])
+        except json.JSONDecodeError:
+            print(f"[LLM] 傳統方法JSON解析失敗，回應：{raw}")
+        
+        # 如果所有方法都失敗，返回空陣列
+        print("[LLM] 所有推薦方法都失敗，返回空陣列")
         return RecommendSymptomsResponse(recommended_symptoms=[])
+        
     except Exception as e:
-        print("Recommend symptoms error:", e)
+        print(f"❌ 推薦症狀時發生錯誤: {e}")
         return RecommendSymptomsResponse(recommended_symptoms=[])
 
 # 新增一個 API，用來抓取那 5 個隨機病患 (誒這是啥呀)
