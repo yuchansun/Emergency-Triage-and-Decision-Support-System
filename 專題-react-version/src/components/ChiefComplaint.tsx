@@ -1243,6 +1243,68 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     rule_code: string;      // ← 新增
     symptom_name: string;   // ← 新增
 }>>({});
+  const [recommendedRules, setRecommendedRules] = useState<Array<{
+    rule_code: string;
+    symptom_name: string;
+    judge_name: string;
+    ttas_degree: number;
+  }>>([]);
+  const [isRecommendRulesLoading, setIsRecommendRulesLoading] = useState(false);
+
+  useEffect(() => {
+    const selectedSymptomNames = symptomTags.map(tag => tag.display);
+    if (selectedSymptomNames.length === 0) {
+      setRecommendedRules([]);
+      setIsRecommendRulesLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setIsRecommendRulesLoading(true);
+      try {
+        const res = await fetch(`${LLM_BASE_URL}/api/recommend-rules`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            selected_symptoms: selectedSymptomNames,
+            vitals: vitals || {},
+            llm_mode: llmMode,
+          }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (cancelled) return;
+        const normalized = Array.isArray(data?.recommended_rules)
+          ? data.recommended_rules
+              .filter((rule: any) =>
+                rule &&
+                typeof rule.rule_code === 'string' &&
+                typeof rule.symptom_name === 'string' &&
+                typeof rule.judge_name === 'string' &&
+                Number.isFinite(Number(rule.ttas_degree))
+              )
+              .map((rule: any) => ({
+                rule_code: rule.rule_code,
+                symptom_name: rule.symptom_name,
+                judge_name: rule.judge_name,
+                ttas_degree: Number(rule.ttas_degree),
+              }))
+          : [];
+        setRecommendedRules(normalized.slice(0, 3));
+      } catch (err) {
+        console.error('[RULES] 推薦判斷規則失敗', err);
+        if (!cancelled) setRecommendedRules([]);
+      } finally {
+        if (!cancelled) setIsRecommendRulesLoading(false);
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [symptomTags, vitals, llmMode, LLM_BASE_URL]);
 
   useEffect(() => {
     // 根據當前已選症狀，自動處理部分規則：
@@ -1543,6 +1605,52 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       {symptomTags.length > 0 && (
         <div className="mb-4">
           <h4 className="text-sm font-semibold mb-2">判斷規則</h4>
+          {(isRecommendRulesLoading || recommendedRules.length > 0) && (
+            <div className="mb-3 pb-3 border-b border-dashed border-primary/40">
+              <div className="text-xs font-semibold text-primary mb-2 flex items-center gap-2">
+                <span>AI 推薦判斷規則</span>
+                {isRecommendRulesLoading && (
+                  <span className="text-[10px] text-subtext-light dark:text-subtext-dark">分析中...</span>
+                )}
+              </div>
+              {recommendedRules.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {recommendedRules.map(rule => {
+                    const colors = getRuleColors(rule.ttas_degree);
+                    const isSelected = !!selectedRules[rule.rule_code];
+                    return (
+                      <button
+                        key={rule.rule_code}
+                        type="button"
+                        onClick={() =>
+                          setSelectedRules(prev => {
+                            const next = { ...prev };
+                            Object.keys(next).forEach(ruleCode => {
+                              if (next[ruleCode].symptom_name === rule.symptom_name) {
+                                delete next[ruleCode];
+                              }
+                            });
+                            if (prev[rule.rule_code]) return next;
+                            next[rule.rule_code] = {
+                              degree: rule.ttas_degree,
+                              judge: rule.judge_name,
+                              rule_code: rule.rule_code,
+                              symptom_name: rule.symptom_name,
+                            };
+                            return next;
+                          })
+                        }
+                        className={`px-2.5 py-1 rounded-full border text-[10px] leading-snug text-left ${colors.border} ${isSelected ? `${colors.bg.replace('10', '90')} text-white ring-2 ring-offset-1 ring-primary` : `${colors.bg} ${colors.text}`}`}
+                        title={`${rule.symptom_name}｜第${rule.ttas_degree}級：${rule.judge_name}`}
+                      >
+                        {rule.symptom_name}｜第{rule.ttas_degree}級：{rule.judge_name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
           <div className="space-y-2">
             {symptomTags.map(({ display, criteria }) => (
               criteria.length > 0 && (

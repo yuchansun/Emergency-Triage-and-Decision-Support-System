@@ -443,6 +443,14 @@ class TriageAdviceRequest(BaseModel):
 class TriageAdviceResponse(BaseModel):
     advice: str
 
+class RecommendRulesRequest(BaseModel):
+    selected_symptoms: list[str]
+    vitals: dict = None
+    llm_mode: str = "local"
+
+class RecommendRulesResponse(BaseModel):
+    recommended_rules: list[dict]
+
 @app.post("/api/triage-advice", response_model=TriageAdviceResponse)
 async def triage_advice(body: TriageAdviceRequest):
     """RAG 增強檢傷建議 API"""
@@ -456,4 +464,161 @@ async def triage_advice(body: TriageAdviceRequest):
     except Exception as e:
         print("Triage advice error:", e)
         return TriageAdviceResponse(advice="系統暫時無法提供建議")
+
+@app.post("/api/recommend-rules", response_model=RecommendRulesResponse)
+async def recommend_rules(body: RecommendRulesRequest):
+    """依已選症狀 + 已填生命徵象 + RAG 推薦判斷規則"""
+    try:
+        selected_symptoms = [s.strip() for s in body.selected_symptoms if isinstance(s, str) and s.strip()]
+        vitals = body.vitals or {}
+        llm_mode = body.llm_mode
+        if not selected_symptoms:
+            return RecommendRulesResponse(recommended_rules=[])
+
+        query = """
+        SELECT DISTINCT symptom_name, rule_code, judge_name, ttas_degree
+        FROM triage_hierarchy
+        WHERE symptom_name IS NOT NULL
+          AND rule_code IS NOT NULL
+          AND judge_name IS NOT NULL
+        ORDER BY symptom_name, ttas_degree
+        """
+        all_rules = fetch_all(query)
+        if not all_rules:
+            return RecommendRulesResponse(recommended_rules=[])
+
+        symptom_rules_map = {}
+        for rule in all_rules:
+            symptom = rule["symptom_name"]
+            symptom_rules_map.setdefault(symptom, []).append({
+                "rule_code": rule["rule_code"],
+                "judge_name": rule["judge_name"],
+                "ttas_degree": int(rule["ttas_degree"]),
+            })
+
+        # 只保留有填寫的生命徵象（未填值不視為 0）
+        filled_vitals = {}
+        for k, v in vitals.items():
+            if isinstance(v, str):
+                if v.strip() != "":
+                    filled_vitals[k] = v.strip()
+            elif v is not None:
+                filled_vitals[k] = v
+
+        # 僅根據「已選症狀」建立候選規則（不再擴充其他症狀）
+        candidate_symptoms = list(dict.fromkeys(selected_symptoms))
+        candidate_rules = []
+        for symptom in candidate_symptoms:
+            for item in symptom_rules_map.get(symptom, []):
+                candidate_rules.append({
+                    "rule_code": item["rule_code"],
+                    "symptom_name": symptom,
+                    "judge_name": item["judge_name"],
+                    "ttas_degree": item["ttas_degree"],
+                })
+
+        if not candidate_rules:
+            return RecommendRulesResponse(recommended_rules=[])
+
+        candidate_lines = "\n".join(
+            f'- {r["symptom_name"]} (第{r["ttas_degree"]}級): {r["judge_name"]} [{r["rule_code"]}]'
+            for r in candidate_rules
+        )
+
+        # RAG 僅提供背景知識，不用來擴充症狀候選
+        rag_context = ""
+        try:
+            rag_docs = rag_pipeline.retrieve_relevant_knowledge(
+                query=f"症狀：{'、'.join(selected_symptoms)}；生命徵象：{json.dumps(filled_vitals, ensure_ascii=False)}",
+                category=None,
+                n_results=3
+            )
+            if rag_docs:
+                rag_context = rag_pipeline.format_context_for_llm(rag_docs)
+        except Exception as e:
+            print("[RULES] RAG 檢索失敗:", e)
+
+        prompt = f"""你是急診檢傷專家。請根據「已選症狀 + 已填生命徵象」推薦 1-3 個判斷規則。
+
+已選症狀：{", ".join(selected_symptoms)}
+已填生命徵象：{json.dumps(filled_vitals, ensure_ascii=False) if filled_vitals else "無"}
+相關知識（僅供參考）：
+{rag_context if rag_context else "無"}
+
+候選規則（只能從以下選）：
+{candidate_lines}
+
+只輸出 JSON 陣列，格式：
+[{{"rule_code":"...","symptom_name":"...","judge_name":"...","ttas_degree":2}}]
+"""
+        llm_fn = call_gemini_llm if llm_mode == "cloud" else call_local_llm
+        raw = llm_fn(prompt).strip()
+
+        try:
+            parsed = json.loads(raw)
+            validated = []
+            allowed_codes = {r["rule_code"] for r in candidate_rules}
+            for row in parsed if isinstance(parsed, list) else []:
+                if not isinstance(row, dict):
+                    continue
+                code = row.get("rule_code")
+                if code not in allowed_codes:
+                    continue
+                validated.append({
+                    "rule_code": code,
+                    "symptom_name": str(row.get("symptom_name", "")),
+                    "judge_name": str(row.get("judge_name", "")),
+                    "ttas_degree": int(row.get("ttas_degree", 5)),
+                })
+            if validated:
+                return RecommendRulesResponse(recommended_rules=validated[:3])
+        except Exception:
+            pass
+
+        # LLM 失敗 fallback：僅從已選症狀規則中挑選
+        scored = []
+        temp_val = None
+        try:
+            if "temperature" in filled_vitals:
+                temp_val = float(filled_vitals["temperature"])
+        except Exception:
+            temp_val = None
+
+        gcs_total = None
+        try:
+            if all(k in filled_vitals for k in ["gcsEye", "gcsVerbal", "gcsMotor"]):
+                gcs_total = int(filled_vitals["gcsEye"]) + int(filled_vitals["gcsVerbal"]) + int(filled_vitals["gcsMotor"])
+        except Exception:
+            gcs_total = None
+
+        for r in candidate_rules:
+            score = 0
+            if r["symptom_name"] in selected_symptoms:
+                score += 30
+            # 僅在有填該生命徵象時加權，未填不影響
+            if temp_val is not None:
+                if temp_val >= 39 and ("高燒" in r["judge_name"] or "發燒" in r["judge_name"]):
+                    score += 20
+                elif temp_val >= 38 and "發燒" in r["judge_name"]:
+                    score += 12
+            if gcs_total is not None and gcs_total <= 13:
+                if "意識" in r["judge_name"] or "GCS" in r["judge_name"]:
+                    score += 20
+            score += max(0, 6 - int(r["ttas_degree"]))
+            scored.append((score, r))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        out = []
+        used_symptom = set()
+        for _, rule in scored:
+            if rule["symptom_name"] in used_symptom:
+                continue
+            used_symptom.add(rule["symptom_name"])
+            out.append(rule)
+            if len(out) >= 3:
+                break
+        return RecommendRulesResponse(recommended_rules=out)
+    except Exception as e:
+        print("Recommend rules error:", e)
+        return RecommendRulesResponse(recommended_rules=[])
 
