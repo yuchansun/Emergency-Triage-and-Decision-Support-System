@@ -101,7 +101,11 @@ const getTemplateHTML = (color: string, data?: any) => `
         <td style="width:21%; padding-right:4px;">
           <table>
             <tr class="c">
-              <td style="height:22px;">Ⅰ</td><td>Ⅱ</td><td>Ⅲ</td><td>Ⅳ</td><td>Ⅴ</td>
+              <td style="height:22px; ${data?.triage_level === 1 ? `background:${color};font-weight:700;` : ''}">Ⅰ</td>
+              <td style="${data?.triage_level === 2 ? `background:${color};font-weight:700;` : ''}">Ⅱ</td>
+              <td style="${data?.triage_level === 3 ? `background:${color};font-weight:700;` : ''}">Ⅲ</td>
+              <td style="${data?.triage_level === 4 ? `background:${color};font-weight:700;` : ''}">Ⅳ</td>
+              <td style="${data?.triage_level === 5 ? `background:${color};font-weight:700;` : ''}">Ⅴ</td>
             </tr>
             <tr>
               <td colspan="5" class="c">
