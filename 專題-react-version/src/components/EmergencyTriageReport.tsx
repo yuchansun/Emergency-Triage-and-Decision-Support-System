@@ -101,11 +101,11 @@ const getTemplateHTML = (color: string, data?: any) => `
         <td style="width:21%; padding-right:4px;">
           <table>
             <tr class="c">
-              <td style="height:22px; ${data?.triage_level === 1 ? `background:${color};font-weight:700;` : ''}">Ⅰ</td>
-              <td style="${data?.triage_level === 2 ? `background:${color};font-weight:700;` : ''}">Ⅱ</td>
-              <td style="${data?.triage_level === 3 ? `background:${color};font-weight:700;` : ''}">Ⅲ</td>
-              <td style="${data?.triage_level === 4 ? `background:${color};font-weight:700;` : ''}">Ⅳ</td>
-              <td style="${data?.triage_level === 5 ? `background:${color};font-weight:700;` : ''}">Ⅴ</td>
+              <td style="height:22px; ${getLevelCellStyle(data?.triage_level, 1)}">Ⅰ</td>
+              <td style="${getLevelCellStyle(data?.triage_level, 2)}">Ⅱ</td>
+              <td style="${getLevelCellStyle(data?.triage_level, 3)}">Ⅲ</td>
+              <td style="${getLevelCellStyle(data?.triage_level, 4)}">Ⅳ</td>
+              <td style="${getLevelCellStyle(data?.triage_level, 5)}">Ⅴ</td>
             </tr>
             <tr>
               <td colspan="5" class="c">
@@ -294,6 +294,27 @@ const getWordCSS = (color: string) => `
     width: 33% !important;
   }
 `;
+
+const LEVEL_COLORS: Record<number, string> = {
+  1: "#EF4444", // 紅
+  2: "#F97316", // 橙
+  3: "#EAB308", // 黃
+  4: "#22C55E", // 綠
+  5: "#3B82F6", // 藍
+};
+
+const getLevelCellStyle = (level: any, n: number) => {
+  const c = LEVEL_COLORS[n];
+  const selected = Number(level) === n;
+
+  if (selected) {
+    // 黃色底用深字，其他用白字
+    const textColor =  "#fff";
+    return `background:${c};color:${textColor};font-weight:700;border-color:${c};`;
+  }
+
+  return `color:black;font-weight:700;border-color:${c};`;
+};
 
 export default function EmergencyTriageReport({ patientData, onBack }: Props) {
   const [reportData, setReportData] = useState<any>(null);
