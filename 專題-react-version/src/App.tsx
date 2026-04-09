@@ -8,6 +8,7 @@ import AddPatient from "./components/AddPatient";
 import type { PatientData } from './components/AddPatient';
 import SystemRecommendation from './components/SystemRecommendation';
 import EmergencyTriageReport from './components/EmergencyTriageReport';
+import HistoryPage from './components/HistoryPage';
 
 interface ToccState {
   travel: string;
@@ -366,13 +367,7 @@ function App() {
         )}
 
         {stage === "history" && (
-          <div className="p-10 flex flex-col items-center justify-center h-full">
-            <div className="w-20 h-20 bg-blue-50 text-blue-400 rounded-full flex items-center justify-center mb-4">
-              <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            </div>
-            <h1 className="text-2xl font-bold text-gray-800">過去病史查詢</h1>
-            <p className="text-gray-400 mt-2">歷史數據庫連線中...</p>
-          </div>
+          <HistoryPage patientData={patientData} />
         )}
 
         {stage === "triageReport" && (
