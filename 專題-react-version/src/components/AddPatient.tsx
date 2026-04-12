@@ -108,12 +108,8 @@ const handleConfirm = async () => {
       if (!pResult.patient_id) throw new Error("病人存檔失敗");
 
       // Step B: 建立檢傷紀錄 
-<<<<<<< HEAD
-      const tResponse = await fetch("http://127.0.0.1:8000/triagesave", {
-=======
       // 注意：這裡傳送的結構必須符合你那個複雜的後端 triagesave.py
       const tResponse = await fetch(`${API_BASE}/triagesave`, {
->>>>>>> origin/nico2
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
