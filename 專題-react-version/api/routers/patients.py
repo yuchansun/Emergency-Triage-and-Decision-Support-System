@@ -56,6 +56,55 @@ async def save_patient(data: dict):
         conn.close()
 
 
+@router.get("/search/{id_number}")
+async def search_patient_by_id_number(id_number: str):
+    """依身分證字號查詢（掛號頁讀卡／手輸後帶出舊資料）。"""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    p.patient_id,
+                    p.name,
+                    p.id_number,
+                    p.birth_date,
+                    p.gender,
+                    COALESCE(NULLIF(p.medical_number, ''), p.patient_id) AS medical_id,
+                    (
+                        SELECT tr.triage_id
+                        FROM triage_record tr
+                        WHERE tr.patient_id = p.patient_id
+                        ORDER BY tr.created_at DESC
+                        LIMIT 1
+                    ) AS visit_number
+                FROM patients p
+                WHERE p.id_number = %s
+                """,
+                (id_number,),
+            )
+            row = cur.fetchone()
+
+            if not row:
+                raise HTTPException(status_code=404, detail="查無病患資料")
+
+            if isinstance(row, dict):
+                data = row
+            else:
+                columns = [desc[0] for desc in cur.description]
+                data = dict(zip(columns, row))
+
+            data["age"] = calc_age(data.get("birth_date"))
+
+            return {"success": True, "data": data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
 @router.get("/{patient_id}")
 async def get_patient(patient_id: str):
     conn = get_conn()
