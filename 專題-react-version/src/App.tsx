@@ -286,7 +286,7 @@ function App() {
           {[
             { id: 'addpatient', label: '新病患掛號', icon: 'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z' },
             { id: 'history', label: '過去病史查詢', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
-            { id: 'nurses', label: '查看所有護理師', icon: 'M17 20h5v-1a4 4 0 00-4-4h-1M9 20H4v-1a4 4 0 014-4h1m6 0a4 4 0 10-8 0 4 4 0 008 0zm6-7a3 3 0 11-6 0 3 3 0 016 0zM10 7a3 3 0 11-6 0 3 3 0 016 0z' },
+            { id: 'nurses', label: '護理師資訊', icon: 'M17 20h5v-1a4 4 0 00-4-4h-1M9 20H4v-1a4 4 0 014-4h1m6 0a4 4 0 10-8 0 4 4 0 008 0zm6-7a3 3 0 11-6 0 3 3 0 016 0zM10 7a3 3 0 11-6 0 3 3 0 016 0z' },
             { id: 'stats', label: '統計分析', icon: 'M4 19V5m0 14h16M7 16V9m4 7V7m4 9v-4m4 4V4' }
           ].map((item) => (
             <button key={item.id} onClick={() => setStage(item.id as any)} className={`w-full flex items-center p-3 rounded-xl transition-all ${stage === item.id ? "bg-blue-600 text-white shadow-lg" : "text-gray-500 hover:bg-gray-100"}`} title={item.label}>
