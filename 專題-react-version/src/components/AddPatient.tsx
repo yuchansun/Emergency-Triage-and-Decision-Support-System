@@ -1,5 +1,12 @@
 import { useState } from "react";
 
+/** FastAPI；與專案根目錄 .env 的 VITE_API_BASE_URL 一致 */
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+/** 健保卡讀卡服務（tw-nhi-icc-service）；啟動: nhicard -p 8002 */
+const NHICARD_BASE =
+  import.meta.env.VITE_NHICARD_URL || "http://127.0.0.1:8002";
+
 export interface PatientData {
   name: string;
   idNumber: string;
@@ -31,7 +38,7 @@ export default function AddPatient({
   const checkPatient = async (id: string) => {
     if (!id || id.length < 5) return;
     try {
-      const res = await fetch(`http://127.0.0.1:8000/patients/search/${id}`);
+      const res = await fetch(`${API_BASE}/patients/search/${id}`);
       const result = await res.json();
       if (result.success && result.data) {
         const p = result.data;
@@ -48,7 +55,7 @@ export default function AddPatient({
   // 2. IC 卡讀取
   const handleReadICCard = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/"); 
+      const res = await fetch(`${NHICARD_BASE}/`);
       const data = await res.json();
       if (!data || data.length === 0) {
         alert("未偵測到健保卡！");
@@ -86,7 +93,7 @@ export default function AddPatient({
 const handleConfirm = async () => {
     try {
       // Step A: 儲存病人
-      const pResponse = await fetch("http://127.0.0.1:8000/patients/save", {
+      const pResponse = await fetch(`${API_BASE}/patients/save`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
@@ -101,7 +108,12 @@ const handleConfirm = async () => {
       if (!pResult.patient_id) throw new Error("病人存檔失敗");
 
       // Step B: 建立檢傷紀錄 
+<<<<<<< HEAD
       const tResponse = await fetch("http://127.0.0.1:8000/triagesave", {
+=======
+      // 注意：這裡傳送的結構必須符合你那個複雜的後端 triagesave.py
+      const tResponse = await fetch(`${API_BASE}/triagesave`, {
+>>>>>>> origin/nico2
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
