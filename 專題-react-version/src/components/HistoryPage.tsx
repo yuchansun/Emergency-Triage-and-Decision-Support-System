@@ -1,7 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 
 type HistoryPageProps = {
   patientData?: any;
+  initialKeyword?: string;
+  initialSelectedTriageId?: string | null;
 };
 
 type TriageRecord = {
@@ -133,7 +135,7 @@ const levelColor = (level: number) =>
     5: "text-blue-700 bg-blue-50 border-blue-200",
   }[level] || "text-gray-700 bg-gray-50 border-gray-200");
 
-const HistoryPage: React.FC<HistoryPageProps> = () => {
+const HistoryPage: React.FC<HistoryPageProps> = ({ patientData, initialKeyword, initialSelectedTriageId }) => {
   const [form, setForm] = useState<FilterForm>(defaultFilter);
   const [applied, setApplied] = useState<FilterForm>(defaultFilter);
   const [page, setPage] = useState(1);
@@ -143,6 +145,20 @@ const HistoryPage: React.FC<HistoryPageProps> = () => {
   const setField = <K extends keyof FilterForm>(key: K, value: FilterForm[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
+
+  useEffect(() => {
+    if (initialKeyword !== undefined) {
+      setForm((prev) => ({ ...prev, keyword: initialKeyword }));
+      setApplied((prev) => ({ ...prev, keyword: initialKeyword }));
+      setPage(1);
+    }
+  }, [initialKeyword]);
+
+  useEffect(() => {
+    if (!initialSelectedTriageId) return;
+    const record = MOCK_DATA.find((r) => r.triageId === initialSelectedTriageId);
+    if (record) setSelected(record);
+  }, [initialSelectedTriageId]);
 
   const filtered = useMemo(() => {
     const kw = applied.keyword.trim().toLowerCase();
@@ -373,14 +389,30 @@ const HistoryPage: React.FC<HistoryPageProps> = () => {
         <div className="fixed inset-0 z-40">
           <div className="absolute inset-0 bg-black/25" onClick={() => setSelected(null)} />
           <div className="absolute right-0 top-0 h-full w-full max-w-2xl bg-white shadow-2xl border-l border-gray-200 p-6 overflow-y-auto">
-            <div className={`rounded-xl border px-4 py-3 mb-4 ${levelColor(selected.triageLevel)}`}>
-              <div className="text-xs">檢傷級數</div>
-              <div className="text-xl font-bold">第 {selected.triageLevel} 級</div>
-            </div>
-
             <div className="flex justify-between items-start">
               <h3 className="text-xl font-bold text-gray-800">檢傷紀錄詳情</h3>
               <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-700">✕</button>
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                className="px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-600 text-sm font-medium hover:bg-blue-100"
+              >
+                下載 Word
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-600 text-sm font-medium hover:bg-emerald-100"
+              >
+                修改
+              </button>
+            </div>
+
+            <div className={`rounded-xl border px-4 py-3 mt-4 mb-4 ${levelColor(selected.triageLevel)}`}>
+              <div className="text-xs">檢傷級數</div>
+              <div className="text-xl font-bold">第 {selected.triageLevel} 級</div>
+              <div className="mt-2 text-base font-semibold">姓名：{selected.name}</div>
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-4 text-sm">
