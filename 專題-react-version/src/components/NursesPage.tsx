@@ -23,6 +23,19 @@ type NurseRecord = {
   records: NurseTriageRecord[];
 };
 
+type NewNurseForm = {
+  nurseId: string;
+  name: string;
+  role: string;
+  department: string;
+  shift: string;
+  status: string;
+  phone: string;
+  email: string;
+  hireDate: string;
+  licenseNo: string;
+};
+
 const MOCK_NURSES: NurseRecord[] = [
   {
     nurseId: "N01",
@@ -107,16 +120,81 @@ type NursesPageProps = {
   onOpenHistoryRecord?: (triageId: string) => void;
 };
 
+const emptyForm: NewNurseForm = {
+  nurseId: "",
+  name: "",
+  role: "護理師",
+  department: "急診",
+  shift: "白班",
+  status: "在職",
+  phone: "",
+  email: "",
+  hireDate: "",
+  licenseNo: "",
+};
+
 const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
-  const [selected, setSelected] = useState<NurseRecord | null>(null);
+  const [nurses, setNurses] = useState<NurseRecord[]>(MOCK_NURSES);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [form, setForm] = useState<NewNurseForm>(emptyForm);
+
+  const selected = useMemo(
+    () => nurses.find((n) => n.nurseId === selectedId) || null,
+    [nurses, selectedId]
+  );
 
   const nurseSummary = useMemo(() => {
     return {
-      total: MOCK_NURSES.length,
-      active: MOCK_NURSES.filter((n) => n.status === "在職").length,
-      support: MOCK_NURSES.filter((n) => n.status === "支援中").length,
+      total: nurses.length,
+      active: nurses.filter((n) => n.status === "在職").length,
+      support: nurses.filter((n) => n.status === "支援中").length,
     };
-  }, []);
+  }, [nurses]);
+
+  const handleDelete = (nurseId: string) => {
+    const target = nurses.find((n) => n.nurseId === nurseId);
+    if (!target) return;
+    if (!window.confirm(`確定刪除帳號：${target.name}（${target.nurseId}）？`)) return;
+
+    setNurses((prev) => prev.filter((n) => n.nurseId !== nurseId));
+    if (selectedId === nurseId) setSelectedId(null);
+  };
+
+  const handleAdd = () => {
+    if (!form.nurseId.trim() || !form.name.trim()) {
+      window.alert("請填寫「護理師編號」與「姓名」");
+      return;
+    }
+
+    const duplicated = nurses.some(
+      (n) => n.nurseId.toLowerCase() === form.nurseId.trim().toLowerCase()
+    );
+    if (duplicated) {
+      window.alert("護理師編號重複");
+      return;
+    }
+
+    const newNurse: NurseRecord = {
+      nurseId: form.nurseId.trim(),
+      name: form.name.trim(),
+      role: form.role.trim() || "護理師",
+      department: form.department.trim() || "急診",
+      shift: form.shift.trim() || "白班",
+      status: form.status.trim() || "在職",
+      phone: form.phone.trim(),
+      email: form.email.trim(),
+      hireDate: form.hireDate.trim(),
+      licenseNo: form.licenseNo.trim(),
+      triageCount: 0,
+      records: [],
+    };
+
+    setNurses((prev) => [newNurse, ...prev]);
+    setForm(emptyForm);
+    setIsAddOpen(false);
+  };
 
   return (
     <div className="px-6 py-8 mx-auto max-w-screen-2xl">
@@ -127,18 +205,28 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
             <p className="text-gray-500 mt-1">可查看護理師資料、檢傷紀錄，並預留修改資料與密碼功能</p>
           </div>
 
-          <div className="flex gap-2 text-sm">
-            <div className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200">
-              <div className="text-gray-500">總數</div>
-              <div className="font-semibold text-gray-800">{nurseSummary.total}</div>
-            </div>
-            <div className="px-3 py-2 rounded-xl bg-green-50 border border-green-200">
-              <div className="text-green-600">在職</div>
-              <div className="font-semibold text-green-700">{nurseSummary.active}</div>
-            </div>
-            <div className="px-3 py-2 rounded-xl bg-blue-50 border border-blue-200">
-              <div className="text-blue-600">支援中</div>
-              <div className="font-semibold text-blue-700">{nurseSummary.support}</div>
+          <div className="flex items-start gap-3">
+            <button
+              type="button"
+              onClick={() => setIsAddOpen(true)}
+              className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
+            >
+              新增帳號
+            </button>
+
+            <div className="flex gap-2 text-sm">
+              <div className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200">
+                <div className="text-gray-500">總數</div>
+                <div className="font-semibold text-gray-800">{nurseSummary.total}</div>
+              </div>
+              <div className="px-3 py-2 rounded-xl bg-green-50 border border-green-200">
+                <div className="text-green-600">在職</div>
+                <div className="font-semibold text-green-700">{nurseSummary.active}</div>
+              </div>
+              <div className="px-3 py-2 rounded-xl bg-blue-50 border border-blue-200">
+                <div className="text-blue-600">支援中</div>
+                <div className="font-semibold text-blue-700">{nurseSummary.support}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -158,10 +246,10 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
               </tr>
             </thead>
             <tbody>
-              {MOCK_NURSES.map((nurse) => (
+              {nurses.map((nurse) => (
                 <tr
                   key={nurse.nurseId}
-                  onClick={() => setSelected(nurse)}
+                  onClick={() => setSelectedId(nurse.nurseId)}
                   className="border-t border-gray-200 hover:bg-gray-50 cursor-pointer"
                 >
                   <td className="px-4 py-3 font-medium text-gray-800">{nurse.nurseId}</td>
@@ -176,10 +264,30 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
                   </td>
                   <td className="px-4 py-3">{nurse.triageCount}</td>
                   <td className="px-4 py-3">
-                    <span className="text-blue-600 font-medium">查看詳情</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-blue-600 font-medium">查看詳情</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(nurse.nurseId);
+                        }}
+                        className="text-red-600 font-medium hover:text-red-700"
+                      >
+                        刪除帳號
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
+
+              {nurses.length === 0 && (
+                <tr className="border-t border-gray-200">
+                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                    目前沒有護理師帳號
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -187,11 +295,13 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
 
       {selected && (
         <div className="fixed inset-0 z-40">
-          <div className="absolute inset-0 bg-black/25" onClick={() => setSelected(null)} />
+          <div className="absolute inset-0 bg-black/25" onClick={() => setSelectedId(null)} />
           <div className="absolute right-0 top-0 h-full w-full max-w-3xl bg-white shadow-2xl border-l border-gray-200 p-6 overflow-y-auto">
             <div className="flex justify-between items-start">
               <h3 className="text-xl font-bold text-gray-800">護理師資料詳情</h3>
-              <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-700">✕</button>
+              <button onClick={() => setSelectedId(null)} className="text-gray-400 hover:text-gray-700">
+                ✕
+              </button>
             </div>
 
             <div className="mt-4 flex gap-2">
@@ -207,6 +317,13 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
               >
                 修改密碼
               </button>
+              <button
+                type="button"
+                onClick={() => handleDelete(selected.nurseId)}
+                className="px-4 py-2 rounded-xl border border-red-200 bg-red-50 text-red-600 text-sm font-medium hover:bg-red-100"
+              >
+                刪除帳號
+              </button>
             </div>
 
             <div className="mt-4 rounded-xl border px-4 py-3 bg-gray-50 border-gray-200">
@@ -216,46 +333,16 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <div className="text-gray-500">姓名</div>
-                <div className="font-semibold">{selected.name}</div>
-              </div>
-              <div>
-                <div className="text-gray-500">職稱</div>
-                <div className="font-semibold">{selected.role}</div>
-              </div>
-              <div>
-                <div className="text-gray-500">單位</div>
-                <div className="font-semibold">{selected.department}</div>
-              </div>
-              <div>
-                <div className="text-gray-500">班別</div>
-                <div className="font-semibold">{selected.shift}</div>
-              </div>
-              <div>
-                <div className="text-gray-500">狀態</div>
-                <div className="font-semibold">{selected.status}</div>
-              </div>
-              <div>
-                <div className="text-gray-500">到職日期</div>
-                <div className="font-semibold">{selected.hireDate}</div>
-              </div>
-              <div>
-                <div className="text-gray-500">聯絡電話</div>
-                <div className="font-semibold">{selected.phone}</div>
-              </div>
-              <div>
-                <div className="text-gray-500">電子郵件</div>
-                <div className="font-semibold">{selected.email}</div>
-              </div>
-              <div>
-                <div className="text-gray-500">執照編號</div>
-                <div className="font-semibold">{selected.licenseNo}</div>
-              </div>
-              <div>
-                <div className="text-gray-500">檢傷筆數</div>
-                <div className="font-semibold">{selected.triageCount}</div>
-              </div>
+              <div><div className="text-gray-500">姓名</div><div className="font-semibold">{selected.name}</div></div>
+              <div><div className="text-gray-500">職稱</div><div className="font-semibold">{selected.role}</div></div>
+              <div><div className="text-gray-500">單位</div><div className="font-semibold">{selected.department}</div></div>
+              <div><div className="text-gray-500">班別</div><div className="font-semibold">{selected.shift}</div></div>
+              <div><div className="text-gray-500">狀態</div><div className="font-semibold">{selected.status}</div></div>
+              <div><div className="text-gray-500">到職日期</div><div className="font-semibold">{selected.hireDate}</div></div>
+              <div><div className="text-gray-500">聯絡電話</div><div className="font-semibold">{selected.phone}</div></div>
+              <div><div className="text-gray-500">電子郵件</div><div className="font-semibold">{selected.email}</div></div>
+              <div><div className="text-gray-500">執照編號</div><div className="font-semibold">{selected.licenseNo}</div></div>
+              <div><div className="text-gray-500">檢傷筆數</div><div className="font-semibold">{selected.triageCount}</div></div>
             </div>
 
             <div className="mt-6">
@@ -297,9 +384,80 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
                         </td>
                       </tr>
                     ))}
+                    {selected.records.length === 0 && (
+                      <tr className="border-t border-gray-200">
+                        <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                          尚無檢傷紀錄
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isAddOpen && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/25" onClick={() => setIsAddOpen(false)} />
+          <div className="absolute inset-x-0 top-10 mx-auto w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-gray-200 p-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-bold text-gray-800">新增護理師帳號</h3>
+              <button onClick={() => setIsAddOpen(false)} className="text-gray-400 hover:text-gray-700">✕</button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <label className="text-gray-600">護理師編號 *</label>
+                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.nurseId} onChange={(e) => setForm((p) => ({ ...p, nurseId: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-gray-600">姓名 *</label>
+                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-gray-600">職稱</label>
+                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-gray-600">單位</label>
+                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.department} onChange={(e) => setForm((p) => ({ ...p, department: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-gray-600">班別</label>
+                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.shift} onChange={(e) => setForm((p) => ({ ...p, shift: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-gray-600">狀態</label>
+                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-gray-600">聯絡電話</label>
+                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-gray-600">電子郵件</label>
+                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-gray-600">到職日期</label>
+                <input type="date" className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.hireDate} onChange={(e) => setForm((p) => ({ ...p, hireDate: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-gray-600">執照編號</label>
+                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.licenseNo} onChange={(e) => setForm((p) => ({ ...p, licenseNo: e.target.value }))} />
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button type="button" onClick={() => setIsAddOpen(false)} className="px-4 py-2 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-50">
+                取消
+              </button>
+              <button type="button" onClick={handleAdd} className="px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700">
+                新增帳號
+              </button>
             </div>
           </div>
         </div>

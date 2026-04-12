@@ -160,7 +160,7 @@ const StatsPage: React.FC = () => {
           <div className="mt-1 text-xs text-blue-600">目前區間統計</div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+        {/* <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
           <div className="text-sm text-gray-500">男性</div>
           <div className="mt-2 text-2xl font-bold text-gray-800">{stats.male}</div>
           <div className="mt-1 text-xs text-blue-600">目前區間統計</div>
@@ -170,7 +170,7 @@ const StatsPage: React.FC = () => {
           <div className="text-sm text-gray-500">女性</div>
           <div className="mt-2 text-2xl font-bold text-gray-800">{stats.female}</div>
           <div className="mt-1 text-xs text-pink-600">目前區間統計</div>
-        </div>
+        </div> */}
       </div>
 
       <div className="grid grid-cols-2 gap-4 items-start">
