@@ -9,6 +9,7 @@ import type { PatientData } from './components/AddPatient';
 import SystemRecommendation from './components/SystemRecommendation';
 import EmergencyTriageReport from './components/EmergencyTriageReport';
 import HistoryPage from './components/HistoryPage';
+import NursesPage from './components/NursesPage';
 
 interface ToccState {
   travel: string;
@@ -24,7 +25,7 @@ interface ToccState {
 
 function App() {
   // === 1. State 定義 ===
-  const [stage, setStage] = useState<"login" | "addpatient" | "main" | "triageReport" | "history">(
+  const [stage, setStage] = useState<"login" | "addpatient" | "main" | "triageReport" | "history" | "nurses">(
     (localStorage.getItem("isLoggedIn") === "true") ? "addpatient" : "login"
   );
   
@@ -35,8 +36,9 @@ function App() {
   // 控制側邊欄收縮 (預設收起)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  //const [llmMode, setLlmMode] = useState<'cloud' | 'local'>('cloud'); //新加
   const [llmMode, setLlmMode] = useState<'cloud' | 'local'>('local'); // 預設為地端模式，開發階段方便測試
+  const [historyKeyword, setHistoryKeyword] = useState<string>('');
+  const [historySelectedId, setHistorySelectedId] = useState<string | null>(null);
 
   const [selectedSymptoms, setSelectedSymptoms] = useState<Set<string>>(new Set());
   const [inputText, setInputText] = useState<string>('');
@@ -258,6 +260,12 @@ function App() {
     setStage("addpatient");
   };
 
+  const openHistoryFromNurse = useCallback((keyword?: string, triageId?: string | null) => {
+    setHistoryKeyword(keyword ?? '');
+    setHistorySelectedId(triageId ?? null);
+    setStage("history");
+  }, []);
+
   // === 3. 渲染判斷 ===
   if (stage === "login") return <Login onLogin={handleLogin} />;
 
@@ -276,8 +284,8 @@ function App() {
         <nav className="flex-1 px-3 space-y-2 mt-4">
           {[
             { id: 'addpatient', label: '新病患掛號', icon: 'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z' },
-            { id: 'history', label: '過去病史查詢', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' }
-            
+            { id: 'history', label: '過去病史查詢', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
+            { id: 'nurses', label: '查看所有護理師', icon: 'M17 20h5v-1a4 4 0 00-4-4h-1M9 20H4v-1a4 4 0 014-4h1m6 0a4 4 0 10-8 0 4 4 0 008 0zm6-7a3 3 0 11-6 0 3 3 0 016 0zM10 7a3 3 0 11-6 0 3 3 0 016 0z' }
           ].map((item) => (
             <button key={item.id} onClick={() => setStage(item.id as any)} className={`w-full flex items-center p-3 rounded-xl transition-all ${stage === item.id ? "bg-blue-600 text-white shadow-lg" : "text-gray-500 hover:bg-gray-100"}`} title={item.label}>
               <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.icon} /></svg>
@@ -367,7 +375,15 @@ function App() {
         )}
 
         {stage === "history" && (
-          <HistoryPage patientData={patientData} />
+          <HistoryPage
+            patientData={patientData}
+            initialKeyword={historyKeyword}
+            initialSelectedTriageId={historySelectedId}
+          />
+        )}
+
+        {stage === "nurses" && (
+          <NursesPage onOpenHistoryRecord={openHistoryFromNurse} />
         )}
 
         {stage === "triageReport" && (
