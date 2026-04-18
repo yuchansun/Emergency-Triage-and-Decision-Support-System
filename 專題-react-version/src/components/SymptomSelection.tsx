@@ -159,10 +159,6 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
     });
   };
 
-  const getCountForSymptom = (label: string) => {
-    return symptomCountMap.get(normalizeSymptomName(label)) ?? 0;
-  };
-
   const commonTrauma = useMemo(() => {
     if (!ccRows) return [] as CcRow[];
 
@@ -326,7 +322,7 @@ const filteredSearchResults = useMemo(() => {
                     className={`symptom-option-btn px-3 py-1.5 rounded-full text-xs bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${(selectedSymptoms.has(`t:common:${item.symptom_name}`) || isSymptomSelected(item.symptom_name)) ? 'selected' : ''}`}
                   >
                     {item.symptom_name}
-                    <span className="ml-1 opacity-70 text-[10px]">({item.count})</span>
+                    
                   </button>
                 ))}
               </div>
@@ -347,7 +343,7 @@ const filteredSearchResults = useMemo(() => {
                       className={`symptom-option-btn px-3 py-1.5 rounded-full text-xs bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${(selectedSymptoms.has(`a:common:${item.symptom_name}`) || isSymptomSelected(item.symptom_name)) ? 'selected' : ''}`}
                     >
                       {item.symptom_name}
-                      <span className="ml-1 opacity-70 text-[10px]">({item.count})</span>
+                      
                     </button>
                   ))}
                 </div>
@@ -360,7 +356,7 @@ const filteredSearchResults = useMemo(() => {
                         className={`symptom-option-btn px-3 py-1.5 rounded-full text-xs bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${(selectedSymptoms.has(`a:common:${item.symptom_name}`) || isSymptomSelected(item.symptom_name)) ? 'selected' : ''}`}
                       >
                         {item.symptom_name}
-                        <span className="ml-1 opacity-70 text-[10px]">({item.count})</span>
+                        
                       </button>
                     ))}
                   </div>
@@ -411,7 +407,7 @@ const filteredSearchResults = useMemo(() => {
             >
               {item.symptom_name}
               <span className="ml-1 opacity-50 text-[9px]">({item.system_name})</span>
-              <span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(item.symptom_name)})</span>
+              
             </button>
           ))
         ) : (
@@ -458,7 +454,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`t:head:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:head:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -475,7 +471,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`t:face:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:face:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -492,7 +488,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`t:eye:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:eye:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -509,7 +505,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`t:nose:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:nose:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -526,7 +522,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`t:ear:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:ear:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -543,7 +539,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`t:neck:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:neck:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -562,7 +558,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`t:chest:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:chest:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -579,7 +575,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`t:abdomen:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:abdomen:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -596,7 +592,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`t:upperlimb:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:upperlimb:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -613,7 +609,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`t:back:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:back:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -632,7 +628,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`t:perineum:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:perineum:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -649,7 +645,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`t:lowerlimb:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:lowerlimb:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -666,7 +662,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`t:skin:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:skin:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -683,7 +679,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`t:other:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:other:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -716,7 +712,7 @@ const filteredSearchResults = useMemo(() => {
                               className={`symptom-option-btn flex items-center justify-start gap-2 px-4 py-2 rounded-lg text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:env:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                             >
                               <span className="material-symbols-outlined">{icon}</span>
-                              <span className="symptom-text">{label}</span><span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                              <span className="symptom-text">{label}</span>
                             </button>
                           );
                         })}
@@ -757,7 +753,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`a:neuro:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:neuro:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -774,7 +770,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`a:eye:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:eye:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -791,7 +787,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`a:resp:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:resp:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -808,7 +804,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`a:ent:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:ent:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -827,7 +823,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`a:cardio:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:cardio:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -844,7 +840,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`a:mental:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:mental:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -861,7 +857,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`a:gi:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:gi:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -878,7 +874,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`a:bone:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:bone:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -897,7 +893,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`a:uro:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:uro:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -914,7 +910,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`a:obgy:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:obgy:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -931,7 +927,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`a:bone:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:bone:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -948,7 +944,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`a:derm:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:derm:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -965,7 +961,7 @@ const filteredSearchResults = useMemo(() => {
                             onClick={() => toggleSelect(`a:general:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:general:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
+                            {label}
                           </button>
                         ))}
                       </div>
