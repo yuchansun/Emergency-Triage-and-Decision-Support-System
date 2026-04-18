@@ -131,10 +131,36 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
     return index;
   }, [triageRows, age]);
 
+  
+  const symptomCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!ccRows) return map;
+
+    for (const row of ccRows) {
+      const normalized = normalizeSymptomName(row.symptom_name);
+      const existingCount = map.get(normalized) ?? 0;
+      if (row.count > existingCount) {
+        map.set(normalized, row.count);
+      }
+    }
+
+    return map;
+  }, [ccRows]);
+
   const getSymptoms = (category: string, systemName: string): string[] => {
     if (!symptomIndex) return [];
     const key = `${category}|${systemName}`;
-    return symptomIndex.get(key) ?? [];
+    const list = symptomIndex.get(key) ?? [];
+    return [...list].sort((a, b) => {
+      const countA = symptomCountMap.get(normalizeSymptomName(a)) ?? 0;
+      const countB = symptomCountMap.get(normalizeSymptomName(b)) ?? 0;
+      if (countA !== countB) return countB - countA;
+      return a.localeCompare(b, 'zh-Hant-u-co-stroke');
+    });
+  };
+
+  const getCountForSymptom = (label: string) => {
+    return symptomCountMap.get(normalizeSymptomName(label)) ?? 0;
   };
 
   const commonTrauma = useMemo(() => {
@@ -156,42 +182,94 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
       .slice(0, 8);
   }, [ccRows]);
 
-  const commonNonTrauma = useMemo(() => {
-    if (!ccRows) return [] as CcRow[];
+const commonNonTrauma = useMemo(() => {
+  if (!ccRows) return [] as CcRow[];
 
-    const byName = new Map<string, CcRow>();
-    const isAdult = age !== undefined ? age >= 18 : true;
+  const byName = new Map<string, CcRow>();
+  const isAdult = age !== undefined ? age >= 18 : true;
 
-    for (const row of ccRows) {
-      if (row.category !== '非外傷') continue;
-      // 非外傷常見主訴依 system_code A*/P* 與年齡切換
-      if (row.system_code.startsWith('A') && !isAdult) continue;
-      if (row.system_code.startsWith('P') && isAdult) continue;
+  for (const row of ccRows) {
+    if (row.category !== '非外傷') continue;
+    if (row.system_code.startsWith('A') && !isAdult) continue;
+    if (row.system_code.startsWith('P') && isAdult) continue;
 
-      const key = normalizeSymptomName(row.symptom_name);
-      const existing = byName.get(key);
-      if (!existing || row.count > existing.count) {
-        byName.set(key, row);
+    const key = normalizeSymptomName(row.symptom_name);
+    const existing = byName.get(key);
+    if (!existing || row.count > existing.count) {
+      byName.set(key, row);
+    }
+  }
+
+  // 1. 根據 count 降序排列 (最多的在最前面)
+  const sortedResult = Array.from(byName.values())
+    .sort((a, b) => b.count - a.count);
+
+  // 2. 取前 8 筆
+  return sortedResult.slice(0, 8);
+}, [ccRows, age]);
+
+  // --- 新增：搜尋關鍵字狀態 ---
+const [searchTerm, setSearchTerm] = useState('');
+
+// --- 新增：搜尋過濾邏輯 ---
+const filteredSearchResults = useMemo(() => {
+  if (!searchTerm.trim() || !triageRows) return [];
+  
+  const term = searchTerm.toLowerCase();
+  const isAdult = age !== undefined ? age >= 18 : true;
+  const results = new Map<string, TriageRow>();
+
+  for (const row of triageRows) {
+    // 過濾年齡：成人不看 P，兒童不看 A
+    if (row.system_code.startsWith('A') && !isAdult) continue;
+    if (row.system_code.startsWith('P') && isAdult) continue;
+    
+    // 關鍵字比對 (症狀名稱)
+    if (row.symptom_name.toLowerCase().includes(term)) {
+      const normalized = normalizeSymptomName(row.symptom_name);
+      // 避免重複顯示 (例如不同 rule_code 但同名稱的症狀)
+      if (!results.has(normalized)) {
+        results.set(normalized, row);
       }
     }
+  }
+  // 按 count 降序排序，count 相同時按中文排序
+  return Array.from(results.values())
+    .sort((a, b) => {
+      const countA = symptomCountMap.get(normalizeSymptomName(a.symptom_name)) ?? 0;
+      const countB = symptomCountMap.get(normalizeSymptomName(b.symptom_name)) ?? 0;
+      if (countA !== countB) return countB - countA;
+      return a.symptom_name.localeCompare(b.symptom_name, 'zh-Hant-u-co-stroke');
+    })
+    .slice(0, 12); // 回傳前 12 筆結果，避免清單過長
+}, [searchTerm, triageRows, age, symptomCountMap]);
 
-    // 先依出現次數取前 N 名
-    const limit = 8;
-    const topByCount = Array.from(byName.values())
-      .sort((a, b) => b.count - a.count)
-      .slice(0, limit);
+  const [tBodies, setTBodies] = useState<Set<'head' | 'upper' | 'lower'>>(new Set(['head']));
+  const [aBodies, setABodies] = useState<Set<'head' | 'upper' | 'lower'>>(new Set(['head']));
 
-    // 成人：為了讓版面高度比較均勻，用「字比較長的排前面」
-    if (isAdult) {
-      return topByCount.sort((a, b) => b.symptom_name.length - a.symptom_name.length);
-    }
+  const toggleTBody = (part: 'head' | 'upper' | 'lower') => {
+    setTBodies(prev => {
+      const next = new Set(prev);
+      if (next.has(part)) {
+        next.delete(part);
+      } else {
+        next.add(part);
+      }
+      return next;
+    });
+  };
 
-    // 兒童：維持依出現次數排序（最常見的在最前面）
-    return topByCount;
-  }, [ccRows, age]);
-
-  const [tBody, setTBody] = useState<'head' | 'upper' | 'lower' | null>(null);
-  const [aBody, setABody] = useState<'head' | 'upper' | 'lower' | null>(null);
+  const toggleABody = (part: 'head' | 'upper' | 'lower') => {
+    setABodies(prev => {
+      const next = new Set(prev);
+      if (next.has(part)) {
+        next.delete(part);
+      } else {
+        next.add(part);
+      }
+      return next;
+    });
+  };
 
   const bodyImgSrc = useMemo(() => {
     // Served from Vite public/ so path is stable in dev/build
@@ -248,6 +326,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                     className={`symptom-option-btn px-3 py-1.5 rounded-full text-xs bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${(selectedSymptoms.has(`t:common:${item.symptom_name}`) || isSymptomSelected(item.symptom_name)) ? 'selected' : ''}`}
                   >
                     {item.symptom_name}
+                    <span className="ml-1 opacity-70 text-[10px]">({item.count})</span>
                   </button>
                 ))}
               </div>
@@ -268,6 +347,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                       className={`symptom-option-btn px-3 py-1.5 rounded-full text-xs bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${(selectedSymptoms.has(`a:common:${item.symptom_name}`) || isSymptomSelected(item.symptom_name)) ? 'selected' : ''}`}
                     >
                       {item.symptom_name}
+                      <span className="ml-1 opacity-70 text-[10px]">({item.count})</span>
                     </button>
                   ))}
                 </div>
@@ -280,6 +360,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                         className={`symptom-option-btn px-3 py-1.5 rounded-full text-xs bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${(selectedSymptoms.has(`a:common:${item.symptom_name}`) || isSymptomSelected(item.symptom_name)) ? 'selected' : ''}`}
                       >
                         {item.symptom_name}
+                        <span className="ml-1 opacity-70 text-[10px]">({item.count})</span>
                       </button>
                     ))}
                   </div>
@@ -289,6 +370,59 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
           )}
         </div>
       </div>
+     {/* 搜尋框與結果區域 */}
+<div className="mb-6">
+  {/* 搜尋輸入框 */}
+  <div className="relative flex items-center bg-gray-100 dark:bg-background-dark rounded-xl px-4 py-2.5 border border-gray-200 dark:border-gray-700 focus-within:border-primary/50 transition-all shadow-sm">
+    <span className="material-symbols-outlined text-gray-400 mr-2 text-xl">search</span>
+    <input
+      type="text"
+      placeholder="搜尋症狀關鍵字（如：頭痛、發燒）..."
+      className="bg-transparent border-none outline-none w-full text-sm placeholder:text-gray-400"
+      value={searchTerm}
+      onChange={(e) => setSearchTerm(e.target.value)}
+    />
+    {searchTerm && (
+      <button 
+        onClick={() => setSearchTerm('')} 
+        className="text-gray-400 hover:text-red-500 transition-colors"
+      >
+        <span className="material-symbols-outlined text-sm">close</span>
+      </button>
+    )}
+  </div>
+
+  {/* 搜尋結果：格式與「常見症狀」完全一致 */}
+  {searchTerm && (
+    <div className="mt-3 bg-primary/5 p-3 rounded-lg border border-primary/20 animate-in fade-in slide-in-from-top-1">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[10px] font-bold text-primary uppercase tracking-wider">搜尋結果</span>
+        <div className="h-[1px] flex-1 bg-primary/10"></div>
+      </div>
+      
+      <div className="flex flex-wrap gap-2">
+        {filteredSearchResults.length > 0 ? (
+          filteredSearchResults.map(item => (
+            <button
+              key={`${item.system_code}-${item.symptom_code}`}
+              onClick={() => toggleSelect(`${activeTab}:search:${item.symptom_name}`)}
+              className={`symptom-option-btn px-3 py-1.5 rounded-full text-xs bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors 
+                ${isSymptomSelected(item.symptom_name) ? 'selected' : ''}`}
+            >
+              {item.symptom_name}
+              <span className="ml-1 opacity-50 text-[9px]">({item.system_name})</span>
+              <span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(item.symptom_name)})</span>
+            </button>
+          ))
+        ) : (
+          <div className="text-xs text-gray-400 py-2 w-full text-center">
+            找不到與「{searchTerm}」相關的症狀
+          </div>
+        )}
+      </div>
+    </div>
+  )}
+</div>
       {triageError && (
         <div className="mb-3 text-sm text-red-500">{triageError}</div>
       )}
@@ -300,18 +434,18 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
               <div className="flex gap-8 flex-1 items-start">
                 <div className="relative w-48 flex-shrink-0">
                   <img src={bodyImgSrc} alt="Human Body" className="w-full" />
-                  <button id="t-head-button" onClick={() => setTBody('head')} className={`body-part-btn absolute top-0 left-0 w-full h-1/4 rounded-t-full transition-colors duration-300 border-2 ${tBody === 'head' ? 'active' : 'border-transparent'}`}>
+                  <button id="t-head-button" onClick={() => toggleTBody('head')} className={`body-part-btn absolute top-0 left-0 w-full h-1/4 rounded-t-full transition-colors duration-300 border-2 ${tBodies.has('head') ? 'active' : 'border-transparent'}`}>
                     <span className="invisible">頭</span>
                   </button>
-                  <button id="t-upperbody-button" onClick={() => setTBody('upper')} className={`body-part-btn absolute top-1/4 left-0 w-full h-1/3 transition-colors duration-300 border-2 ${tBody === 'upper' ? 'active' : 'border-transparent'}`}>
+                  <button id="t-upperbody-button" onClick={() => toggleTBody('upper')} className={`body-part-btn absolute top-1/4 left-0 w-full h-1/3 transition-colors duration-300 border-2 ${tBodies.has('upper') ? 'active' : 'border-transparent'}`}>
                     <span className="invisible">上身</span>
                   </button>
-                  <button id="t-lowerbody-button" onClick={() => setTBody('lower')} className={`body-part-btn absolute bottom-0 left-0 w-full h-2/5 rounded-b-full transition-colors duration-300 border-2 ${tBody === 'lower' ? 'active' : 'border-transparent'}`}>
+                  <button id="t-lowerbody-button" onClick={() => toggleTBody('lower')} className={`body-part-btn absolute bottom-0 left-0 w-full h-2/5 rounded-b-full transition-colors duration-300 border-2 ${tBodies.has('lower') ? 'active' : 'border-transparent'}`}>
                     <span className="invisible">下身</span>
                   </button>
                 </div>
                 <div className="flex-1 flex flex-col">
-                  <div id="t-head-trauma-options" className={`${tBody === 'head' ? '' : 'hidden'} space-y-6`}>
+                  <div id="t-head-trauma-options" className={`${tBodies.has('head') ? '' : 'hidden'} space-y-6`}>
                     <div>
                       <h5 className="font-semibold text-base flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">psychology</span>
@@ -324,7 +458,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`t:head:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:head:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -341,7 +475,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`t:face:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:face:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -358,7 +492,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`t:eye:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:eye:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -375,7 +509,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`t:nose:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:nose:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -392,7 +526,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`t:ear:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:ear:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -409,13 +543,13 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`t:neck:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:neck:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
                     </div>
                   </div>
-                  <div id="t-upperbody-trauma-options" className={`${tBody === 'upper' ? '' : 'hidden'} space-y-6`}>
+                  <div id="t-upperbody-trauma-options" className={`${tBodies.has('upper') ? '' : 'hidden'} space-y-6`}>
                     <div>
                       <h5 className="font-semibold text-base flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">favorite</span>
@@ -428,7 +562,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`t:chest:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:chest:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -445,7 +579,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`t:abdomen:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:abdomen:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -462,7 +596,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`t:upperlimb:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:upperlimb:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -479,13 +613,13 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`t:back:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:back:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
                     </div>
                   </div>
-                  <div id="t-lowerbody-trauma-options" className={`${tBody === 'lower' ? '' : 'hidden'} space-y-6`}>
+                  <div id="t-lowerbody-trauma-options" className={`${tBodies.has('lower') ? '' : 'hidden'} space-y-6`}>
                     <div>
                       <h5 className="font-semibold text-base flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">wc</span>
@@ -498,7 +632,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`t:perineum:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:perineum:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -515,7 +649,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`t:lowerlimb:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:lowerlimb:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -532,7 +666,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`t:skin:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:skin:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -549,7 +683,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`t:other:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:other:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -582,7 +716,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                               className={`symptom-option-btn flex items-center justify-start gap-2 px-4 py-2 rounded-lg text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:env:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                             >
                               <span className="material-symbols-outlined">{icon}</span>
-                              <span className="symptom-text">{label}</span>
+                              <span className="symptom-text">{label}</span><span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                             </button>
                           );
                         })}
@@ -599,18 +733,18 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
               <div className="flex gap-8 flex-1 items-start">
                 <div className="relative w-48 flex-shrink-0">
                   <img src={bodyImgSrc} alt="Human Body" className="w-full" />
-                  <button id="a-head-button" onClick={() => setABody('head')} className={`body-part-btn absolute top-0 left-0 w-full h-1/4 rounded-t-full transition-colors duration-300 border-2 ${aBody === 'head' ? 'active' : 'border-transparent'}`}>
+                  <button id="a-head-button" onClick={() => toggleABody('head')} className={`body-part-btn absolute top-0 left-0 w-full h-1/4 rounded-t-full transition-colors duration-300 border-2 ${aBodies.has('head') ? 'active' : 'border-transparent'}`}>
                     <span className="invisible">頭</span>
                   </button>
-                  <button id="a-upperbody-button" onClick={() => setABody('upper')} className={`body-part-btn absolute top-1/4 left-0 w-full h-1/3 transition-colors duration-300 border-2 ${aBody === 'upper' ? 'active' : 'border-transparent'}`}>
+                  <button id="a-upperbody-button" onClick={() => toggleABody('upper')} className={`body-part-btn absolute top-1/4 left-0 w-full h-1/3 transition-colors duration-300 border-2 ${aBodies.has('upper') ? 'active' : 'border-transparent'}`}>
                     <span className="invisible">上身</span>
                   </button>
-                  <button id="a-lowerbody-button" onClick={() => setABody('lower')} className={`body-part-btn absolute bottom-0 left-0 w-full h-2/5 rounded-b-full transition-colors duration-300 border-2 ${aBody === 'lower' ? 'active' : 'border-transparent'}`}>
+                  <button id="a-lowerbody-button" onClick={() => toggleABody('lower')} className={`body-part-btn absolute bottom-0 left-0 w-full h-2/5 rounded-b-full transition-colors duration-300 border-2 ${aBodies.has('lower') ? 'active' : 'border-transparent'}`}>
                     <span className="invisible">下身</span>
                   </button>
                 </div>
                 <div className="flex-1">
-                  <div id="a-head-options" className={`${aBody === 'head' ? '' : 'hidden'} space-y-6`}>
+                  <div id="a-head-options" className={`${aBodies.has('head') ? '' : 'hidden'} space-y-6`}>
                     <div>
                       <h5 className="font-semibold text-base flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">neurology</span>
@@ -623,7 +757,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`a:neuro:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:neuro:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -640,7 +774,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`a:eye:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:eye:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -657,7 +791,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`a:resp:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:resp:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -674,13 +808,13 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`a:ent:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:ent:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
                     </div>
                   </div>
-                  <div id="a-upperbody-options" className={`${aBody === 'upper' ? '' : 'hidden'} space-y-6`}>
+                  <div id="a-upperbody-options" className={`${aBodies.has('upper') ? '' : 'hidden'} space-y-6`}>
                     <div>
                       <h5 className="font-semibold text-base flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">cardiology</span>
@@ -693,7 +827,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`a:cardio:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:cardio:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -710,7 +844,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`a:mental:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:mental:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -727,7 +861,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`a:gi:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:gi:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -744,13 +878,13 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`a:bone:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:bone:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
                     </div>
                   </div>
-                  <div id="a-lowerbody-options" className={`${aBody === 'lower' ? '' : 'hidden'} space-y-6`}>
+                  <div id="a-lowerbody-options" className={`${aBodies.has('lower') ? '' : 'hidden'} space-y-6`}>
                     <div>
                       <h5 className="font-semibold text-base flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">urology</span>
@@ -763,7 +897,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`a:uro:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:uro:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -780,7 +914,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`a:obgy:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:obgy:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -797,7 +931,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`a:bone:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:bone:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -814,7 +948,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`a:derm:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:derm:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
@@ -831,7 +965,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
                             onClick={() => toggleSelect(`a:general:${label}`)}
                             className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:general:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
-                            {label}
+                            {label}<span className="ml-1 opacity-70 text-[10px]">({getCountForSymptom(label)})</span>
                           </button>
                         ))}
                       </div>
