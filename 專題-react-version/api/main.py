@@ -7,6 +7,7 @@ from routers.patients import router as patient_router
 from routers.login import router as login_router  # 1. 新增導入
 from routers.symptoms import router as symptoms_router  # 2. 新增導入
 from routers.triage_report import router as triage_report_router
+from routers.history import router as history_router
 
 app = FastAPI()
 
@@ -27,6 +28,7 @@ app.include_router(counts_router)
 app.include_router(triage_router)
 app.include_router(triage_save_router)
 app.include_router(symptoms_router)
+app.include_router(history_router)
 
   # 2. 註冊登入路由
 app.include_router(triage_report_router)  # 2. 註冊登入路由
