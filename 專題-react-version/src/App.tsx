@@ -267,20 +267,6 @@ function App() {
     setStage("history");
   }, []);
 
-  const openTriageReportById = useCallback((triageId: string) => {
-    setPatientData((prev) => ({
-      ...(prev ?? {
-        name: "",
-        idNumber: "",
-        birthDate: "",
-        gender: "",
-        icCard: false,
-      }),
-      triage_id: triageId,
-    }));
-    setStage("triageReport");
-  }, []);
-
   // === 3. 渲染判斷 ===
   if (stage === "login") return <Login onLogin={handleLogin} />;
 
@@ -415,7 +401,6 @@ function App() {
             patientData={patientData}
             initialKeyword={historyKeyword}
             initialSelectedTriageId={historySelectedId}
-            onEditRecord={openTriageReportById}
           />
         )}
 
