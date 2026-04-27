@@ -234,44 +234,32 @@ async def summarize_cc(body: SummarizeRequest):
 @app.post("/api/recommend-symptoms", response_model=RecommendSymptomsResponse)
 async def recommend_symptoms(body: RecommendSymptomsRequest):
     try:
-       
-
-        # 建立候選症狀清單（編號只是幫助理解，實際輸出仍以名稱為主）
-        candidate_lines = "\n".join(f"- {name}" for name in candidates)
-
-        prompt = (
-            "你是一位熟悉台灣急診分級系統的護理師助手。"\
-            "目前已經有一段整理過的主訴內容，請你從提供的『候選症狀清單』中，"\
-            "選出最符合這段主訴的幾個症狀作為建議，不要發明清單裡沒有的症狀。"\
-            "\n\n"\
-            "主訴內容：" + text + "\n\n"\
-            "候選症狀清單（只能從這些裡面選）：\n" + candidate_lines + "\n\n"\
-            f"請你從候選清單中選出 1 到 {max_results} 個最適合的症狀。"\
-            "如果候選清單裡沒有跟主訴明顯相關的症狀，請回傳空的 JSON 陣列 []，"\
-            "不要勉強選一個不相干的診斷。"\
-            "請嚴格只輸出 JSON 陣列格式，不要加任何解釋文字。範例：\n"\
-            "[\"頭痛\", \"胸痛\"]"
-        )
-
-        llm_fn = call_gemini_llm if body.llm_mode == "cloud" else call_local_llm
-        raw = llm_fn(prompt).strip()
-
-
-        print("LLM recommend raw:", raw)
-
-        recommended: list[str] = []
-        data = None
-
-        # 第一次嘗試：直接把整個回應當作 JSON 解析
         text = body.text.strip()
         candidates = body.symptom_candidates
-        max_results = body.max_results
+        max_results = min(body.max_results, 5)  # 限制最多5個推薦
         vitals = body.vitals
+        
+        print(f"[LLM] 開始推薦症狀，主訴：{text}，候選數量：{len(candidates)}")
         
         # 分析生命徵象異常
         vitals_symptoms = []
         if vitals:
             vitals_symptoms, _ = vitals_analyzer.analyze_vitals(vitals)
+            print(f"[LLM] 生命徵象分析：{vitals_symptoms}")
+        
+        # 使用RAG檢索相關醫學知識
+        relevant_knowledge = []
+        if text:
+            try:
+                # 根據主訴檢索相關知識
+                relevant_knowledge = rag_pipeline.retrieve_relevant_knowledge(
+                    query=text, 
+                    category=None, 
+                    n_results=3
+                )
+                print(f"[LLM] 檢索到 {len(relevant_knowledge)} 條相關知識")
+            except Exception as e:
+                print(f"[LLM] RAG檢索失敗: {e}")
         
         # 如果是純生命徵象輸入（沒有文字），使用直接的症狀映射
         if not text and vitals_symptoms:
@@ -305,61 +293,108 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
                         break
             
             print(f"[LLM] 純生命徵象推薦：{vitals_symptoms} → {matched_symptoms}")
-            return RecommendSymptomsResponse(recommended_symptoms=matched_symptoms)
+            return RecommendSymptomsResponse(recommended_symptoms=matched_symptoms[:max_results])
         
-        # 如果有文字輸入也有生命徵象異常，也要考慮生命徵象
-        if text and vitals_symptoms:
-            # 建立生命徵象症狀到症狀庫的映射
-            vitals_to_symptoms_mapping = {
-                "發燒": ["發燒", "體溫過高", "發熱"],
-                "高燒": ["高燒", "體溫過高", "發熱", "發燒"],
-                "超高熱": ["超高熱", "體溫過高", "發熱", "高燒", "發燒"],
-                "輕度高血壓": ["輕度高血壓", "高血壓", "血壓過高"],
-                "重度高血壓": ["重度高血壓", "高血壓", "血壓過高", "嚴重高血壓"],
-                "嚴重高血壓": ["嚴重高血壓", "高血壓", "血壓過高", "重度高血壓"],
-                "舒張期高血壓": ["舒張期高血壓", "高血壓", "血壓過高"],
-                "低血壓": ["低血壓", "血壓過低"],
-                "心跳過速": ["心跳過速", "心悸", "心跳快"],
-                "心跳過緩": ["心跳過緩", "心跳慢"],
-                "輕微低血氧": ["輕微低血氧", "低血氧", "血氧過低"],
-                "嚴重低血氧": ["嚴重低血氧", "低血氧", "血氧過低", "缺氧"],
-                "呼吸急促": ["呼吸急促", "呼吸困難", "呼吸快"],
-                "呼吸過緩": ["呼吸過緩", "呼吸慢"],
-                "高血糖": ["高血糖", "血糖過高"],
-                "低血糖": ["低血糖", "血糖過低", "血糖偏低"]
-            }
+        # 如果有文字輸入，使用RAG增強的推薦
+        if text:
+            # 格式化檢索到的知識
+            context = ""
+            if relevant_knowledge:
+                context = rag_pipeline.format_context_for_llm(relevant_knowledge)
+                print(f"[LLM] 使用RAG上下文：{context[:200]}...")
             
-            # 找到匹配的生命徵象症狀
-            vital_matched = []
-            for vital_symptom in vitals_symptoms:
-                possible_symptoms = vitals_to_symptoms_mapping.get(vital_symptom, [vital_symptom])
-                for symptom in possible_symptoms:
-                    if symptom in candidates:
-                        vital_matched.append(symptom)
-                        break
+            # 建立候選症狀清單
+            candidate_lines = "\n".join(f"- {name}" for name in candidates)
             
-            # 如果找到生命徵象相關症狀，優先返回這些
-            if vital_matched:
-                print(f"[LLM] 混合輸入推薦（優先生命徵象）：{vitals_symptoms} + '{text}' → {vital_matched}")
-                return RecommendSymptomsResponse(recommended_symptoms=vital_matched)
-        
-        # 正常的 RAG 處理流程
-        enhanced_prompt = rag_pipeline.enhance_symptom_recommendations(text, candidates, vitals, max_results)
-        response = call_local_llm(enhanced_prompt).strip()
-        
-        # 解析 JSON 回應
-        try:
-            if response.startswith('[') and response.endswith(']'):
-                recommended = json.loads(response)
+            # 建構包含RAG知識的提示
+            prompt = (
+                "你是一位熟悉台灣急診分級系統的專業護理師。"
+                "請根據以下資訊，從候選症狀清單中推薦最相關的症狀。\n\n"
+                f"患者主訴：{text}\n"
+            )
+            
+            # 添加生命徵象信息
+            if vitals_symptoms:
+                prompt += f"生命徵象異常：{', '.join(vitals_symptoms)}\n"
+            
+            # 添加RAG檢索的醫學知識
+            if context:
+                prompt += f"\n相關醫學知識：\n{context}\n"
+            
+            prompt += (
+                f"\n候選症狀清單（只能從這些裡面選）：\n{candidate_lines}\n\n"
+                f"請從候選清單中選出 1 到 {max_results} 個最相關且重要的症狀。"
+                "考慮以下原則：\n"
+                "1. 症狀必須與主訴高度相關\n"
+                "2. 優先考慮緊急或危險的症狀\n"
+                "3. 避免推薦不相關或重複的症狀\n"
+                "4. 如果候選清單中沒有明顯相關的症狀，請回傳空陣列 []\n\n"
+                "請嚴格只輸出 JSON 陣列格式，不要加任何解釋文字。範例：\n"
+                "[\"頭痛\", \"胸痛\"]"
+            )
+            
+            llm_fn = call_gemini_llm if body.llm_mode == "cloud" else call_local_llm
+            raw = llm_fn(prompt).strip()
+            
+            print(f"[LLM] RAG增強推薦原始回應：{raw}")
+            
+            # 解析LLM回應
+            try:
+                recommended = json.loads(raw)
                 if isinstance(recommended, list):
-                    return RecommendSymptomsResponse(recommended_symptoms=recommended)
-        except json.JSONDecodeError:
-            print(f"[LLM] JSON 解析失敗：{response}")
+                    # 過濾確保都在候選清單中
+                    filtered_recommendations = [
+                        symptom for symptom in recommended 
+                        if symptom in candidates
+                    ]
+                    print(f"[LLM] RAG增強推薦結果：{filtered_recommendations}")
+                    return RecommendSymptomsResponse(recommended_symptoms=filtered_recommendations[:max_results])
+            except json.JSONDecodeError:
+                print(f"[LLM] JSON解析失敗，回應：{raw}")
+            
+            # 如果RAG增強失敗，回退到傳統方法
+            print("[LLM] RAG增強失敗，使用傳統推薦方法")
         
-        # 如果 JSON 解析失敗，返回空陣列
+        # 傳統推薦方法（作為備選）
+        candidate_lines = "\n".join(f"- {name}" for name in candidates)
+        
+        prompt = (
+            "你是一位熟悉台灣急診分級系統的護理師助手。"
+            "目前已經有一段整理過的主訴內容，請你從提供的『候選症狀清單』中，"
+            "選出最符合這段主訴的幾個症狀作為建議，不要發明清單裡沒有的症狀。\n\n"
+            f"主訴內容：{text}\n\n"
+            f"候選症狀清單（只能從這些裡面選）：\n{candidate_lines}\n\n"
+            f"請你從候選清單中選出 1 到 {max_results} 個最適合的症狀。"
+            "如果候選清單裡沒有跟主訴明顯相關的症狀，請回傳空的 JSON 陣列 []，"
+            "不要勉強選一個不相干的診斷。"
+            "請嚴格只輸出 JSON 陣列格式，不要加任何解釋文字。範例：\n"
+            "[\"頭痛\", \"胸痛\"]"
+        )
+        
+        llm_fn = call_gemini_llm if body.llm_mode == "cloud" else call_local_llm
+        raw = llm_fn(prompt).strip()
+        
+        print(f"[LLM] 傳統推薦原始回應：{raw}")
+        
+        # 解析傳統方法的回應
+        try:
+            recommended = json.loads(raw)
+            if isinstance(recommended, list):
+                filtered_recommendations = [
+                    symptom for symptom in recommended 
+                    if symptom in candidates
+                ]
+                print(f"[LLM] 傳統推薦結果：{filtered_recommendations}")
+                return RecommendSymptomsResponse(recommended_symptoms=filtered_recommendations[:max_results])
+        except json.JSONDecodeError:
+            print(f"[LLM] 傳統方法JSON解析失敗，回應：{raw}")
+        
+        # 如果所有方法都失敗，返回空陣列
+        print("[LLM] 所有推薦方法都失敗，返回空陣列")
         return RecommendSymptomsResponse(recommended_symptoms=[])
+        
     except Exception as e:
-        print("Recommend symptoms error:", e)
+        print(f"❌ 推薦症狀時發生錯誤: {e}")
         return RecommendSymptomsResponse(recommended_symptoms=[])
 
 # 新增一個 API，用來抓取那 5 個隨機病患 (誒這是啥呀)
@@ -408,6 +443,14 @@ class TriageAdviceRequest(BaseModel):
 class TriageAdviceResponse(BaseModel):
     advice: str
 
+class RecommendRulesRequest(BaseModel):
+    selected_symptoms: list[str]
+    vitals: dict = None
+    llm_mode: str = "local"
+
+class RecommendRulesResponse(BaseModel):
+    recommended_rules: list[dict]
+
 @app.post("/api/triage-advice", response_model=TriageAdviceResponse)
 async def triage_advice(body: TriageAdviceRequest):
     """RAG 增強檢傷建議 API"""
@@ -421,4 +464,276 @@ async def triage_advice(body: TriageAdviceRequest):
     except Exception as e:
         print("Triage advice error:", e)
         return TriageAdviceResponse(advice="系統暫時無法提供建議")
+
+@app.post("/api/recommend-rules", response_model=RecommendRulesResponse)
+async def recommend_rules(body: RecommendRulesRequest):
+    """依已選症狀 + 已填生命徵象 + RAG 推薦判斷規則"""
+    try:
+        selected_symptoms = [s.strip() for s in body.selected_symptoms if isinstance(s, str) and s.strip()]
+        vitals = body.vitals or {}
+        llm_mode = body.llm_mode
+        if not selected_symptoms:
+            return RecommendRulesResponse(recommended_rules=[])
+
+        query = """
+        SELECT DISTINCT symptom_name, rule_code, judge_name, ttas_degree
+        FROM triage_hierarchy
+        WHERE symptom_name IS NOT NULL
+          AND rule_code IS NOT NULL
+          AND judge_name IS NOT NULL
+        ORDER BY symptom_name, ttas_degree
+        """
+        all_rules = fetch_all(query)
+        if not all_rules:
+            return RecommendRulesResponse(recommended_rules=[])
+
+        symptom_rules_map = {}
+        for rule in all_rules:
+            symptom = rule["symptom_name"]
+            symptom_rules_map.setdefault(symptom, []).append({
+                "rule_code": rule["rule_code"],
+                "judge_name": rule["judge_name"],
+                "ttas_degree": int(rule["ttas_degree"]),
+            })
+
+        # 只保留有填寫的生命徵象（未填值不視為 0）
+        filled_vitals = {}
+        for k, v in vitals.items():
+            if isinstance(v, str):
+                if v.strip() != "":
+                    filled_vitals[k] = v.strip()
+            elif v is not None:
+                filled_vitals[k] = v
+
+        # 僅根據「已選症狀」建立候選規則（不再擴充其他症狀）
+        candidate_symptoms = list(dict.fromkeys(selected_symptoms))
+        candidate_rules = []
+        for symptom in candidate_symptoms:
+            for item in symptom_rules_map.get(symptom, []):
+                candidate_rules.append({
+                    "rule_code": item["rule_code"],
+                    "symptom_name": symptom,
+                    "judge_name": item["judge_name"],
+                    "ttas_degree": item["ttas_degree"],
+                })
+
+        if not candidate_rules:
+            return RecommendRulesResponse(recommended_rules=[])
+
+        # 生命徵象數值（未填即 None，不視為 0）
+        temp_val = None
+        spo2_val = None
+        bs_val = None
+        sbp_val = None
+        dbp_val = None
+        gcs_total = None
+        try:
+            if "temperature" in filled_vitals:
+                temp_val = float(filled_vitals["temperature"])
+        except Exception:
+            temp_val = None
+        try:
+            if "spo2" in filled_vitals:
+                spo2_val = float(filled_vitals["spo2"])
+        except Exception:
+            spo2_val = None
+        try:
+            if "bloodSugar" in filled_vitals:
+                bs_val = float(filled_vitals["bloodSugar"])
+        except Exception:
+            bs_val = None
+        try:
+            if "systolicBP" in filled_vitals:
+                sbp_val = float(filled_vitals["systolicBP"])
+            if "diastolicBP" in filled_vitals:
+                dbp_val = float(filled_vitals["diastolicBP"])
+        except Exception:
+            sbp_val = None
+            dbp_val = None
+        try:
+            if all(k in filled_vitals for k in ["gcsEye", "gcsVerbal", "gcsMotor"]):
+                gcs_total = int(filled_vitals["gcsEye"]) + int(filled_vitals["gcsVerbal"]) + int(filled_vitals["gcsMotor"])
+        except Exception:
+            gcs_total = None
+
+        def vitals_rule_score(judge_name: str) -> int:
+            """
+            依生命徵象給規則評分；若明顯矛盾回傳極低分（過濾）。
+            """
+            j = str(judge_name or "")
+            score = 0
+
+            # SpO2 規則一致性
+            if spo2_val is not None:
+                if "<90%" in j:
+                    if spo2_val < 90:
+                        score += 45
+                    else:
+                        return -999
+                if "<92%" in j:
+                    if spo2_val < 92:
+                        score += 35
+                    else:
+                        return -999
+                if "92-94%" in j or "92-94" in j:
+                    if 92 <= spo2_val <= 94:
+                        score += 25
+                    else:
+                        score -= 12
+                if "血氧" in j and spo2_val >= 95:
+                    score -= 10
+
+            # GCS 規則一致性
+            if gcs_total is not None:
+                if "GCS3-8" in j:
+                    if 3 <= gcs_total <= 8:
+                        score += 45
+                    else:
+                        return -999
+                if "GCS9-13" in j:
+                    if 9 <= gcs_total <= 13:
+                        score += 35
+                    else:
+                        return -999
+                if "GCS14-15" in j:
+                    if 14 <= gcs_total <= 15:
+                        score += 20
+                    else:
+                        score -= 8
+
+            # 體溫規則一致性
+            if temp_val is not None:
+                if "高燒" in j:
+                    if temp_val >= 39:
+                        score += 28
+                    else:
+                        return -999
+                if "發燒" in j and "高燒" not in j:
+                    if temp_val >= 38:
+                        score += 18
+                    else:
+                        return -999
+
+            # 血糖規則一致性
+            if bs_val is not None:
+                if "低血糖" in j:
+                    if bs_val < 70:
+                        score += 26
+                    else:
+                        return -999
+                if "高血糖" in j:
+                    if bs_val > 140:
+                        score += 20
+                    else:
+                        score -= 10
+
+            # 血壓規則一致性（沒有明確閾值文字時以關鍵字加權）
+            if sbp_val is not None or dbp_val is not None:
+                has_hypertension = ((sbp_val is not None and sbp_val >= 140) or (dbp_val is not None and dbp_val >= 90))
+                if "高血壓" in j or "血壓" in j:
+                    if has_hypertension:
+                        score += 20
+                    else:
+                        score -= 12
+
+            return score
+
+        code_to_rule = {r["rule_code"]: r for r in candidate_rules}
+
+        candidate_lines = "\n".join(
+            f'- {r["symptom_name"]} (第{r["ttas_degree"]}級): {r["judge_name"]} [{r["rule_code"]}]'
+            for r in candidate_rules
+        )
+
+        # RAG 僅提供背景知識，不用來擴充症狀候選
+        rag_context = ""
+        try:
+            rag_docs = rag_pipeline.retrieve_relevant_knowledge(
+                query=f"症狀：{'、'.join(selected_symptoms)}；生命徵象：{json.dumps(filled_vitals, ensure_ascii=False)}",
+                category=None,
+                n_results=3
+            )
+            if rag_docs:
+                rag_context = rag_pipeline.format_context_for_llm(rag_docs)
+        except Exception as e:
+            print("[RULES] RAG 檢索失敗:", e)
+
+        prompt = f"""你是急診檢傷專家。請根據「已選症狀 + 已填生命徵象」推薦 1-3 個判斷規則。
+
+已選症狀：{", ".join(selected_symptoms)}
+已填生命徵象：{json.dumps(filled_vitals, ensure_ascii=False) if filled_vitals else "無"}
+相關知識（僅供參考）：
+{rag_context if rag_context else "無"}
+
+候選規則（只能從以下選）：
+{candidate_lines}
+
+只輸出 JSON 陣列，格式：
+[{{"rule_code":"...","symptom_name":"...","judge_name":"...","ttas_degree":2}}]
+"""
+        llm_fn = call_gemini_llm if llm_mode == "cloud" else call_local_llm
+        raw = llm_fn(prompt).strip()
+
+        try:
+            parsed = json.loads(raw)
+            validated = []
+            allowed_codes = {r["rule_code"] for r in candidate_rules}
+            for row in parsed if isinstance(parsed, list) else []:
+                if not isinstance(row, dict):
+                    continue
+                code = row.get("rule_code")
+                if code not in allowed_codes:
+                    continue
+                # 以後端候選規則資料為準，避免 LLM 回傳錯誤 symptom/judge 配對
+                base_rule = code_to_rule.get(code)
+                if not base_rule:
+                    continue
+                vscore = vitals_rule_score(base_rule["judge_name"])
+                if vscore <= -900:
+                    continue
+                validated.append((vscore, base_rule))
+            if validated:
+                validated.sort(key=lambda x: (x[0], 6 - int(x[1]["ttas_degree"])), reverse=True)
+                dedup = []
+                used_symptom = set()
+                for _, rule in validated:
+                    if rule["symptom_name"] in used_symptom:
+                        continue
+                    used_symptom.add(rule["symptom_name"])
+                    dedup.append(rule)
+                    if len(dedup) >= 3:
+                        break
+                if dedup:
+                    return RecommendRulesResponse(recommended_rules=dedup)
+        except Exception:
+            pass
+
+        # LLM 失敗 fallback：僅從已選症狀規則中挑選
+        scored = []
+
+        for r in candidate_rules:
+            score = 0
+            if r["symptom_name"] in selected_symptoms:
+                score += 30
+            vital_score = vitals_rule_score(r["judge_name"])
+            if vital_score <= -900:
+                continue
+            score += vital_score
+            score += max(0, 6 - int(r["ttas_degree"]))
+            scored.append((score, r))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        out = []
+        used_symptom = set()
+        for _, rule in scored:
+            if rule["symptom_name"] in used_symptom:
+                continue
+            used_symptom.add(rule["symptom_name"])
+            out.append(rule)
+            if len(out) >= 3:
+                break
+        return RecommendRulesResponse(recommended_rules=out)
+    except Exception as e:
+        print("Recommend rules error:", e)
+        return RecommendRulesResponse(recommended_rules=[])
 
