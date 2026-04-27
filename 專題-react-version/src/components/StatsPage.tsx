@@ -147,7 +147,7 @@ const StatsPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 mb-6">
+      {/* <div className="grid grid-cols-2 gap-4 mb-6">
         <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
           <div className="text-sm text-gray-500">{currentLabel}檢傷筆數</div>
           <div className="mt-2 text-2xl font-bold text-gray-800">{stats.total}</div>
@@ -160,7 +160,7 @@ const StatsPage: React.FC = () => {
           <div className="mt-1 text-xs text-blue-600">目前區間統計</div>
         </div>
 
-        {/* <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+        <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
           <div className="text-sm text-gray-500">男性</div>
           <div className="mt-2 text-2xl font-bold text-gray-800">{stats.male}</div>
           <div className="mt-1 text-xs text-blue-600">目前區間統計</div>
@@ -170,8 +170,8 @@ const StatsPage: React.FC = () => {
           <div className="text-sm text-gray-500">女性</div>
           <div className="mt-2 text-2xl font-bold text-gray-800">{stats.female}</div>
           <div className="mt-1 text-xs text-pink-600">目前區間統計</div>
-        </div> */}
-      </div>
+        </div>
+      </div> */}
 
       <div className="grid grid-cols-2 gap-4 items-start">
         <div className="space-y-4 min-w-0">
@@ -185,18 +185,13 @@ const StatsPage: React.FC = () => {
               </div>
 
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <div className="text-sm text-gray-500">平均年齡</div>
-                <div className="mt-1 text-2xl font-bold text-gray-800">{stats.avgAge} 歲</div>
-              </div>
-
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <div className="text-sm text-gray-500">男性</div>
+                <div className="text-sm text-gray-500">本區間人數</div>
                 <div className="mt-1 text-2xl font-bold text-gray-800">{stats.male}</div>
               </div>
 
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <div className="text-sm text-gray-500">女性</div>
-                <div className="mt-1 text-2xl font-bold text-gray-800">{stats.female}</div>
+                <div className="text-sm text-gray-500">平均年齡</div>
+                <div className="mt-1 text-2xl font-bold text-gray-800">{stats.avgAge} 歲</div>
               </div>
             </div>
           </div>
