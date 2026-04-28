@@ -53,6 +53,20 @@ const levelStyle = (level: NurseTriageRecord["triageLevel"]) =>
 const levelLabel = (level: NurseTriageRecord["triageLevel"]) =>
   level === "none" ? "none" : `第 ${level} 級`;
 
+const toRoleLabel = (role: string) => {
+  const r = (role || "").trim().toLowerCase();
+  if (r === "admin" || role === "管理員") return "管理員";
+  if (r === "user" || role === "護理師") return "護理師";
+  return role || "";
+};
+
+const toRoleValue = (role: string) => {
+  const r = (role || "").trim().toLowerCase();
+  if (r === "admin" || role === "管理員") return "admin";
+  if (r === "user" || role === "護理師") return "user";
+  return role.trim();
+};
+
 type NursesPageProps = {
   onOpenHistoryRecord?: (triageId: string) => void;
 };
@@ -189,7 +203,7 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
         body: JSON.stringify({
           nurseId: form.nurseId.trim() || null,
           name: form.name.trim(),
-          role: form.role.trim() || "護理師",
+          role: toRoleValue(form.role) || "user",
           department: form.department.trim() || "急診",
           shift: form.shift.trim() || "白班",
           status: form.status.trim() || "在職",
@@ -236,7 +250,7 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: editForm.name.trim(),
-          role: editForm.role.trim(),
+          role: toRoleValue(editForm.role),
           department: editForm.department.trim(),
           shift: editForm.shift.trim(),
           status: editForm.status.trim(),
@@ -371,7 +385,7 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
                 >
                   <td className="px-4 py-3 font-medium text-gray-800">{nurse.nurseId}</td>
                   <td className="px-4 py-3">{nurse.name}</td>
-                  <td className="px-4 py-3">{nurse.role}</td>
+                  <td className="px-4 py-3">{toRoleLabel(nurse.role)}</td>
                   <td className="px-4 py-3">{nurse.department}</td>
                   <td className="px-4 py-3">{nurse.shift}</td>
                   <td className="px-4 py-3">
@@ -461,7 +475,7 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
 
                 <div className="mt-5 grid grid-cols-2 gap-4 text-sm">
                   <div><div className="text-gray-500">姓名</div><div className="font-semibold">{selected.name}</div></div>
-                  <div><div className="text-gray-500">職稱</div><div className="font-semibold">{selected.role}</div></div>
+                  <div><div className="text-gray-500">職稱</div><div className="font-semibold">{toRoleLabel(selected.role)}</div></div>
                   <div><div className="text-gray-500">單位</div><div className="font-semibold">{selected.department}</div></div>
                   <div><div className="text-gray-500">班別</div><div className="font-semibold">{selected.shift}</div></div>
                   <div><div className="text-gray-500">狀態</div><div className="font-semibold">{selected.status}</div></div>
