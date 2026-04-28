@@ -23,9 +23,11 @@ export interface PatientData {
 export default function AddPatient({
   onNext,
   onDemo,
+  nurseId,  // ← 新增這一行
 }: {
   onNext: (data: PatientData) => void;
   onDemo: () => void;
+  nurseId?: string | null;  // ← 新增這一行
 }) {
   const [name, setName] = useState("");
   const [idNumber, setIdNumber] = useState("");
@@ -114,7 +116,7 @@ const handleConfirm = async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           patientId: pResult.patient_id, 
-          nurseId: "N01",
+          nurseId: nurseId || "1",
           vitals: {}, 
           result: {}, 
           bed: "",

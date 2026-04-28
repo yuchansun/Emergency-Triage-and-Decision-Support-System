@@ -21,6 +21,20 @@ def calc_age(birth_date: Any) -> Optional[int]:
     return today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
 
 
+def normalize_triage_level(value: Any) -> int:
+    if value is None:
+        return 5
+    try:
+        level = int(value)
+    except (TypeError, ValueError):
+        return 5
+    if level <= 0:
+        return 1
+    if level >= 5:
+        return 5
+    return level
+
+
 def build_where_clause(
     keyword: Optional[str],
     from_date: Optional[str],
@@ -158,7 +172,7 @@ async def get_history_records(
                         "birthday": str(birth_date) if birth_date else "",
                         "age": calc_age(birth_date),
                         "idNumber": r.get("id_number") or "",
-                        "triageLevel": int(r.get("triage_level") or 5),
+                        "triageLevel": normalize_triage_level(r.get("triage_level")),
                         "chiefComplaintNote": r.get("chief_complaint_note") or "",
                         "finalSymptoms": [s.strip() for s in final_symptoms_raw.split(",") if s.strip()],
                         "arrivalAt": str(r.get("arrival_at") or ""),
