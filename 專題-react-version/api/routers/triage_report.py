@@ -177,6 +177,37 @@ async def get_triage_report(triage_id: str):
                 else:
                     triage_level = lv_row[0]
 
+            # 4-2) 由 rule_code 取得 症狀 + 判斷規則
+            cur.execute(
+                """
+                SELECT DISTINCT
+                    h.symptom_name,
+                    h.judge_name
+                FROM triage_result r
+                JOIN triage_hierarchy h ON h.rule_code = r.rule_code
+                WHERE r.triage_id = %s
+                  AND h.symptom_name IS NOT NULL
+                  AND h.judge_name IS NOT NULL
+                ORDER BY h.ttas_degree ASC, h.symptom_name ASC
+                """,
+                (triage_id,)
+            )
+            symptom_rule_rows = cur.fetchall() or []
+            symptom_rule_pairs = []
+            for row in symptom_rule_rows:
+                if not isinstance(row, dict):
+                    cols = [desc[0] for desc in cur.description]
+                    row = dict(zip(cols, row))
+                symptom_name = (row.get("symptom_name") or "").strip()
+                judge_name = (row.get("judge_name") or "").strip()
+                if symptom_name and judge_name:
+                    symptom_rule_pairs.append(
+                        {
+                            "symptom_name": symptom_name,
+                            "judge_name": judge_name,
+                        }
+                    )
+
             birth_date = p_row.get("birth_date")
             data = {
                 "triage_id": base_row.get("triage_id"),
@@ -225,6 +256,7 @@ async def get_triage_report(triage_id: str):
                 "rule_code": ";".join(rule_codes),
                 "chief_complaint": "\n".join(dict.fromkeys(chief_complaints)),
                 "notes": "\n".join(dict.fromkeys(notes_list)),
+                "symptom_rule_pairs": symptom_rule_pairs,
             }
 
             return {"success": True, "data": data}
