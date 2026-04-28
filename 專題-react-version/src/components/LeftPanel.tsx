@@ -12,6 +12,7 @@ interface LeftPanelProps {
   directToERSelected: boolean;
   age?: number;
   llmMode: 'cloud' | 'local'; //新加
+  voiceConsented: boolean;
   vitals?: {
     temperature: string;
     heartRate: string;
@@ -43,7 +44,7 @@ interface LeftPanelProps {
   }) => void;
 }
 
-const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, onWorstDegreeChange, onDirectToER, directToERSelected, age, llmMode, vitals, onChiefComplaintChange }) => {
+const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, onWorstDegreeChange, onDirectToER, directToERSelected, age, llmMode, voiceConsented, vitals, onChiefComplaintChange }) => {
   const [activeTab, setActiveTab] = useState<'t' | 'a'>('t');
 
   return (
@@ -62,6 +63,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymp
         vitals={vitals}
         onChiefComplaintChange={onChiefComplaintChange}
         llmMode={llmMode} //新加
+        voiceConsented={voiceConsented}
       />
       <SymptomSelection
         selectedSymptoms={selectedSymptoms}
