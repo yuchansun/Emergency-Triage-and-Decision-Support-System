@@ -32,6 +32,12 @@ type TriageRecord = {
     gcsV: number;
     gcsM: number;
     painScore: number;
+    obHistory: string;
+    pastHistory: string[];
+    doNotTreat: string;
+    allergyStatus: "無" | "不詳" | "有";
+    allergyDetail: string;
+    sentiment: number | null;
   };
   tocc: {
     travel: string;
@@ -91,6 +97,24 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, in
   const [dateInputResetKey, setDateInputResetKey] = useState(0);
 
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+
+  const parseAllergyValue = (raw: any): { status: "無" | "不詳" | "有"; detail: string } => {
+    const value = String(raw || "").trim();
+    if (!value) return { status: "無", detail: "" };
+    if (value.startsWith("有-")) return { status: "有", detail: value.slice(2).trim() };
+    if (value === "有") return { status: "有", detail: "" };
+    if (value === "不詳") return { status: "不詳", detail: "" };
+    if (value === "無") return { status: "無", detail: "" };
+    return { status: "有", detail: value };
+  };
+
+  const formatAllergyValue = (status: "無" | "不詳" | "有", detail: string): string => {
+    if (status === "有") {
+      const normalizedDetail = detail.trim();
+      return normalizedDetail ? `有-${normalizedDetail}` : "有";
+    }
+    return status;
+  };
 
   const setField = <K extends keyof FilterForm>(key: K, value: FilterForm[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -158,6 +182,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, in
         throw new Error(result.detail || "讀取詳情失敗");
       }
       const d = result.data;
+      const allergyParsed = parseAllergyValue(d.allergy);
       const symptomRulePairs = Array.isArray(d.symptom_rule_pairs) ? d.symptom_rule_pairs : [];
       const formattedSymptoms = symptomRulePairs
         .map((item: any) => {
@@ -199,6 +224,15 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, in
           gcsV: Number(d.gcs_verbal || 0),
           gcsM: Number(d.gcs_motor || 0),
           painScore: Number(d.pain_score || 0),
+          obHistory: String(d.obs_history || ""),
+          pastHistory: String(d.past_medical_history || "")
+            .split(/[、,，;；]/)
+            .map((v) => v.trim())
+            .filter(Boolean),
+          doNotTreat: String(d.do_not_treat || ""),
+          allergyStatus: allergyParsed.status,
+          allergyDetail: allergyParsed.detail,
+          sentiment: d.sentiment === null || d.sentiment === undefined ? null : Number(d.sentiment),
         },
         tocc: {
           travel: d.tocc_travel || "",
@@ -520,14 +554,14 @@ td, th {
     setEditDraft((prev) => (prev ? { ...prev, [key]: value } : prev));
   };
 
-  const setDraftVital = (key: keyof TriageRecord["vitals"], value: number) => {
+  const setDraftVital = (key: keyof TriageRecord["vitals"], value: number | string | string[] | null) => {
     setEditDraft((prev) =>
       prev
         ? {
             ...prev,
             vitals: {
               ...prev.vitals,
-              [key]: Number.isFinite(value) ? value : 0,
+              [key]: value as never,
             },
           }
         : prev
@@ -599,11 +633,11 @@ td, th {
           gcs_eye: Number(editDraft.vitals.gcsE || 0),
           gcs_verbal: Number(editDraft.vitals.gcsV || 0),
           gcs_motor: Number(editDraft.vitals.gcsM || 0),
-          past_medical_history: selectedRaw?.past_medical_history || "",
-          do_not_treat: selectedRaw?.do_not_treat ?? 0,
-          allergy: selectedRaw?.allergy || "",
+          past_medical_history: editDraft.vitals.pastHistory.join(", "),
+          do_not_treat: editDraft.vitals.doNotTreat || "",
+          allergy: formatAllergyValue(editDraft.vitals.allergyStatus, editDraft.vitals.allergyDetail),
           pain_score: Number(editDraft.vitals.painScore || 0),
-          sentiment: selectedRaw?.sentiment || null,
+          sentiment: editDraft.vitals.sentiment,
         },
       };
 
@@ -895,6 +929,9 @@ td, th {
                   RR: {isEditing ? <input type="number" value={editDraft.vitals.respRate} onChange={(e) => setDraftVital("respRate", Number(e.target.value))} className="w-16 rounded border border-gray-300 px-1 ml-1" /> : editDraft.vitals.respRate} /min
                 </div>
                 <div className="rounded-xl bg-gray-50 border border-gray-200 p-3">
+                  體重: {isEditing ? <input type="number" value={editDraft.vitals.weight} onChange={(e) => setDraftVital("weight", Number(e.target.value))} className="w-16 rounded border border-gray-300 px-1 ml-1" /> : editDraft.vitals.weight} kg
+                </div>
+                <div className="rounded-xl bg-gray-50 border border-gray-200 p-3">
                   SpO2: {isEditing ? <input type="number" value={editDraft.vitals.spo2} onChange={(e) => setDraftVital("spo2", Number(e.target.value))} className="w-16 rounded border border-gray-300 px-1 ml-1" /> : editDraft.vitals.spo2}%
                 </div>
                 <div className="rounded-xl bg-gray-50 border border-gray-200 p-3">
@@ -913,9 +950,6 @@ td, th {
                   BS: {isEditing ? <input type="number" value={editDraft.vitals.bloodSugar} onChange={(e) => setDraftVital("bloodSugar", Number(e.target.value))} className="w-16 rounded border border-gray-300 px-1 ml-1" /> : editDraft.vitals.bloodSugar}
                 </div>
                 <div className="rounded-xl bg-gray-50 border border-gray-200 p-3">
-                  體重: {isEditing ? <input type="number" value={editDraft.vitals.weight} onChange={(e) => setDraftVital("weight", Number(e.target.value))} className="w-16 rounded border border-gray-300 px-1 ml-1" /> : editDraft.vitals.weight} kg
-                </div>
-                <div className="rounded-xl bg-gray-50 border border-gray-200 p-3">
                   GCS:
                   {isEditing ? (
                     <>
@@ -929,6 +963,93 @@ td, th {
                 </div>
                 <div className="rounded-xl bg-gray-50 border border-gray-200 p-3">
                   疼痛: {isEditing ? <input type="number" value={editDraft.vitals.painScore} onChange={(e) => setDraftVital("painScore", Number(e.target.value))} className="w-16 rounded border border-gray-300 px-1 ml-1" /> : editDraft.vitals.painScore}
+                </div>
+                <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 col-span-3">
+                  過去病史：
+                  {isEditing ? (
+                    <input
+                      value={editDraft.vitals.pastHistory.join(", ")}
+                      onChange={(e) =>
+                        setDraftVital(
+                          "pastHistory",
+                          e.target.value
+                            .split(",")
+                            .map((v) => v.trim())
+                            .filter(Boolean)
+                        )
+                      }
+                      className="ml-1 w-full rounded border border-gray-300 px-2 py-1 mt-1"
+                    />
+                  ) : (
+                    editDraft.vitals.pastHistory.length ? editDraft.vitals.pastHistory.join("、") : "無"
+                  )}
+                </div>
+                <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 col-span-3">
+                  禁治療：
+                  {isEditing ? (
+                    <input
+                      value={editDraft.vitals.doNotTreat}
+                      onChange={(e) => setDraftVital("doNotTreat", e.target.value)}
+                      className="ml-1 w-full rounded border border-gray-300 px-2 py-1 mt-1"
+                    />
+                  ) : (
+                    editDraft.vitals.doNotTreat || "無"
+                  )}
+                </div>
+                <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 col-span-3">
+                  藥物過敏：
+                  {isEditing ? (
+                    <div className="mt-1 flex items-center gap-2">
+                      <select
+                        value={editDraft.vitals.allergyStatus}
+                        onChange={(e) => setDraftVital("allergyStatus", e.target.value as "無" | "不詳" | "有")}
+                        className="rounded border border-gray-300 px-2 py-1"
+                      >
+                        <option value="無">無</option>
+                        <option value="不詳">不詳</option>
+                        <option value="有">有</option>
+                      </select>
+                      {editDraft.vitals.allergyStatus === "有" && (
+                        <input
+                          value={editDraft.vitals.allergyDetail}
+                          onChange={(e) => setDraftVital("allergyDetail", e.target.value)}
+                          placeholder="藥物過敏詳情"
+                          className="flex-1 rounded border border-gray-300 px-2 py-1"
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    formatAllergyValue(editDraft.vitals.allergyStatus, editDraft.vitals.allergyDetail)
+                  )}
+                </div>
+                {editDraft.gender === "F" && (
+                  <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 col-span-3">
+                    產科史：
+                    {isEditing ? (
+                      <input
+                        value={editDraft.vitals.obHistory}
+                        onChange={(e) => setDraftVital("obHistory", e.target.value)}
+                        className="ml-1 w-full rounded border border-gray-300 px-2 py-1 mt-1"
+                      />
+                    ) : (
+                      editDraft.vitals.obHistory || "無"
+                    )}
+                  </div>
+                )}
+                <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 col-span-3">
+                  心理/情緒狀態：
+                  {isEditing ? (
+                    <input
+                      type="number"
+                      min={0}
+                      max={10}
+                      value={editDraft.vitals.sentiment ?? ""}
+                      onChange={(e) => setDraftVital("sentiment", e.target.value === "" ? null : Number(e.target.value))}
+                      className="ml-1 w-20 rounded border border-gray-300 px-2 py-1"
+                    />
+                  ) : (
+                    editDraft.vitals.sentiment ?? "無"
+                  )}
                 </div>
               </div>
             </div>
