@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 type NurseTriageRecord = {
   triageId: string;
@@ -36,85 +36,14 @@ type NewNurseForm = {
   licenseNo: string;
 };
 
-const MOCK_NURSES: NurseRecord[] = [
-  {
-    nurseId: "N01",
-    name: "王小美",
-    role: "資深護理師",
-    department: "急診",
-    shift: "白班",
-    status: "在職",
-    phone: "0912-345-678",
-    email: "wang@example.com",
-    hireDate: "2021-08-12",
-    licenseNo: "RN-102938",
-    triageCount: 18,
-    records: [
-      { triageId: "TRI-202604-001", patientName: "病患01", triageLevel: 2, arrivalAt: "2026-04-11 08:20", status: "已完成" },
-      { triageId: "TRI-202604-017", patientName: "病患17", triageLevel: 3, arrivalAt: "2026-04-10 14:05", status: "處置中" },
-    ],
-  },
-  {
-    nurseId: "N02",
-    name: "李志豪",
-    role: "護理師",
-    department: "急診",
-    shift: "小夜",
-    status: "在職",
-    phone: "0922-111-222",
-    email: "lee@example.com",
-    hireDate: "2022-03-01",
-    licenseNo: "RN-445566",
-    triageCount: 12,
-    records: [
-      { triageId: "TRI-202604-008", patientName: "病患08", triageLevel: 4, arrivalAt: "2026-04-09 22:15", status: "已完成" },
-      { triageId: "TRI-202604-013", patientName: "病患13", triageLevel: 1, arrivalAt: "2026-04-08 23:50", status: "轉住院" },
-    ],
-  },
-  {
-    nurseId: "N03",
-    name: "陳怡君",
-    role: "護理師",
-    department: "急診",
-    shift: "大夜",
-    status: "在職",
-    phone: "0933-222-333",
-    email: "chen@example.com",
-    hireDate: "2020-11-20",
-    licenseNo: "RN-778899",
-    triageCount: 9,
-    records: [
-      { triageId: "TRI-202604-021", patientName: "病患21", triageLevel: 5, arrivalAt: "2026-04-07 02:10", status: "已完成" },
-      { triageId: "TRI-202604-028", patientName: "病患28", triageLevel: 2, arrivalAt: "2026-04-06 03:45", status: "處置中" },
-    ],
-  },
-  {
-    nurseId: "N04",
-    name: "張淑芬",
-    role: "專科護理師",
-    department: "急診",
-    shift: "白班",
-    status: "支援中",
-    phone: "0944-333-444",
-    email: "chang@example.com",
-    hireDate: "2019-05-18",
-    licenseNo: "RN-556677",
-    triageCount: 23,
-    records: [
-      { triageId: "MRN-20260401-100027-A1F7", patientName: "病患04", triageLevel: 1, arrivalAt: "2026-04-11 11:30", status: "已完成" },
-      { triageId: "TRI-202604-019", patientName: "病患19", triageLevel: 3, arrivalAt: "2026-04-08 10:12", status: "待處置" },
-    ],
-  },
-];
-
 const levelColor = (level: number) =>
-  ({
-    1: "text-red-700 bg-red-50 border-red-200",
-    2: "text-orange-700 bg-orange-50 border-orange-200",
-    3: "text-yellow-700 bg-yellow-50 border-yellow-200",
-    4: "text-green-700 bg-green-50 border-green-200",
-    5: "text-blue-700 bg-blue-50 border-blue-200",
-  }[level] || "text-gray-700 bg-gray-50 border-gray-200");
+({
+  1: "text-red-700 bg-red-50 border-red-200",
+  2: "text-orange-700 bg-orange-50 border-orange-200",
+  3: "text-yellow-700 bg-yellow-50 border-yellow-200",
+  4: "text-green-700 bg-green-50 border-green-200",
+  5: "text-blue-700 bg-blue-50 border-blue-200",
+}[level] || "text-gray-700 bg-gray-50 border-gray-200");
 
 type NursesPageProps = {
   onOpenHistoryRecord?: (triageId: string) => void;
@@ -134,11 +63,27 @@ const emptyForm: NewNurseForm = {
 };
 
 const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
-  const [nurses, setNurses] = useState<NurseRecord[]>(MOCK_NURSES);
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+
+  const [nurses, setNurses] = useState<NurseRecord[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [form, setForm] = useState<NewNurseForm>(emptyForm);
+
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<NurseRecord | null>(null);
+
+  const [isPasswordOpen, setIsPasswordOpen] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    newPassword: "",
+    confirmPassword: "",
+    currentPassword: "",
+  });
+
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
   const selected = useMemo(
     () => nurses.find((n) => n.nurseId === selectedId) || null,
@@ -153,47 +98,206 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
     };
   }, [nurses]);
 
-  const handleDelete = (nurseId: string) => {
+  const fetchNurses = useCallback(async () => {
+    setLoading(true);
+    setErrorMsg("");
+    try {
+      const res = await fetch(`${API_BASE_URL}/nurses`);
+      const result = await res.json();
+      if (!res.ok || !result.success) {
+        throw new Error(result.detail || "讀取護理師資料失敗");
+      }
+      setNurses(result.data || []);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "讀取護理師資料失敗";
+      setErrorMsg(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [API_BASE_URL]);
+
+  useEffect(() => {
+    void fetchNurses();
+  }, [fetchNurses]);
+
+  const openNurseDetail = async (nurseId: string) => {
+    setSelectedId(nurseId);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/nurses/${encodeURIComponent(nurseId)}/records`
+      );
+      const result = await res.json();
+      if (!res.ok || !result.success) {
+        throw new Error(result.detail || "讀取檢傷紀錄失敗");
+      }
+
+      setNurses((prev) =>
+        prev.map((n) =>
+          n.nurseId === nurseId ? { ...n, records: result.data || [] } : n
+        )
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "讀取檢傷紀錄失敗";
+      window.alert(message);
+    }
+  };
+
+  const handleDelete = async (nurseId: string) => {
     const target = nurses.find((n) => n.nurseId === nurseId);
     if (!target) return;
     if (!window.confirm(`確定刪除帳號：${target.name}（${target.nurseId}）？`)) return;
 
-    setNurses((prev) => prev.filter((n) => n.nurseId !== nurseId));
-    if (selectedId === nurseId) setSelectedId(null);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/nurses/${encodeURIComponent(nurseId)}`,
+        {
+          method: "DELETE",
+        }
+      );
+      const result = await res.json();
+      if (!res.ok || !result.success) {
+        throw new Error(result.detail || "刪除失敗");
+      }
+
+      setNurses((prev) => prev.filter((n) => n.nurseId !== nurseId));
+      if (selectedId === nurseId) setSelectedId(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "刪除失敗";
+      window.alert(message);
+    }
   };
 
-  const handleAdd = () => {
-    if (!form.nurseId.trim() || !form.name.trim()) {
-      window.alert("請填寫「護理師編號」與「姓名」");
+  const handleAdd = async () => {
+    if (!form.name.trim()) {
+      window.alert("請填寫「姓名」");
       return;
     }
 
-    const duplicated = nurses.some(
-      (n) => n.nurseId.toLowerCase() === form.nurseId.trim().toLowerCase()
-    );
-    if (duplicated) {
-      window.alert("護理師編號重複");
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/nurses`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nurseId: form.nurseId.trim() || null,
+          name: form.name.trim(),
+          role: form.role.trim() || "護理師",
+          department: form.department.trim() || "急診",
+          shift: form.shift.trim() || "白班",
+          status: form.status.trim() || "在職",
+          phone: form.phone.trim() || null,
+          email: form.email.trim() || null,
+          hireDate: form.hireDate.trim() || null,
+          licenseNo: form.licenseNo.trim() || null,
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok || !result.success) {
+        throw new Error(result.detail || "新增失敗");
+      }
+
+      setNurses((prev) => [result.data, ...prev]);
+      setForm(emptyForm);
+      setIsAddOpen(false);
+      window.alert("新增成功");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "新增失敗";
+      window.alert(message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleStartEdit = () => {
+    if (!selected) return;
+    setEditForm({ ...selected });
+    setIsEditOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selected || !editForm) return;
+    if (!editForm.name.trim()) {
+      window.alert("姓名不可為空");
       return;
     }
 
-    const newNurse: NurseRecord = {
-      nurseId: form.nurseId.trim(),
-      name: form.name.trim(),
-      role: form.role.trim() || "護理師",
-      department: form.department.trim() || "急診",
-      shift: form.shift.trim() || "白班",
-      status: form.status.trim() || "在職",
-      phone: form.phone.trim(),
-      email: form.email.trim(),
-      hireDate: form.hireDate.trim(),
-      licenseNo: form.licenseNo.trim(),
-      triageCount: 0,
-      records: [],
-    };
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/nurses/${encodeURIComponent(selected.nurseId)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editForm.name.trim(),
+          role: editForm.role.trim(),
+          department: editForm.department.trim(),
+          shift: editForm.shift.trim(),
+          status: editForm.status.trim(),
+          phone: editForm.phone.trim() || null,
+          email: editForm.email.trim() || null,
+          hireDate: editForm.hireDate.trim() || null,
+          licenseNo: editForm.licenseNo.trim() || null,
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok || !result.success) {
+        throw new Error(result.detail || "修改失敗");
+      }
 
-    setNurses((prev) => [newNurse, ...prev]);
-    setForm(emptyForm);
-    setIsAddOpen(false);
+      setNurses((prev) =>
+        prev.map((n) =>
+          n.nurseId === selected.nurseId ? { ...n, ...result.data } : n
+        )
+      );
+      setSelectedId(selected.nurseId);
+      setIsEditOpen(false);
+      window.alert("修改成功");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "修改失敗";
+      window.alert(message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSavePassword = async () => {
+    if (!selected) return;
+    if (!passwordForm.currentPassword?.trim()) {
+      window.alert("原密碼不可為空");
+      return;
+    }
+    if (!passwordForm.newPassword.trim()) {
+      window.alert("新密碼不可為空");
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      window.alert("兩次密碼不一致");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/nurses/${encodeURIComponent(selected.nurseId)}/password`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword: passwordForm.currentPassword.trim(),
+          newPassword: passwordForm.newPassword.trim(),
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok || !result.success) {
+        throw new Error(result.detail || "修改密碼失敗");
+      }
+
+      setPasswordForm({ newPassword: "", confirmPassword: "", currentPassword: "" });
+      setIsPasswordOpen(false);
+      window.alert("密碼已修改");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "修改密碼失敗";
+      window.alert(message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -202,7 +306,9 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
         <div className="flex items-start justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-800">護理師資料管理</h1>
-            <p className="text-gray-500 mt-1">可查看護理師資料、檢傷紀錄，並預留修改資料與密碼功能</p>
+            <p className="text-gray-500 mt-1">
+              可查看護理師資料、檢傷紀錄，並預留修改資料與密碼功能
+            </p>
           </div>
 
           <div className="flex items-start gap-3">
@@ -231,6 +337,9 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
           </div>
         </div>
 
+        {loading && <div className="mb-3 text-sm text-gray-500">讀取中...</div>}
+        {!!errorMsg && <div className="mb-3 text-sm text-red-600">{errorMsg}</div>}
+
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px] text-sm">
             <thead className="bg-gray-50 text-gray-600">
@@ -249,7 +358,7 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
               {nurses.map((nurse) => (
                 <tr
                   key={nurse.nurseId}
-                  onClick={() => setSelectedId(nurse.nurseId)}
+                  onClick={() => openNurseDetail(nurse.nurseId)}
                   className="border-t border-gray-200 hover:bg-gray-50 cursor-pointer"
                 >
                   <td className="px-4 py-3 font-medium text-gray-800">{nurse.nurseId}</td>
@@ -270,7 +379,7 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDelete(nurse.nurseId);
+                          void handleDelete(nurse.nurseId);
                         }}
                         className="text-red-600 font-medium hover:text-red-700"
                       >
@@ -281,7 +390,7 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
                 </tr>
               ))}
 
-              {nurses.length === 0 && (
+              {nurses.length === 0 && !loading && (
                 <tr className="border-t border-gray-200">
                   <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
                     目前沒有護理師帳號
@@ -299,102 +408,271 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
           <div className="absolute right-0 top-0 h-full w-full max-w-3xl bg-white shadow-2xl border-l border-gray-200 p-6 overflow-y-auto">
             <div className="flex justify-between items-start">
               <h3 className="text-xl font-bold text-gray-800">護理師資料詳情</h3>
-              <button onClick={() => setSelectedId(null)} className="text-gray-400 hover:text-gray-700">
+              <button
+                onClick={() => setSelectedId(null)}
+                className="text-gray-400 hover:text-gray-700"
+              >
                 ✕
               </button>
             </div>
 
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                className="px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-600 text-sm font-medium hover:bg-blue-100"
-              >
-                修改資料
-              </button>
-              <button
-                type="button"
-                className="px-4 py-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-600 text-sm font-medium hover:bg-amber-100"
-              >
-                修改密碼
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDelete(selected.nurseId)}
-                className="px-4 py-2 rounded-xl border border-red-200 bg-red-50 text-red-600 text-sm font-medium hover:bg-red-100"
-              >
-                刪除帳號
-              </button>
-            </div>
+            {!isEditOpen && !isPasswordOpen && (
+              <>
+                <div className="mt-4 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleStartEdit}
+                    className="px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-600 text-sm font-medium hover:bg-blue-100"
+                  >
+                    修改資料
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPasswordForm({ newPassword: "", confirmPassword: "", currentPassword: "" });
+                      setIsPasswordOpen(true);
+                    }}
+                    className="px-4 py-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-600 text-sm font-medium hover:bg-amber-100"
+                  >
+                    修改密碼
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDelete(selected.nurseId)}
+                    className="px-4 py-2 rounded-xl border border-red-200 bg-red-50 text-red-600 text-sm font-medium hover:bg-red-100"
+                  >
+                    刪除帳號
+                  </button>
+                </div>
 
-            <div className="mt-4 rounded-xl border px-4 py-3 bg-gray-50 border-gray-200">
-              <div className="text-xs text-gray-500">護理師編號</div>
-              <div className="text-xl font-bold text-gray-800">{selected.nurseId}</div>
-              <div className="mt-1 text-base font-semibold text-gray-700">{selected.name}</div>
-            </div>
+                <div className="mt-4 rounded-xl border px-4 py-3 bg-gray-50 border-gray-200">
+                  <div className="text-xs text-gray-500">護理師編號</div>
+                  <div className="text-xl font-bold text-gray-800">{selected.nurseId}</div>
+                  <div className="mt-1 text-base font-semibold text-gray-700">{selected.name}</div>
+                </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-4 text-sm">
-              <div><div className="text-gray-500">姓名</div><div className="font-semibold">{selected.name}</div></div>
-              <div><div className="text-gray-500">職稱</div><div className="font-semibold">{selected.role}</div></div>
-              <div><div className="text-gray-500">單位</div><div className="font-semibold">{selected.department}</div></div>
-              <div><div className="text-gray-500">班別</div><div className="font-semibold">{selected.shift}</div></div>
-              <div><div className="text-gray-500">狀態</div><div className="font-semibold">{selected.status}</div></div>
-              <div><div className="text-gray-500">到職日期</div><div className="font-semibold">{selected.hireDate}</div></div>
-              <div><div className="text-gray-500">聯絡電話</div><div className="font-semibold">{selected.phone}</div></div>
-              <div><div className="text-gray-500">電子郵件</div><div className="font-semibold">{selected.email}</div></div>
-              <div><div className="text-gray-500">執照編號</div><div className="font-semibold">{selected.licenseNo}</div></div>
-              <div><div className="text-gray-500">檢傷筆數</div><div className="font-semibold">{selected.triageCount}</div></div>
-            </div>
+                <div className="mt-5 grid grid-cols-2 gap-4 text-sm">
+                  <div><div className="text-gray-500">姓名</div><div className="font-semibold">{selected.name}</div></div>
+                  <div><div className="text-gray-500">職稱</div><div className="font-semibold">{selected.role}</div></div>
+                  <div><div className="text-gray-500">單位</div><div className="font-semibold">{selected.department}</div></div>
+                  <div><div className="text-gray-500">班別</div><div className="font-semibold">{selected.shift}</div></div>
+                  <div><div className="text-gray-500">狀態</div><div className="font-semibold">{selected.status}</div></div>
+                  <div><div className="text-gray-500">到職日期</div><div className="font-semibold">{selected.hireDate}</div></div>
+                  <div><div className="text-gray-500">聯絡電話</div><div className="font-semibold">{selected.phone}</div></div>
+                  <div><div className="text-gray-500">電子郵件</div><div className="font-semibold">{selected.email}</div></div>
+                  <div><div className="text-gray-500">執照編號</div><div className="font-semibold">{selected.licenseNo}</div></div>
+                  <div><div className="text-gray-500">檢傷筆數</div><div className="font-semibold">{selected.triageCount}</div></div>
+                </div>
 
-            <div className="mt-6">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-lg font-bold text-gray-800">此護理師的檢傷紀錄</h4>
-                <span className="text-sm text-gray-500">僅 UI 顯示</span>
+                <div className="mt-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-lg font-bold text-gray-800">此護理師的檢傷紀錄</h4>
+                    <span className="text-sm text-gray-500">由後端載入</span>
+                  </div>
+
+                  <div className="overflow-x-auto border border-gray-200 rounded-xl">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 text-gray-600">
+                        <tr>
+                          <th className="text-left px-4 py-3">檢傷號</th>
+                          <th className="text-left px-4 py-3">病患姓名</th>
+                          <th className="text-left px-4 py-3">檢傷級數</th>
+                          <th className="text-left px-4 py-3">到院時間</th>
+                          <th className="text-left px-4 py-3">狀態</th>
+                          <th className="text-left px-4 py-3">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selected.records.map((record) => (
+                          <tr
+                            key={record.triageId}
+                            onClick={() => onOpenHistoryRecord?.(record.triageId)}
+                            className="border-t border-gray-200 hover:bg-gray-50 cursor-pointer"
+                          >
+                            <td className="px-4 py-3 font-medium text-gray-800">{record.triageId}</td>
+                            <td className="px-4 py-3">{record.patientName}</td>
+                            <td className="px-4 py-3">
+                              <span className={`inline-flex px-3 py-1 rounded-full border ${levelColor(record.triageLevel)}`}>
+                                {record.triageLevel}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">{record.arrivalAt}</td>
+                            <td className="px-4 py-3">{record.status}</td>
+                            <td className="px-4 py-3">
+                              <span className="text-blue-600 font-medium">查看詳情</span>
+                            </td>
+                          </tr>
+                        ))}
+                        {selected.records.length === 0 && (
+                          <tr className="border-t border-gray-200">
+                            <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                              尚無檢傷紀錄
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {isEditOpen && editForm && (
+              <div className="mt-4">
+                <h4 className="text-lg font-bold text-gray-800 mb-4">修改護理師資料</h4>
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm text-gray-600">姓名 *</label>
+                    <input
+                      className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                      value={editForm.name}
+                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">職稱</label>
+                    <input
+                      className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                      value={editForm.role}
+                      onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">單位</label>
+                    <input
+                      className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                      value={editForm.department}
+                      onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">班別</label>
+                    <input
+                      className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                      value={editForm.shift}
+                      onChange={(e) => setEditForm({ ...editForm, shift: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">狀態</label>
+                    <input
+                      className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                      value={editForm.status}
+                      onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">聯絡電話</label>
+                    <input
+                      className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                      value={editForm.phone}
+                      onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">電子郵件</label>
+                    <input
+                      className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                      value={editForm.email}
+                      onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">到職日期</label>
+                    <input
+                      type="date"
+                      className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                      value={editForm.hireDate}
+                      onChange={(e) => setEditForm({ ...editForm, hireDate: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">執照編號</label>
+                    <input
+                      className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                      value={editForm.licenseNo}
+                      onChange={(e) => setEditForm({ ...editForm, licenseNo: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-6 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditOpen(false)}
+                    className="px-4 py-2 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-50"
+                    disabled={saving}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveEdit}
+                    className="px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                    disabled={saving}
+                  >
+                    {saving ? "儲存中..." : "儲存"}
+                  </button>
+                </div>
               </div>
+            )}
 
-              <div className="overflow-x-auto border border-gray-200 rounded-xl">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-600">
-                    <tr>
-                      <th className="text-left px-4 py-3">檢傷號</th>
-                      <th className="text-left px-4 py-3">病患姓名</th>
-                      <th className="text-left px-4 py-3">檢傷級數</th>
-                      <th className="text-left px-4 py-3">到院時間</th>
-                      <th className="text-left px-4 py-3">狀態</th>
-                      <th className="text-left px-4 py-3">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selected.records.map((record) => (
-                      <tr
-                        key={record.triageId}
-                        onClick={() => onOpenHistoryRecord?.(record.triageId)}
-                        className="border-t border-gray-200 hover:bg-gray-50 cursor-pointer"
-                      >
-                        <td className="px-4 py-3 font-medium text-gray-800">{record.triageId}</td>
-                        <td className="px-4 py-3">{record.patientName}</td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex px-3 py-1 rounded-full border ${levelColor(record.triageLevel)}`}>
-                            第 {record.triageLevel} 級
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">{record.arrivalAt}</td>
-                        <td className="px-4 py-3">{record.status}</td>
-                        <td className="px-4 py-3">
-                          <span className="text-blue-600 font-medium">查看詳情</span>
-                        </td>
-                      </tr>
-                    ))}
-                    {selected.records.length === 0 && (
-                      <tr className="border-t border-gray-200">
-                        <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                          尚無檢傷紀錄
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+            {isPasswordOpen && (
+              <div className="mt-4">
+                <h4 className="text-lg font-bold text-gray-800 mb-4">修改密碼</h4>
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm text-gray-600">原密碼 *</label>
+                    <input
+                      type="password"
+                      className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                      value={passwordForm.currentPassword || ""}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                      placeholder="輸入原密碼"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">新密碼 *</label>
+                    <input
+                      type="password"
+                      className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                      value={passwordForm.newPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                      placeholder="輸入新密碼"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">確認密碼 *</label>
+                    <input
+                      type="password"
+                      className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                      value={passwordForm.confirmPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                      placeholder="再輸入一次新密碼"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-6 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsPasswordOpen(false)}
+                    className="px-4 py-2 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-50"
+                    disabled={saving}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSavePassword}
+                    className="px-4 py-2 rounded-xl bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-60"
+                    disabled={saving}
+                  >
+                    {saving ? "修改中..." : "修改密碼"}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -405,58 +683,114 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
           <div className="absolute inset-x-0 top-10 mx-auto w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-gray-200 p-6">
             <div className="flex items-center justify-between">
               <h3 className="text-xl font-bold text-gray-800">新增護理師帳號</h3>
-              <button onClick={() => setIsAddOpen(false)} className="text-gray-400 hover:text-gray-700">✕</button>
+              <button
+                onClick={() => setIsAddOpen(false)}
+                className="text-gray-400 hover:text-gray-700"
+              >
+                ✕
+              </button>
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
               <div>
-                <label className="text-gray-600">護理師編號 *</label>
-                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.nurseId} onChange={(e) => setForm((p) => ({ ...p, nurseId: e.target.value }))} />
+                <label className="text-gray-600">護理師編號</label>
+                <input
+                  className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                  value={form.nurseId}
+                  onChange={(e) => setForm((p) => ({ ...p, nurseId: e.target.value }))}
+                />
               </div>
               <div>
                 <label className="text-gray-600">姓名 *</label>
-                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
+                <input
+                  className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                  value={form.name}
+                  onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                />
               </div>
               <div>
                 <label className="text-gray-600">職稱</label>
-                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))} />
+                <input
+                  className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                  value={form.role}
+                  onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))}
+                />
               </div>
               <div>
                 <label className="text-gray-600">單位</label>
-                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.department} onChange={(e) => setForm((p) => ({ ...p, department: e.target.value }))} />
+                <input
+                  className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                  value={form.department}
+                  onChange={(e) => setForm((p) => ({ ...p, department: e.target.value }))}
+                />
               </div>
               <div>
                 <label className="text-gray-600">班別</label>
-                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.shift} onChange={(e) => setForm((p) => ({ ...p, shift: e.target.value }))} />
+                <input
+                  className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                  value={form.shift}
+                  onChange={(e) => setForm((p) => ({ ...p, shift: e.target.value }))}
+                />
               </div>
               <div>
                 <label className="text-gray-600">狀態</label>
-                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))} />
+                <input
+                  className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                  value={form.status}
+                  onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
+                />
               </div>
               <div>
                 <label className="text-gray-600">聯絡電話</label>
-                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} />
+                <input
+                  className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                  value={form.phone}
+                  onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
+                />
               </div>
               <div>
                 <label className="text-gray-600">電子郵件</label>
-                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} />
+                <input
+                  className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                  value={form.email}
+                  onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                />
               </div>
               <div>
                 <label className="text-gray-600">到職日期</label>
-                <input type="date" className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.hireDate} onChange={(e) => setForm((p) => ({ ...p, hireDate: e.target.value }))} />
+                <input
+                  type="date"
+                  className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                  value={form.hireDate}
+                  onChange={(e) => setForm((p) => ({ ...p, hireDate: e.target.value }))}
+                />
               </div>
               <div>
                 <label className="text-gray-600">執照編號</label>
-                <input className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value={form.licenseNo} onChange={(e) => setForm((p) => ({ ...p, licenseNo: e.target.value }))} />
+                <input
+                  className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
+                  value={form.licenseNo}
+                  onChange={(e) => setForm((p) => ({ ...p, licenseNo: e.target.value }))}
+                />
               </div>
             </div>
 
             <div className="mt-6 flex justify-end gap-2">
-              <button type="button" onClick={() => setIsAddOpen(false)} className="px-4 py-2 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-50">
+              <button
+                type="button"
+                onClick={() => setIsAddOpen(false)}
+                className="px-4 py-2 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-50"
+                disabled={saving}
+              >
                 取消
               </button>
-              <button type="button" onClick={handleAdd} className="px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700">
-                新增帳號
+              <button
+                type="button"
+                onClick={() => void handleAdd()}
+                className="px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                disabled={saving}
+              >
+                {saving ? "新增中..." : "新增帳號"}
               </button>
             </div>
           </div>

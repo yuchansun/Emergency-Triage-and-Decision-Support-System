@@ -73,6 +73,14 @@ const levelColor = (level: number) =>
     5: "text-blue-700 bg-blue-50 border-blue-200",
   }[level] || "text-gray-700 bg-gray-50 border-gray-200");
 
+const normalizeTriageLevel = (value: unknown): 1 | 2 | 3 | 4 | 5 => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 5;
+  if (parsed <= 0) return 1;
+  if (parsed >= 5) return 5;
+  return parsed as 1 | 2 | 3 | 4 | 5;
+};
+
 const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, initialKeyword, initialSelectedTriageId }) => {
   const [form, setForm] = useState<FilterForm>(createDefaultFilter());
   const [applied, setApplied] = useState<FilterForm>(createDefaultFilter());
@@ -167,7 +175,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, in
         birthday: d.birth_date ? String(d.birth_date).slice(0, 10) : "",
         age: d.age || 0,
         idNumber: d.id_number || "",
-        triageLevel: (Number(d.triage_level) || 5) as 1 | 2 | 3 | 4 | 5,
+        triageLevel: normalizeTriageLevel(d.triage_level),
         chiefComplaintNote: d.chief_complaint || "",
         finalSymptoms: String(d.tocc_symptoms || "")
           .split(",")
