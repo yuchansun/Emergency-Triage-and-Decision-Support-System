@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 type NurseTriageRecord = {
   triageId: string;
   patientName: string;
-  triageLevel: 1 | 2 | 3 | 4 | 5;
+  triageLevel: 1 | 2 | 3 | 4 | 5 | "none";
   arrivalAt: string;
   status: string;
 };
@@ -44,6 +44,14 @@ const levelColor = (level: number) =>
   4: "text-green-700 bg-green-50 border-green-200",
   5: "text-blue-700 bg-blue-50 border-blue-200",
 }[level] || "text-gray-700 bg-gray-50 border-gray-200");
+
+const levelStyle = (level: NurseTriageRecord["triageLevel"]) =>
+  level === "none"
+    ? "text-gray-600 bg-gray-50 border-gray-200"
+    : levelColor(level);
+
+const levelLabel = (level: NurseTriageRecord["triageLevel"]) =>
+  level === "none" ? "none" : `第 ${level} 級`;
 
 type NursesPageProps = {
   onOpenHistoryRecord?: (triageId: string) => void;
@@ -492,8 +500,8 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
                             <td className="px-4 py-3 font-medium text-gray-800">{record.triageId}</td>
                             <td className="px-4 py-3">{record.patientName}</td>
                             <td className="px-4 py-3">
-                              <span className={`inline-flex px-3 py-1 rounded-full border ${levelColor(record.triageLevel)}`}>
-                                {record.triageLevel}
+                              <span className={`inline-flex px-3 py-1 rounded-full border ${levelStyle(record.triageLevel)}`}>
+                                {levelLabel(record.triageLevel)}
                               </span>
                             </td>
                             <td className="px-4 py-3">{record.arrivalAt}</td>

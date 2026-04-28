@@ -4,10 +4,12 @@ import pymysql
 import logging
 from db import get_conn
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import secrets
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+TAIPEI_TZ = ZoneInfo("Asia/Taipei")
 
 # 正確的寫法（Python 3.9 相容）
 def generate_medical_number(patient_id: Optional[str]) -> str:    
@@ -112,15 +114,20 @@ async def create_triagesave(triagesave_data: dict):
             visit_time = triagesave_data.get("visitTime")
             if visit_time:
                 try:
-                    # 處理 '2026-03-17T06:56:19.371Z' 格式
-                    if visit_time.endswith('Z'):
-                        visit_time = visit_time.replace('Z', '+00:00')
-                    dt = datetime.fromisoformat(visit_time.replace('Z', '+00:00'))
+                    # 將前端送來的 UTC 時間轉成台灣時間再存入資料庫
+                    visit_time_text = str(visit_time).strip()
+                    if visit_time_text.endswith('Z'):
+                        visit_time_text = visit_time_text.replace('Z', '+00:00')
+                    dt = datetime.fromisoformat(visit_time_text)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=TAIPEI_TZ)
+                    else:
+                        dt = dt.astimezone(TAIPEI_TZ)
                     visit_time = dt.strftime('%Y-%m-%d %H:%M:%S')
                 except:
-                    visit_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    visit_time = datetime.now(TAIPEI_TZ).strftime('%Y-%m-%d %H:%M:%S')
             else:
-                visit_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                visit_time = datetime.now(TAIPEI_TZ).strftime('%Y-%m-%d %H:%M:%S')
 
             # 處理其他日期欄位的空值
             def convert_date_field(date_value):

@@ -26,6 +26,23 @@ const parseList = (v: any): string[] => {
 const isMale = (g: any) => g === "M" || g === "男";
 const isFemale = (g: any) => g === "F" || g === "女";
 
+const formatDateTime = (value: any): string => {
+  if (!value) return "";
+  const text = String(value).trim();
+  if (!text) return "";
+
+  const normalized = text.includes("T") ? text.replace("T", " ").replace(/Z$/, "") : text;
+  const [datePart, timePart = ""] = normalized.split(" ");
+  if (!datePart) return text;
+
+  const [year, month, day] = datePart.split("-");
+  if (!year || !month || !day) return normalized;
+
+  const timePieces = timePart.split(":").filter(Boolean);
+  const formattedTime = timePieces.length >= 2 ? `${timePieces[0]}:${timePieces[1]}${timePieces[2] ? `:${timePieces[2]}` : ""}` : timePart;
+  return formattedTime ? `${year}-${month}-${day} ${formattedTime}` : `${year}-${month}-${day}`;
+};
+
 const getPrintCSS = (color: string) => `
 @page { size: A4 portrait; margin: 0; }   /* 改 0，色塊才會貼頁邊 */
 html, body { margin: 0; padding: 0; background: #fff; }
@@ -119,11 +136,11 @@ const getTemplateHTML = (color: string, data?: any) => `
           <div class="t1">天主教輔仁大學附設醫院</div>
           <div class="t2">急診檢傷</div>
           <div class="t3">Nursing Assessment Record</div>
-          <div style="margin-top:2px; font-size:11px;">到院時間 <span class="en">Arrival time：</span>${data?.visit_time ?? ""}</div>
+          <div style="margin-top:2px; font-size:11px;">到院時間 <span class="en">Arrival time：</span>${formatDateTime(data?.visit_time)}</div>
         </td>
         <td style="width:25%; padding-left:4px;">
           <table>
-            <tr><td class="small">${safe(data?.created_at)}</td></tr>
+            <tr><td class="small">${formatDateTime(data?.created_at)}</td></tr>
             <tr><td class="small">檢傷號：${safe(data?.triage_id)}</td></tr>
             <tr><td class="small">病歷號 Chart No：${safe(data?.medical_id)}</td></tr>
             <tr><td class="small">科別 Department：${safe(data?.department ?? "PED")}</td></tr>
@@ -305,7 +322,8 @@ const LEVEL_COLORS: Record<number, string> = {
 
 const getLevelCellStyle = (level: any, n: number) => {
   const c = LEVEL_COLORS[n];
-  const selected = Number(level) === n;
+  const parsed = Number(level);
+  const selected = Number.isFinite(parsed) && parsed > 0 && parsed === n;
 
   if (selected) {
     // 黃色底用深字，其他用白字

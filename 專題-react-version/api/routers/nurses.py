@@ -102,10 +102,10 @@ async def get_nurse_records(nurse_id: str, limit: int = 30):
                 SELECT
                     tr.triage_id,
                     COALESCE(p.name, '未知病患') AS patient_name,
-                    COALESCE(lv.triage_level, 5) AS triage_level,
+                    lv.triage_level AS triage_level,
                     COALESCE(e.visit_time, tr.created_at) AS arrival_at,
                     CASE
-                        WHEN e.triage_id IS NULL THEN '待處置'
+                        WHEN lv.triage_id IS NULL THEN '未完成'
                         ELSE '已完成'
                     END AS status
                 FROM triage_record tr
@@ -128,12 +128,13 @@ async def get_nurse_records(nurse_id: str, limit: int = 30):
             records = []
             for r in rows:
                 row = r if isinstance(r, dict) else {}
+                triage_level = row.get("triage_level")
                 records.append({
                     "triageId": row.get("triage_id") or "",
                     "patientName": row.get("patient_name") or "",
-                    "triageLevel": normalize_triage_level(row.get("triage_level")),
+                    "triageLevel": "none" if triage_level is None else normalize_triage_level(triage_level),
                     "arrivalAt": str(row.get("arrival_at") or ""),
-                    "status": row.get("status") or "待處置",
+                    "status": row.get("status") or "未完成",
                 })
 
             return {"success": True, "data": records}

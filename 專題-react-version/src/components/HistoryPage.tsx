@@ -14,7 +14,7 @@ type TriageRecord = {
   birthday: string;
   age: number;
   idNumber: string;
-  triageLevel: 1 | 2 | 3 | 4 | 5;
+  triageLevel: 1 | 2 | 3 | 4 | 5 | "none";
   chiefComplaintNote: string; // 護理師主訴敘述
   finalSymptoms: string[]; // 最後症狀
   arrivalAt: string; // YYYY-MM-DD HH:mm
@@ -72,6 +72,26 @@ const levelColor = (level: number) =>
     4: "text-green-700 bg-green-50 border-green-200",
     5: "text-blue-700 bg-blue-50 border-blue-200",
   }[level] || "text-gray-700 bg-gray-50 border-gray-200");
+
+const levelStyle = (level: TriageRecord["triageLevel"]) =>
+  level === "none"
+    ? "text-gray-600 bg-gray-50 border-gray-200"
+    : levelColor(level);
+
+const levelLabel = (level: TriageRecord["triageLevel"]) =>
+  level === "none" ? "none" : `第 ${level} 級`;
+
+const formatDateTime = (value: string) => {
+  if (!value) return "";
+  const text = String(value).trim();
+  if (!text) return "";
+  const normalized = text.includes("T") ? text.replace("T", " ").replace(/Z$/, "") : text;
+  const [datePart, timePart = ""] = normalized.split(" ");
+  if (!datePart) return normalized;
+  const [year, month, day] = datePart.split("-");
+  if (!year || !month || !day) return normalized;
+  return timePart ? `${year}-${month}-${day} ${timePart}` : `${year}-${month}-${day}`;
+};
 
 const normalizeTriageLevel = (value: unknown): 1 | 2 | 3 | 4 | 5 => {
   const parsed = Number(value);
@@ -175,13 +195,13 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, in
         birthday: d.birth_date ? String(d.birth_date).slice(0, 10) : "",
         age: d.age || 0,
         idNumber: d.id_number || "",
-        triageLevel: normalizeTriageLevel(d.triage_level),
+        triageLevel: d.triage_level == null ? "none" : normalizeTriageLevel(d.triage_level),
         chiefComplaintNote: d.chief_complaint || "",
         finalSymptoms: String(d.tocc_symptoms || "")
           .split(",")
           .map((v) => v.trim())
           .filter(Boolean),
-        arrivalAt: d.visit_time ? String(d.visit_time) : String(d.created_at || ""),
+        arrivalAt: formatDateTime(d.visit_time ? String(d.visit_time) : String(d.created_at || "")),
         nurseId: d.nurse_id || "",
         vitals: {
           temperature: Number(d.temperature || 0),
@@ -715,15 +735,15 @@ td, th {
               <tbody>
                 {records.map((r) => (
                   <tr key={r.triageId} onClick={() => void openDetail(r.triageId)} className="border-t border-gray-100 hover:bg-blue-50/60 cursor-pointer">
-                    <td className="px-4 py-3">{r.arrivalAt}</td>
+                    <td className="px-4 py-3">{formatDateTime(r.arrivalAt)}</td>
                     <td className="px-4 py-3 text-blue-600">{r.triageId}</td>
                     <td className="px-4 py-3">{r.name}</td>
                     <td className="px-4 py-3">{r.patientId}</td>
                     <td className="px-4 py-3">{r.gender === "M" ? "男" : "女"} / {r.age}</td>
                     <td className="px-4 py-3">{r.chiefComplaintNote}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2.5 py-1 rounded-lg border text-xs font-semibold ${levelColor(r.triageLevel)}`}>
-                        第 {r.triageLevel} 級
+                      <span className={`px-2.5 py-1 rounded-lg border text-xs font-semibold ${levelStyle(r.triageLevel)}`}>
+                        {levelLabel(r.triageLevel)}
                       </span>
                     </td>
                   </tr>
@@ -818,9 +838,9 @@ td, th {
               )}
             </div>
 
-            <div className={`rounded-xl border px-4 py-3 mt-4 mb-4 ${levelColor(editDraft.triageLevel)}`}>
+            <div className={`rounded-xl border px-4 py-3 mt-4 mb-4 ${levelStyle(editDraft.triageLevel)}`}>
               <div className="text-xs">檢傷級數</div>
-              <div className="text-xl font-bold">第 {editDraft.triageLevel} 級</div>
+              <div className="text-xl font-bold">{levelLabel(editDraft.triageLevel)}</div>
               <div className="mt-2 text-base font-semibold">姓名：{editDraft.name}</div>
             </div>
 
@@ -831,7 +851,7 @@ td, th {
               <div><div className="text-gray-500">身分證號</div><div className="font-semibold">{selected.idNumber}</div></div>
               <div><div className="text-gray-500">性別 / 年齡</div><div className="font-semibold">{selected.gender === "M" ? "男" : "女"} / {selected.age}</div></div>
               <div><div className="text-gray-500">生日</div><div className="font-semibold">{selected.birthday}</div></div>
-              <div><div className="text-gray-500">到院時間</div><div className="font-semibold">{editDraft.arrivalAt}</div></div>
+              <div><div className="text-gray-500">到院時間</div><div className="font-semibold">{formatDateTime(editDraft.arrivalAt)}</div></div>
               <div>
                 <div className="text-gray-500">檢傷人員</div>
                 {isEditing ? (
