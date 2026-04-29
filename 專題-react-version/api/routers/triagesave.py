@@ -8,10 +8,11 @@ from zoneinfo import ZoneInfo
 import secrets
 
 router = APIRouter()
+#錯誤日誌紀錄器
 logger = logging.getLogger(__name__)
 TAIPEI_TZ = ZoneInfo("Asia/Taipei")
 
-# 正確的寫法（Python 3.9 相容）
+#生成唯一的 triage_id（醫療紀錄號碼）
 def generate_medical_number(patient_id: Optional[str]) -> str:    
     date_part = datetime.now().strftime("%Y%m%d")
     
@@ -22,7 +23,7 @@ def generate_medical_number(patient_id: Optional[str]) -> str:
         pid_part = clean_id.zfill(6)[-6:] 
     else:
         pid_part = "000000"
-        
+    # 生成4位隨機十六進位數字，確保每次生成的triage_id都不一樣
     rand_part = secrets.token_hex(2).upper()
     return f"MRN-{date_part}-{pid_part}-{rand_part}"
 
@@ -34,7 +35,7 @@ async def create_triagesave(triagesave_data: dict):
         with conn.cursor() as cur:
             cur.execute("START TRANSACTION")
 
-            # ✅ 同時吃 camelCase / snake_case
+            #️從前端資料中提取 patient_id、nurse_id 和 triage_id，並確保 patient_id 不為空
             patient_id = triagesave_data.get("patientId") or triagesave_data.get("patient_id")
             nurse_id = triagesave_data.get("nurseId") or triagesave_data.get("nurse_id")
             triage_id = triagesave_data.get("triage_id") or triagesave_data.get("triageId")
@@ -65,7 +66,7 @@ async def create_triagesave(triagesave_data: dict):
                 (triage_id, patient_id, nurse_id)
             )
 
-            # --- vital_signs：先刪舊再寫新，避免同 triage_id 多筆 ---
+            #vital_signs：先刪舊再寫新，避免同 triage_id 多筆 ---
             cur.execute("DELETE FROM vital_signs WHERE triage_id = %s", (triage_id,))
             vitals = triagesave_data.get("vitals", {})
             do_not_treat = vitals.get("do_not_treat")

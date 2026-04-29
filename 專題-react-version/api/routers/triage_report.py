@@ -199,7 +199,7 @@ async def get_triage_report(triage_id: str):
                     cols = [desc[0] for desc in cur.description]
                     row = dict(zip(cols, row))
                 symptom_name = (row.get("symptom_name") or "").strip()
-                judge_name = (row.get("judge_name") or "").strip()
+                judge_name = (row.get("judge_name") or "").strip() #
                 if symptom_name and judge_name:
                     symptom_rule_pairs.append(
                         {
@@ -214,7 +214,7 @@ async def get_triage_report(triage_id: str):
                 "patient_id": resolved_patient_id,
                 "nurse_id": base_row.get("nurse_id"),
                 "created_at": base_row.get("created_at"),
-                "triage_level": triage_level,  # ✅ 新增
+                "triage_level": triage_level, 
 
                 "name": p_row.get("name"),
                 "id_number": p_row.get("id_number"),

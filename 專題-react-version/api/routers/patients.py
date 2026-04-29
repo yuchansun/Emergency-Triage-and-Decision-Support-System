@@ -45,7 +45,7 @@ async def save_patient(data: dict):
                 INSERT INTO patients (patient_id, name, id_number, birth_date, gender) 
                 VALUES (%s, %s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE 
-                name=VALUES(name), birth_date=VALUES(birth_date), gender=VALUES(gender)
+                name=VALUES(name), id_number=VALUES(id_number), birth_date=VALUES(birth_date), gender=VALUES(gender)
             """
             cur.execute(sql, (
                 p_id, 
@@ -80,6 +80,7 @@ async def search_patient_by_id_number(id_number: str):
     """依身分證字號查詢（掛號頁讀卡／手輸後帶出舊資料）。"""
     conn = get_conn()
     try:
+        lookup_value = (id_number or "").strip().upper()
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -98,9 +99,12 @@ async def search_patient_by_id_number(id_number: str):
                         LIMIT 1
                     ) AS visit_number
                 FROM patients p
-                WHERE p.id_number = %s
+                WHERE TRIM(UPPER(COALESCE(p.id_number, ''))) = %s
+                   OR TRIM(UPPER(COALESCE(p.medical_number, ''))) = %s
+                   OR TRIM(UPPER(COALESCE(p.patient_id, ''))) = %s
+                LIMIT 1
                 """,
-                (id_number,),
+                (lookup_value, lookup_value, lookup_value),
             )
             row = cur.fetchone()
 
@@ -168,30 +172,5 @@ async def get_patient(patient_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if conn: conn.close()
-
-@router.get("/search/{id_number}")
-async def search_patient(id_number: str):
-    """供前端輸入身分證時即時查詢使用"""
-    conn = get_conn()
-    try:
-        with conn.cursor() as cur:
-            sql = "SELECT patient_id, name, birth_date, gender FROM patients WHERE id_number = %s"
-            cur.execute(sql, (id_number,))
-            row = cur.fetchone()
-
-            if row:
-                if isinstance(row, dict):
-                    patient_data = row
-                else:
-                    patient_data = {
-                        "patient_id": row[0],
-                        "name": row[1],
-                        "birth_date": str(row[2]) if row[2] else None,
-                        "gender": row[3]
-                    }
-                return {"found": True, "data": patient_data, "message": "偵測到舊病人資料"}
-            return {"found": False, "message": "新病人"}
     finally:
         if conn: conn.close()
