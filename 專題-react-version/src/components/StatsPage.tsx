@@ -76,9 +76,11 @@ const StatsPage: React.FC = () => {
     void fetchStats();
   }, [range]);
 
+  //將原始API資料轉換為適合前端顯示的格式
   const stats = useMemo(() => {
     const levelCounts = levelMeta.map((item) => ({
       ...item,
+      //從API回傳的levelCounts物件中取出對應級數的筆數，若沒有則預設為0
       count: statsRaw.levelCounts[String(item.value)] || 0,
     }));
 
@@ -98,6 +100,7 @@ const StatsPage: React.FC = () => {
       levelCounts,
       ageCounts,
     };
+  //statsRaw是從API獲取的原始資料，當它更新時，stats會重新計算並更新前端顯示的統計數據
   }, [statsRaw]);
 
   return (

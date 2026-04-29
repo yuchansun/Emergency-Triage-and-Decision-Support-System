@@ -7,6 +7,7 @@ const API_BASE =
 const NHICARD_BASE =
   import.meta.env.VITE_NHICARD_URL || "http://127.0.0.1:8002";
 
+//定義病人資料結構
 export interface PatientData {
   name: string;
   idNumber: string;
@@ -20,14 +21,15 @@ export interface PatientData {
   visitNumber?: string;
 }
 
+//病人資料輸入與掛號流程
 export default function AddPatient({
   onNext,
   onDemo,
-  nurseId,  // ← 新增這一行
+  nurseId, 
 }: {
   onNext: (data: PatientData) => void;
   onDemo: () => void;
-  nurseId?: string | null;  // ← 新增這一行
+  nurseId?: string | null; 
 }) {
   const [name, setName] = useState("");
   const [idNumber, setIdNumber] = useState("");
@@ -37,19 +39,33 @@ export default function AddPatient({
   const [existingPatientId, setExistingPatientId] = useState<string | null>(null);
 
   // 1. 自動搜尋現有病人 (手打身分證後觸發)
-  const checkPatient = async (id: string) => {
-    if (!id || id.length < 5) return;
+  const checkPatient = async (id: string, preserveCurrentValues = false) => {
+    const lookupId = id.trim().toUpperCase();
+    if (!lookupId || lookupId.length < 4) return;
     try {
-      const res = await fetch(`${API_BASE}/patients/search/${id}`);
+      const res = await fetch(`${API_BASE}/patients/search/${lookupId}`);
       const result = await res.json();
-      if (result.success && result.data) {
+      if (res.ok && result.success && result.data) {
         const p = result.data;
         setName(p.name);
         setBirthDate(p.birth_date || "");
         setGender(p.gender === "M" ? "男" : p.gender === "F" ? "女" : "不詳");
         setExistingPatientId(p.patient_id);
+      } else {
+        setExistingPatientId(null);
+        if (!preserveCurrentValues) {
+          setName("");
+          setBirthDate("");
+          setGender("");
+        }
       }
     } catch (e) {
+      setExistingPatientId(null);
+      if (!preserveCurrentValues) {
+        setName("");
+        setBirthDate("");
+        setGender("");
+      }
       console.log("新病人");
     }
   };
@@ -76,7 +92,7 @@ export default function AddPatient({
       setGender(card.sex === "M" ? "男" : card.sex === "F" ? "女" : "不詳");
       
       // 讀完卡立刻查一次資料庫
-      checkPatient(card.id_no);
+      checkPatient(card.id_no, true);
     } catch (error) {
       alert("讀取 IC 卡失敗。");
     }
