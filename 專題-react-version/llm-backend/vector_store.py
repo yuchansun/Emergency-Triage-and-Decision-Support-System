@@ -1,4 +1,4 @@
-#向量資料庫，儲存醫學知識的數學表示
+# 向量資料庫，儲存醫學知識的數學表示
 
 import chromadb
 from chromadb.config import Settings
@@ -16,11 +16,12 @@ class VectorStore:
             persist_directory: ChromaDB 資料庫儲存路徑
         """
         self.persist_directory = persist_directory
-        # PersistentClient 代表資料會落地，不是純記憶體
+        # 初始化 ChromaDB 的 PersistentClient，確保資料會儲存到磁碟
         self.client = chromadb.PersistentClient(path=persist_directory)
-        self.embedding_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')  # 支援中文
+        # 使用 SentenceTransformer 模型將文本轉換為向量，支援多語言（包含中文）
+        self.embedding_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
         
-        # 建立或獲取 collection
+        # 建立或獲取一個名為 medical_knowledge 的 collection，用於儲存醫學知識
         self.collection = self.client.get_or_create_collection(
             name="medical_knowledge",
             metadata={"description": "急診檢傷醫學知識庫"}
@@ -39,14 +40,15 @@ class VectorStore:
         metadatas = []
         
         for doc in documents:
+            # 提取文檔的 id、內容和元數據
             ids.append(str(doc.get('id', '')))
             contents.append(doc.get('content', ''))
             metadatas.append(doc.get('metadata', {}))
         
-        # 先算 embedding，再把原文與 metadata 一起存進 collection
+        # 使用模型將內容轉換為向量
         embeddings = self.embedding_model.encode(contents).tolist()
         
-        # 添加到 ChromaDB
+        # 將向量、原始內容和元數據添加到 ChromaDB 的 collection
         self.collection.add(
             ids=ids,
             embeddings=embeddings,
@@ -66,16 +68,16 @@ class VectorStore:
         Returns:
             相似文檔列表
         """
-        # 生成查詢向量
+        # 將查詢語句轉換為向量
         query_embedding = self.embedding_model.encode([query]).tolist()
         
-        # Chroma 直接做向量最近鄰查詢
+        # 使用 ChromaDB 查詢與查詢向量最相似的文檔
         results = self.collection.query(
             query_embeddings=query_embedding,
             n_results=n_results
         )
         
-        # 格式化結果
+        # 格式化查詢結果，包含 id、內容、元數據和距離
         formatted_results = []
         for i in range(len(results['ids'][0])):
             formatted_results.append({
@@ -89,6 +91,7 @@ class VectorStore:
     
     def get_collection_stats(self) -> Dict[str, Any]:
         """獲取 collection 統計資訊"""
+        # 獲取 collection 中的文檔總數
         count = self.collection.count()
         return {
             'total_documents': count,
@@ -98,6 +101,7 @@ class VectorStore:
     
     def delete_collection(self):
         """刪除整個 collection (重新開始用)"""
+        # 刪除名為 medical_knowledge 的 collection
         self.client.delete_collection("medical_knowledge")
         print("🗑️ 已刪除 medical_knowledge collection")
 
