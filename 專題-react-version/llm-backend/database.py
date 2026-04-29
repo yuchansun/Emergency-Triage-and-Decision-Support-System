@@ -3,6 +3,7 @@ from mysql.connector import Error
 
 def get_db_connection():
     """ 建立並回傳資料庫連線物件 """
+    # 目前是本機 XAMPP 預設設定，部署時建議改成環境變數
     try:
         connection = mysql.connector.connect(
             host='localhost',          # XAMPP 預設
@@ -23,7 +24,8 @@ def fetch_all(query, params=None):
     if not conn: return []
     
     try:
-        cursor = conn.cursor(dictionary=True) # 這樣抓出來的資料會直接帶欄位名稱
+        # dictionary=True 讓上層可用欄位名取值，不用記索引
+        cursor = conn.cursor(dictionary=True)
         cursor.execute(query, params or ())
         result = cursor.fetchall()
         return result

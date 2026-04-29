@@ -8,10 +8,12 @@ from vitals_analyzer import vitals_analyzer
 
 class RAGPipeline:
     def __init__(self):
+        # 這裡不自己建 DB，直接共用全域 knowledge_base 物件
         self.knowledge_base = knowledge_base
     
     def retrieve_relevant_knowledge(self, query: str, category: str = None, n_results: int = 3) -> List[Dict[str, Any]]:
         """檢索相關醫學知識"""
+        # 單純代理到知識庫層，方便後續統一加 retry 或 logging
         try:
             results = self.knowledge_base.search_medical_knowledge(query, category, n_results)
             return results
@@ -24,6 +26,7 @@ class RAGPipeline:
         if not retrieved_docs:
             return "沒有找到相關的醫學知識。"
         
+        # context 盡量維持固定格式，讓模型比較容易抓重點
         context = "相關醫學知識：\n\n"
         for i, doc in enumerate(retrieved_docs, 1):
             content = doc.get('content', '')
@@ -61,7 +64,7 @@ class RAGPipeline:
             if vitals_symptoms:
                 all_symptoms.extend(vitals_symptoms)
             
-            # 即使沒有原始文字，只要有生命徵象異常也要進行檢索
+            # 沒有文字也可以靠生命徵象做檢索（例如現場只先量到 vitals）
             if all_symptoms:
                 query = f"症狀：{', '.join(all_symptoms)}"
                 if vitals_symptoms:
@@ -117,14 +120,14 @@ class RAGPipeline:
                     # 只檢索少量相關資料，避免干擾
                     retrieved_docs = self.retrieve_relevant_knowledge(query, None, 1)  # 只檢索1個結果
                 else:
-                    # 沒有生命徵象時，檢查是否需要使用 RAG
+                    # 沒有 vitals 干擾時，先做一次低成本檢索
                     query = f"症狀：{original_text}"
                     retrieved_docs = self.retrieve_relevant_knowledge(query, None, 1)  # 減少到1個結果
                     
                     # 檢查檢索結果是否與輸入相關
                     if retrieved_docs:
                         context = self.format_context_for_llm(retrieved_docs)
-                        # 簡單的相關性檢查：如果檢索結果中沒有包含輸入文字的關鍵詞，就不使用 RAG
+                        # 簡單防呆：避免抓到完全不相干的知識把模型帶偏
                         input_keywords = set(original_text.replace('我', '').replace('覺得', '').replace('很', '').replace('難受', '').split())
                         context_lower = context.lower()
                         relevant = len(input_keywords) > 0 and any(keyword in context_lower for keyword in input_keywords if len(keyword) > 1)
@@ -150,7 +153,7 @@ class RAGPipeline:
 生命徵象異常是客觀測量結果，比檢索到的文獻更可靠。
 """
                 
-                # 如果沒有檢索結果，提供更簡單的指令
+                # 沒撈到可靠 context，就退回較保守的 prompt
                 if not retrieved_docs:
                     enhanced_prompt = f"""
 你是一位急診分級護理師助手。請根據以下資訊整理症狀關鍵詞：
@@ -286,7 +289,7 @@ class RAGPipeline:
                             matched_symptoms.append(symptom)
                             break
                 
-                # 如果找到匹配的症狀，直接返回
+                # 純 vitals 情境下，直接走 deterministic mapping，少繞一層 LLM
                 if matched_symptoms:
                     return f"""
 請從以下症狀中選擇最相關的：

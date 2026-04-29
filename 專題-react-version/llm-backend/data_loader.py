@@ -7,6 +7,7 @@ from typing import List, Dict, Any
 class DataLoader:
     def load_from_json(self, file_path: str) -> List[Dict[str, Any]]:
         """從 JSON 檔案載入資料"""
+        # JSON 預期已經是 documents 格式（list[dict]）
         with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     
@@ -30,6 +31,7 @@ class DataLoader:
                 pdf_reader = PyPDF2.PdfReader(file)
                 text_content = ""
                 
+                # 逐頁抽文字，避免只讀第一頁
                 for page_num in range(len(pdf_reader.pages)):
                     page = pdf_reader.pages[page_num]
                     text_content += page.extract_text() + "\n"
@@ -69,6 +71,7 @@ class DataLoader:
             if df is None:
                 raise Exception("無法確定檔案編碼")
             
+            # 每一列都轉成一份 document，讓向量檢索可命中較細粒度內容
             for index, row in df.iterrows():
                 content = ""
                 metadata = {

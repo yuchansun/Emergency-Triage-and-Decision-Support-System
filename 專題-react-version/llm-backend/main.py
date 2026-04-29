@@ -23,6 +23,8 @@ else:
 from vitals_analyzer import vitals_analyzer
 
 app = FastAPI()
+
+# 本地模式：打 Ollama（速度快、離線可用）
 def call_local_llm(prompt: str):
     try:
         url = "http://localhost:11434/api/generate"
@@ -52,6 +54,7 @@ def call_local_llm(prompt: str):
         print(f"❌ 本地端LLM 處理失敗: {e}")
         return ""
 
+# 雲端模式：打 Gemini（品質通常較穩，但要有 API Key）
 def call_gemini_llm(prompt: str) -> str:
     try:
         if client is None:
@@ -103,13 +106,14 @@ class RecommendSymptomsResponse(BaseModel):
 
 @app.post("/api/summarize-chief-complaint", response_model=SummarizeResponse)
 async def summarize_cc(body: SummarizeRequest):
+    # 這支 API 的目標：把自由輸入主訴整理成「症狀關鍵詞」字串
     try:
         # 先獲取輸入參數
         raw = body.text.strip()
         vitals = body.vitals
         llm_mode = getattr(body, 'llm_mode', 'local')
         
-        # 使用 RAG 增強的 prompt
+        # 依 llm_mode 決定本地/雲端模型
         llm_fn = call_gemini_llm if llm_mode == "cloud" else call_local_llm
         if llm_mode == "cloud":
             prompt = (
@@ -122,7 +126,7 @@ async def summarize_cc(body: SummarizeRequest):
             prompt = rag_pipeline.enhance_symptom_summary(raw)
         summary = llm_fn(prompt).strip()
         
-        # 分析生命徵象異常
+        # 先把生命徵象轉成症狀標籤（例如：發燒、低血氧）
         vitals_symptoms = []
         if vitals:
             vitals_symptoms, _ = vitals_analyzer.analyze_vitals(vitals)
@@ -133,7 +137,7 @@ async def summarize_cc(body: SummarizeRequest):
             print(f"[LLM] 純生命徵象輸入，快速返回：{summary}")
             return SummarizeResponse(summary=summary)
         
-        # 如果有文字輸入也有生命徵象異常，簡化處理
+        # 文字 + 生命徵象同時存在時，先整理文字，再把 vitals 症狀補進去
         if raw and vitals_symptoms:
             print(f"[LLM] 處理混合輸入：'{raw}' + 生命徵象")
             
@@ -189,7 +193,7 @@ async def summarize_cc(body: SummarizeRequest):
             print(f"[LLM] 最終合併結果：{summary}")
             return SummarizeResponse(summary=summary)
         
-        # 正常的 LLM 處理流程（只有文字輸入或沒有生命徵象異常）
+        # 一般流程：走 RAG 增強 prompt 後再請 LLM 摘要
         print(f"[LLM] 使用 LLM 處理：'{raw}'")
         enhanced_prompt = rag_pipeline.enhance_symptom_summary(raw, vitals=vitals)
         response = call_local_llm(enhanced_prompt).strip()
@@ -233,6 +237,7 @@ async def summarize_cc(body: SummarizeRequest):
 
 @app.post("/api/recommend-symptoms", response_model=RecommendSymptomsResponse)
 async def recommend_symptoms(body: RecommendSymptomsRequest):
+    # 從前端提供的候選症狀中，選出最相關的 1~5 個（不允許發明新症狀）
     try:
         text = body.text.strip()
         candidates = body.symptom_candidates
@@ -247,7 +252,7 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
             vitals_symptoms, _ = vitals_analyzer.analyze_vitals(vitals)
             print(f"[LLM] 生命徵象分析：{vitals_symptoms}")
         
-        # 使用RAG檢索相關醫學知識
+        # 先檢索背景知識，後面組 prompt 會放進去當上下文
         relevant_knowledge = []
         if text:
             try:
@@ -295,7 +300,7 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
             print(f"[LLM] 純生命徵象推薦：{vitals_symptoms} → {matched_symptoms}")
             return RecommendSymptomsResponse(recommended_symptoms=matched_symptoms[:max_results])
         
-        # 如果有文字輸入，使用RAG增強的推薦
+        # 主訴有文字時，優先走 RAG 增強推薦
         if text:
             # 格式化檢索到的知識
             context = ""
@@ -338,7 +343,7 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
             
             print(f"[LLM] RAG增強推薦原始回應：{raw}")
             
-            # 解析LLM回應
+            # 模型必須回 JSON 陣列，這裡做解析與白名單過濾
             try:
                 recommended = json.loads(raw)
                 if isinstance(recommended, list):
@@ -352,7 +357,7 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
             except json.JSONDecodeError:
                 print(f"[LLM] JSON解析失敗，回應：{raw}")
             
-            # 如果RAG增強失敗，回退到傳統方法
+            # JSON 不合法或輸出怪異時，回退到較簡單的 prompt
             print("[LLM] RAG增強失敗，使用傳統推薦方法")
         
         # 傳統推薦方法（作為備選）
@@ -424,7 +429,7 @@ class RAGSearchResponse(BaseModel):
 
 @app.post("/api/rag-search", response_model=RAGSearchResponse)
 async def rag_search(body: RAGSearchRequest):
-    """RAG 知識搜尋 API"""
+    """RAG 知識搜尋 API（主要給測試/除錯用）"""
     try:
         results = rag_pipeline.retrieve_relevant_knowledge(
             body.query, 
@@ -453,7 +458,7 @@ class RecommendRulesResponse(BaseModel):
 
 @app.post("/api/triage-advice", response_model=TriageAdviceResponse)
 async def triage_advice(body: TriageAdviceRequest):
-    """RAG 增強檢傷建議 API"""
+    """RAG 增強檢傷建議 API（回傳分級建議文字）"""
     try:
         enhanced_prompt = rag_pipeline.enhance_triage_recommendation(
             body.symptoms, 
@@ -468,6 +473,7 @@ async def triage_advice(body: TriageAdviceRequest):
 @app.post("/api/recommend-rules", response_model=RecommendRulesResponse)
 async def recommend_rules(body: RecommendRulesRequest):
     """依已選症狀 + 已填生命徵象 + RAG 推薦判斷規則"""
+    # 這支 API 是「候選規則內重排」，不是讓 LLM 自由生成規則
     try:
         selected_symptoms = [s.strip() for s in body.selected_symptoms if isinstance(s, str) and s.strip()]
         vitals = body.vitals or {}
@@ -496,7 +502,7 @@ async def recommend_rules(body: RecommendRulesRequest):
                 "ttas_degree": int(rule["ttas_degree"]),
             })
 
-        # 只保留有填寫的生命徵象（未填值不視為 0）
+        # 未填的生命徵象直接忽略，避免把空值當正常值/異常值
         filled_vitals = {}
         for k, v in vitals.items():
             if isinstance(v, str):
@@ -520,7 +526,7 @@ async def recommend_rules(body: RecommendRulesRequest):
         if not candidate_rules:
             return RecommendRulesResponse(recommended_rules=[])
 
-        # 生命徵象數值（未填即 None，不視為 0）
+        # 後面規則比對要做數值判斷，先安全地轉型
         temp_val = None
         spo2_val = None
         bs_val = None
@@ -645,7 +651,7 @@ async def recommend_rules(body: RecommendRulesRequest):
             for r in candidate_rules
         )
 
-        # RAG 僅提供背景知識，不用來擴充症狀候選
+        # RAG 在這裡只提供背景脈絡，不新增候選規則
         rag_context = ""
         try:
             rag_docs = rag_pipeline.retrieve_relevant_knowledge(
@@ -708,7 +714,7 @@ async def recommend_rules(body: RecommendRulesRequest):
         except Exception:
             pass
 
-        # LLM 失敗 fallback：僅從已選症狀規則中挑選
+        # fallback：完全改用後端打分，確保至少有可用輸出
         scored = []
 
         for r in candidate_rules:

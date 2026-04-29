@@ -7,10 +7,12 @@ from vector_store import vector_store
 
 class KnowledgeBase:
     def __init__(self):
+        # 共用 vector_store，避免每次查詢都重建連線/模型
         self.vector_store = vector_store
     
     def load_triage_guidelines(self) -> List[Dict[str, Any]]:
         """載入檢傷分級指引"""
+        # 這批是系統內建 baseline，確保沒有外部檔案時也能運作
         guidelines = [
             {
                 'id': 'triage_level_1',
@@ -67,6 +69,7 @@ class KnowledgeBase:
 
     def load_symptom_disease_mapping(self) -> List[Dict[str, Any]]:
         """載入症狀疾病對應資料"""
+        # 用來補強「主訴 -> 可能病程/危險度」語意
         mappings = [
             {
                 'id': 'chest_pain_mapping',
@@ -117,6 +120,7 @@ class KnowledgeBase:
     
     def load_emergency_protocols(self) -> List[Dict[str, Any]]:
         """載入急診處理協議"""
+        # 高風險處置優先收在這裡，查詢時可被 RAG 命中
         protocols = [
             {
                 'id': 'cardiac_arrest_protocol',
@@ -165,6 +169,7 @@ class KnowledgeBase:
         from data_loader import DataLoader
         data_loader = DataLoader()
         
+        # 專案資料夾規約：外部資料都放在 data/
         data_dir = './data'
         if os.path.exists(data_dir):
             for filename in os.listdir(data_dir):
@@ -198,7 +203,7 @@ class KnowledgeBase:
                         docs = data_loader.load_from_csv(file_path, 'medical_guideline')
                         all_documents.extend(docs)
         
-        # 添加到向量資料庫
+        # 一次性 bulk add，讓 embedding 批次跑完
         if all_documents:
             self.vector_store.add_documents(all_documents)
             print(f"✅ 成功添加 {len(all_documents)} 筆文檔到向量資料庫")
@@ -209,6 +214,7 @@ class KnowledgeBase:
 
     def search_medical_knowledge(self, query: str, category: str = None, n_results: int = 5) -> List[Dict[str, Any]]:
         """搜尋醫學知識"""
+        # 先向量召回，再做 metadata 過濾
         results = self.vector_store.search(query, n_results)
         
         # 如果指定了類別，進行過濾

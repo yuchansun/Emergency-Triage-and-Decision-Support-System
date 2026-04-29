@@ -186,6 +186,7 @@ class VitalsAnalyzer:
         symptoms = []
         abnormal_summary = {}
         
+        # 每個欄位都拆開判斷，最後再合併，方便後續調單一規則
         # 體溫
         temp = self.parse_vital_value(vitals.get('temperature'))
         temp_symptoms = self.analyze_temperature(temp)
@@ -279,7 +280,7 @@ class VitalsAnalyzer:
                 'symptoms': pain_symptoms
             }
         
-        # 去除重複症狀並保持順序
+        # 同一病人可能命中多條規則，這裡做去重避免後續 prompt 太亂
         unique_symptoms = []
         seen = set()
         for symptom in symptoms:

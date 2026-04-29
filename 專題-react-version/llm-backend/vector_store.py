@@ -16,6 +16,7 @@ class VectorStore:
             persist_directory: ChromaDB 資料庫儲存路徑
         """
         self.persist_directory = persist_directory
+        # PersistentClient 代表資料會落地，不是純記憶體
         self.client = chromadb.PersistentClient(path=persist_directory)
         self.embedding_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')  # 支援中文
         
@@ -42,7 +43,7 @@ class VectorStore:
             contents.append(doc.get('content', ''))
             metadatas.append(doc.get('metadata', {}))
         
-        # 生成嵌入向量
+        # 先算 embedding，再把原文與 metadata 一起存進 collection
         embeddings = self.embedding_model.encode(contents).tolist()
         
         # 添加到 ChromaDB
@@ -68,7 +69,7 @@ class VectorStore:
         # 生成查詢向量
         query_embedding = self.embedding_model.encode([query]).tolist()
         
-        # 執行搜尋
+        # Chroma 直接做向量最近鄰查詢
         results = self.collection.query(
             query_embeddings=query_embedding,
             n_results=n_results
