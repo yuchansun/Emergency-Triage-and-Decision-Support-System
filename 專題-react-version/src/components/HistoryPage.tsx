@@ -14,7 +14,7 @@ type TriageRecord = {
   birthday: string;
   age: number;
   idNumber: string;
-  triageLevel: 1 | 2 | 3 | 4 | 5 | null;
+  triageLevel: 1 | 2 | 3 | 4 | 5 | 0 | null;
   chiefComplaintNote: string; // 護理師主訴敘述
   finalSymptoms: string[]; // 最後症狀
   arrivalAt: string; // YYYY-MM-DD HH:mm
@@ -70,19 +70,26 @@ const createDefaultFilter = (): FilterForm => ({
   triageLevel: "",
 });
 
-const normalizeTriageLevel = (value: any): 1 | 2 | 3 | 4 | 5 | null => {
+const normalizeTriageLevel = (value: any): 1 | 2 | 3 | 4 | 5 | 0 | null => {
+  // 如果原始值就是空的，回傳 null
+  if (value === null || value === undefined || value === "") return null;
+
   const n = Number(value);
-  return [1, 2, 3, 4, 5].includes(n) ? (n as 1 | 2 | 3 | 4 | 5) : null;
+  // 允許 0 到 5 進入後續流程
+  return (n >= 0 && n <= 5) ? (n as any) : null;
 };
 
-const levelColor = (level: number | null | undefined) =>
-({
-  1: "text-red-700 bg-red-50 border-red-200",
-  2: "text-orange-700 bg-orange-50 border-orange-200",
-  3: "text-yellow-700 bg-yellow-50 border-yellow-200",
-  4: "text-green-700 bg-green-50 border-green-200",
-  5: "text-blue-700 bg-blue-50 border-blue-200",
-}[level] || "text-gray-700 bg-gray-50 border-gray-200");
+const levelColor = (level: number | null | undefined) => {
+  const colors: Record<number, string> = {
+    1: "text-red-700 bg-red-50 border-red-200",
+    2: "text-orange-700 bg-orange-50 border-orange-200",
+    3: "text-yellow-700 bg-yellow-50 border-yellow-200",
+    4: "text-green-700 bg-green-50 border-green-200",
+    5: "text-blue-700 bg-blue-50 border-blue-200",
+  };
+
+  return colors[level ?? -1] || "text-gray-700 bg-gray-50 border-gray-200";
+};
 
 const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, initialKeyword, initialSelectedTriageId }) => {
   const [form, setForm] = useState<FilterForm>(createDefaultFilter());
@@ -764,11 +771,13 @@ td, th {
                     <td className="px-4 py-3">{r.gender === "M" ? "男" : "女"} / {r.age}</td>
                     <td className="px-4 py-3">{r.chiefComplaintNote}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2.5 py-1 rounded-lg border text-xs font-semibold ${levelColor(r.triageLevel)}`}>
-                        {(r.triageLevel && r.triageLevel >= 1 && r.triageLevel <= 5)
-                          ? `第 ${r.triageLevel} 級`
-                          : 'none'
-                        }
+                      <span className={`px-2.5 py-1 rounded-lg border text-xs font-semibold ${levelColor(r.triageLevel === 0 ? 1 : r.triageLevel)}`}>
+                        {(() => {
+                          if (r.triageLevel === null) return 'none';
+                          // 如果是 0 或 1，都顯示為第 1 級
+                          const displayLevel = r.triageLevel === 0 ? 1 : r.triageLevel;
+                          return `第 ${displayLevel} 級`;
+                        })()}
                       </span>
                     </td>
                   </tr>
@@ -863,13 +872,29 @@ td, th {
               )}
             </div>
 
-            <div className={`rounded-xl border px-4 py-3 mt-4 mb-4 ${levelColor(editDraft.triageLevel)}`}>
+            {/* 修改顏色判斷：如果是 0 就傳 1 進去抓紅色 */}
+            <div className={`rounded-xl border px-4 py-3 mt-4 mb-4 ${levelColor(editDraft.triageLevel === 0 ? 1 : editDraft.triageLevel)
+              }`}>
               <div className="text-xs">檢傷級數</div>
               <div className="text-xl font-bold">
                 {
-                  (Number(editDraft.triageLevel) >= 1 && Number(editDraft.triageLevel) <= 5)
-                    ? `第 ${editDraft.triageLevel} 級`
-                    : 'none'
+                  (() => {
+                    const raw = editDraft.triageLevel;
+
+                    // 1. 處理空值：既然 TS 說 raw 是數字或 null，我們檢查它是否不存在
+                    if (raw === null || raw === undefined) {
+                      return 'none';
+                    }
+
+                    // 2. 處理業務邏輯：此時 raw 必定是數字 0~5
+                    // 直接用數字 0 比較，不要加引號，就不會報 ts(2367)
+                    const finalLevel = raw === 0 ? 1 : raw;
+
+                    // 3. 輸出文字
+                    return (finalLevel >= 1 && finalLevel <= 5)
+                      ? `第 ${finalLevel} 級`
+                      : 'none';
+                  })()
                 }
               </div>
               <div className="mt-2 text-base font-semibold">姓名：{editDraft.name}</div>
