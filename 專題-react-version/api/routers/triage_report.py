@@ -134,7 +134,7 @@ async def get_triage_report(triage_id: str):
             # 4) triage_result
             cur.execute(
                 """
-                SELECT rule_code, chief_complaint, notes
+                SELECT rule_code, chief_complaint
                 FROM triage_result
                 WHERE triage_id = %s
                 ORDER BY rule_code
@@ -145,7 +145,6 @@ async def get_triage_report(triage_id: str):
 
             rule_codes = []
             chief_complaints = []
-            notes_list = []
 
             for item in result_rows:
                 if not isinstance(item, dict):
@@ -155,8 +154,6 @@ async def get_triage_report(triage_id: str):
                     rule_codes.append(item["rule_code"])
                 if item.get("chief_complaint"):
                     chief_complaints.append(item["chief_complaint"])
-                if item.get("notes"):
-                    notes_list.append(item["notes"])
 
             # 4-1) 由 rule_code -> triage_hierarchy.ttas_degree 取得檢傷級數（最嚴重取 MIN）
             triage_level = None
@@ -255,8 +252,8 @@ async def get_triage_report(triage_id: str):
 
                 "rule_code": ";".join(rule_codes),
                 "chief_complaint": "\n".join(dict.fromkeys(chief_complaints)),
-                "notes": "\n".join(dict.fromkeys(notes_list)),
                 "symptom_rule_pairs": symptom_rule_pairs,
+                "triage_level": triage_level,
             }
 
             return {"success": True, "data": data}
