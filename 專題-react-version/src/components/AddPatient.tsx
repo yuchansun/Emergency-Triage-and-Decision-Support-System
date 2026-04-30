@@ -100,7 +100,7 @@ const handleConfirm = async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           patient_id: existingPatientId, 
-          name: name || "匿名", 
+          name: name || "不詳", 
           id_number: idNumber, 
           birth_date: birthDate || null, 
           gender: gender === "男" ? "M" : gender === "女" ? "F" : "U" 
