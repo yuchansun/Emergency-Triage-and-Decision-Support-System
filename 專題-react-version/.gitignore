@@ -29,3 +29,8 @@ llm-backend/venv/
 .env
 __pycache__/
 *.pyc
+
+# ChromaDB and Database files
+**/chroma_db/
+*.sqlite3
+*.pickle
