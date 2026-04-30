@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
+//定義資料格式
 type NurseTriageRecord = {
   triageId: string;
   patientName: string;
@@ -24,7 +25,6 @@ type NurseRecord = {
 };
 
 type NewNurseForm = {
-  nurseId: string;
   name: string;
   role: string;
   department: string;
@@ -72,7 +72,6 @@ type NursesPageProps = {
 };
 
 const emptyForm: NewNurseForm = {
-  nurseId: "",
   name: "",
   role: "護理師",
   department: "急診",
@@ -201,7 +200,6 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          nurseId: form.nurseId.trim() || null,
           name: form.name.trim(),
           role: toRoleValue(form.role) || "user",
           department: form.department.trim() || "急診",
@@ -714,14 +712,6 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <label className="text-gray-600">護理師編號</label>
-                <input
-                  className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2"
-                  value={form.nurseId}
-                  onChange={(e) => setForm((p) => ({ ...p, nurseId: e.target.value }))}
-                />
-              </div>
               <div>
                 <label className="text-gray-600">姓名 *</label>
                 <input

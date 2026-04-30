@@ -39,7 +39,7 @@ export default function AddPatient({
   const [existingPatientId, setExistingPatientId] = useState<string | null>(null);
 
   // 1. 自動搜尋現有病人 (手打身分證後觸發)
-  const checkPatient = async (id: string, preserveCurrentValues = false) => {
+  const checkPatient = async (id: string) => {
     const lookupId = id.trim().toUpperCase();
     if (!lookupId || lookupId.length < 4) return;
     try {
@@ -53,19 +53,9 @@ export default function AddPatient({
         setExistingPatientId(p.patient_id);
       } else {
         setExistingPatientId(null);
-        if (!preserveCurrentValues) {
-          setName("");
-          setBirthDate("");
-          setGender("");
-        }
       }
     } catch (e) {
       setExistingPatientId(null);
-      if (!preserveCurrentValues) {
-        setName("");
-        setBirthDate("");
-        setGender("");
-      }
       console.log("新病人");
     }
   };
@@ -92,7 +82,7 @@ export default function AddPatient({
       setGender(card.sex === "M" ? "男" : card.sex === "F" ? "女" : "不詳");
       
       // 讀完卡立刻查一次資料庫
-      checkPatient(card.id_no, true);
+      checkPatient(card.id_no);
     } catch (error) {
       alert("讀取 IC 卡失敗。");
     }

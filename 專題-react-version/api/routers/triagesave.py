@@ -145,7 +145,7 @@ async def create_triagesave(triagesave_data: dict):
             tocc_travel_start = convert_date_field(triagesave_data.get("tocc_travel_start"))
             tocc_travel_end = convert_date_field(triagesave_data.get("tocc_travel_end"))
 
-
+            # 將encounter_extra的資料寫入資料庫
             cur.execute(
                 """INSERT INTO encounter_extra (
                     triage_id, bed, patient_source, major_incident, visit_time,

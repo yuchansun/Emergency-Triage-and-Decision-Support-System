@@ -382,6 +382,7 @@ export default function EmergencyTriageReport({ patientData, onBack }: Props) {
 
   const PRINT_CSS = getPrintCSS(TRIAGE_COLOR);
 
+  //生成列印用的HTML結構，並開啟新視窗進行列印
   const handlePrint = () => {
     const printWindow = window.open("", "_blank", "width=900,height=1100");
     if (!printWindow) { alert("請允許彈出視窗以列印"); return; }
