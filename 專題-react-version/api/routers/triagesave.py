@@ -58,9 +58,9 @@ async def create_triagesave(triagesave_data: dict):
             final_level = triagesave_data.get("selectedLevel")
             system_recommended_level = triagesave_data.get("worstSelectedDegree")
 
-            # 確保在系統推薦級數為 null 或與護理師選擇的級數不同時存入 final_level
+            # 確保 final_level 的儲存邏輯正確
             if system_recommended_level is None or final_level != system_recommended_level:
-                pass  # 保留護理師選擇的級數
+                final_level = triagesave_data.get("selectedLevel")
             else:
                 final_level = None
 
@@ -105,19 +105,18 @@ async def create_triagesave(triagesave_data: dict):
             cur.execute("DELETE FROM triage_result WHERE triage_id = %s", (triage_id,))
             result = triagesave_data.get("result", {})
             rule_codes = [c.strip() for c in (result.get("rule_code") or "").split(";") if c.strip()]
-            notes = result.get("notes") or ""
             chief_complaint = (result.get("chief_complaint") or triagesave_data.get("inputText") or "").strip()
 
             if rule_codes:
                 for rule_code in rule_codes:
                     cur.execute(
-                        "INSERT INTO triage_result (triage_id, rule_code, chief_complaint, notes) VALUES (%s, %s, %s, %s)",
-                        (triage_id, rule_code, chief_complaint, notes)
+                        "INSERT INTO triage_result (triage_id, rule_code, chief_complaint) VALUES (%s, %s, %s)",
+                        (triage_id, rule_code, chief_complaint)
                     )
-            elif notes or chief_complaint:
+            elif chief_complaint:
                 cur.execute(
-                    "INSERT INTO triage_result (triage_id, rule_code, chief_complaint, notes) VALUES (%s, %s, %s, %s)",
-                    (triage_id, None, chief_complaint, notes)
+                    "INSERT INTO triage_result (triage_id, rule_code, chief_complaint) VALUES (%s, %s, %s)",
+                    (triage_id, None, chief_complaint)
                 )
 
             # --- encounter_extra：先刪舊再寫新 ---
