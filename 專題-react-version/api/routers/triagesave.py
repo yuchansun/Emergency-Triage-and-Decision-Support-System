@@ -54,16 +54,27 @@ async def create_triagesave(triagesave_data: dict):
                 if not triage_id:
                     raise HTTPException(status_code=500, detail="triage_id 產生失敗")
 
-            # ✅ 同一 triage_id: 更新，不新增第二筆
+            # --- 新增 final_level 儲存邏輯到 triage_record ---
+            final_level = triagesave_data.get("selectedLevel")
+            system_recommended_level = triagesave_data.get("worstSelectedDegree")
+
+            # 確保在系統推薦級數為 null 或與護理師選擇的級數不同時存入 final_level
+            if system_recommended_level is None or final_level != system_recommended_level:
+                pass  # 保留護理師選擇的級數
+            else:
+                final_level = None
+
+            # ✅ 同一 triage_id: 更新，不新增第二筆，並更新 final_level
             cur.execute(
                 """
-                INSERT INTO triage_record (triage_id, patient_id, nurse_id)
-                VALUES (%s, %s, %s)
+                INSERT INTO triage_record (triage_id, patient_id, nurse_id, final_level)
+                VALUES (%s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE
                   patient_id = VALUES(patient_id),
-                  nurse_id = VALUES(nurse_id)
+                  nurse_id = VALUES(nurse_id),
+                  final_level = VALUES(final_level)
                 """,
-                (triage_id, patient_id, nurse_id)
+                (triage_id, patient_id, nurse_id, final_level)
             )
 
             #vital_signs：先刪舊再寫新，避免同 triage_id 多筆 ---
