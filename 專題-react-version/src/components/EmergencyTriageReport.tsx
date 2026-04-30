@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Editor } from "@tinymce/tinymce-react";
 
+//這個檔案負責從後端抓檢傷報告資料，然後套用到 Word 模板的 HTML 結構，提供列印和下載功能。
+//外部的功能
 type Props = {
   patientData?: any;
   onBack: () => void;
@@ -8,8 +10,10 @@ type Props = {
 
 const TRIAGE_COLOR = "#FFD700";
 
+//safe函式確保輸出不會是 null 或 undefined，避免在模板中顯示 "null" 或 "undefined" 字串
 const safe = (v: any) => (v === null || v === undefined ? "" : String(v));
 
+//parseList函式用來處理可能是字串或陣列的輸入，方便在模板中支援用逗號、頓號、分號等分隔的字串輸入
 const parseList = (v: any): string[] => {
   if (!v) return [];
   if (Array.isArray(v)) return v;
@@ -31,6 +35,7 @@ const formatDateTime = (value: any): string => {
   const text = String(value).trim();
   if (!text) return "";
 
+  // 解析ISO格式的日期時間字串，並格式化為 "YYYY-MM-DD HH:mm" 的形式
   const normalized = text.includes("T") ? text.replace("T", " ").replace(/Z$/, "") : text;
   const [datePart, timePart = ""] = normalized.split(" ");
   if (!datePart) return text;
@@ -44,7 +49,7 @@ const formatDateTime = (value: any): string => {
 };
 
 const getPrintCSS = (color: string) => `
-@page { size: A4 portrait; margin: 0; }   /* 改 0，色塊才會貼頁邊 */
+@page { size: A4 portrait; margin: 0; }  
 html, body { margin: 0; padding: 0; background: #fff; }
 * { box-sizing: border-box; }
 
@@ -339,6 +344,7 @@ export default function EmergencyTriageReport({ patientData, onBack }: Props) {
   const [content, setContent] = useState(() => getTemplateHTML(TRIAGE_COLOR));
   const [showSentModal, setShowSentModal] = useState(false);
 
+  //當patientData.triage_id可用時，從後端抓檢傷報告資料
   useEffect(() => {
     if (!patientData?.triage_id) return;
 
@@ -368,6 +374,7 @@ export default function EmergencyTriageReport({ patientData, onBack }: Props) {
     fetchReport();
   }, [patientData?.triage_id]);
 
+  // 當reportData更新時，重新生成HTML內容
   useEffect(() => {
     console.log("[triage-report] reportData state:", reportData);
     setContent(getTemplateHTML(TRIAGE_COLOR, reportData));
@@ -375,6 +382,7 @@ export default function EmergencyTriageReport({ patientData, onBack }: Props) {
 
   const PRINT_CSS = getPrintCSS(TRIAGE_COLOR);
 
+  //生成列印用的HTML結構，並開啟新視窗進行列印
   const handlePrint = () => {
     const printWindow = window.open("", "_blank", "width=900,height=1100");
     if (!printWindow) { alert("請允許彈出視窗以列印"); return; }
@@ -394,6 +402,7 @@ export default function EmergencyTriageReport({ patientData, onBack }: Props) {
     setTimeout(() => { printWindow.print(); printWindow.close(); }, 600);
   };
 
+  //生成Word文件的HTML結構，並觸發下載
   const exportWord = () => {
     // 改回使用目前已驗證正常的網頁/列印版 CSS
     const html = `
@@ -418,6 +427,7 @@ export default function EmergencyTriageReport({ patientData, onBack }: Props) {
     URL.revokeObjectURL(url);
   };
 
+  //當按下「確定傳送給醫師」按鈕時，顯示已傳送的提示，2秒後自動關閉提示並返回上一頁
   const handleSendToDoctor = () => {
     setShowSentModal(true);
     setTimeout(() => { setShowSentModal(false); onBack(); }, 2000);
@@ -426,6 +436,7 @@ export default function EmergencyTriageReport({ patientData, onBack }: Props) {
   const levelCellStyle = (level: any, n: number, color: string) =>
   Number(level) === n ? `background:${color};font-weight:700;` : "";
 
+  //渲染的HTML內容
   return (
     <div className="p-6 space-y-4">
       <h1 className="text-2xl font-bold text-gray-800">檢傷結果</h1>

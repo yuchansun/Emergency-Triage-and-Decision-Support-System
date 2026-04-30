@@ -72,7 +72,7 @@ const SystemRecommendation: React.FC<SystemRecommendationProps> = ({
         selectedSymptoms: Array.from(selectedSymptoms),
         inputText,
         worstSelectedDegree,
-        selectedLevel,
+        selectedLevel, // 確保護理師選擇的級數被傳遞
         timestamp: new Date().toISOString(),
       };
 

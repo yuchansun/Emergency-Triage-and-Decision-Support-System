@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 type RangeKey = "today" | "week" | "month";
 
+//定義從API獲取的統計資料格式
 type StatsApiResponse = {
   success: boolean;
   data?: {
@@ -16,6 +17,7 @@ type StatsApiResponse = {
   detail?: string;
 };
 
+//定義前端顯示用的級數和年齡區間對應資料
 const levelMeta = [
   { label: "第1級", value: 1, color: "bg-red-500" },
   { label: "第2級", value: 2, color: "bg-orange-500" },
@@ -24,6 +26,7 @@ const levelMeta = [
   { label: "第5級", value: 5, color: "bg-blue-500" },
 ] as const;
 
+//年齡區間定義，max為Infinity表示61歲以上
 const ageMeta = [
   { label: "0–18", min: 0, max: 18, color: "bg-sky-500" },
   { label: "19–30", min: 19, max: 30, color: "bg-cyan-500" },
@@ -32,12 +35,14 @@ const ageMeta = [
   { label: "61+", min: 61, max: Infinity, color: "bg-rose-500" },
 ];
 
+//定義前端顯示用的統計資料格式，從API獲取的原始資料會轉換為這個格式
 const tabs: { key: RangeKey; label: string }[] = [
   { key: "today", label: "今日" },
   { key: "week", label: "本周" },
   { key: "month", label: "本月" },
 ];
 
+//StatsPage組件負責顯示統計分析頁面，包含從API獲取資料、處理資料格式以及渲染統計圖表和數據
 const StatsPage: React.FC = () => {
   const [range, setRange] = useState<RangeKey>("month");
   const [loading, setLoading] = useState(false);
@@ -76,9 +81,11 @@ const StatsPage: React.FC = () => {
     void fetchStats();
   }, [range]);
 
+  //將原始API資料轉換為適合前端顯示的格式
   const stats = useMemo(() => {
     const levelCounts = levelMeta.map((item) => ({
       ...item,
+      //從API回傳的levelCounts物件中取出對應級數的筆數，若沒有則預設為0
       count: statsRaw.levelCounts[String(item.value)] || 0,
     }));
 
@@ -98,6 +105,7 @@ const StatsPage: React.FC = () => {
       levelCounts,
       ageCounts,
     };
+  //statsRaw是從API獲取的原始資料，當它更新時，stats會重新計算並更新前端顯示的統計數據
   }, [statsRaw]);
 
   return (
