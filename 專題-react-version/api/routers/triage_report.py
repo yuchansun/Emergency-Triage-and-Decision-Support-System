@@ -32,6 +32,7 @@ async def get_triage_report(triage_id: str):
                     t.triage_id,
                     t.patient_id,
                     t.nurse_id,
+                    s.name AS nurse_name,
                     t.created_at,
 
                     v.temperature,
@@ -64,6 +65,7 @@ async def get_triage_report(triage_id: str):
                     e.tocc_occupation,
                     e.tocc_occupation_other
                 FROM triage_record t
+                LEFT JOIN staff s ON s.nurse_id = t.nurse_id
                 LEFT JOIN vital_signs v ON v.triage_id = t.triage_id
                 LEFT JOIN encounter_extra e ON e.triage_id = t.triage_id
                 WHERE t.triage_id = %s
@@ -253,6 +255,7 @@ async def get_triage_report(triage_id: str):
                 "rule_code": ";".join(rule_codes),
                 "chief_complaint": "\n".join(dict.fromkeys(chief_complaints)),
                 "symptom_rule_pairs": symptom_rule_pairs,
+                "nurse_name": base_row.get("nurse_name"),
                 "triage_level": triage_level,
             }
 

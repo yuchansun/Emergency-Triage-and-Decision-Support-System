@@ -69,6 +69,7 @@ const toRoleValue = (role: string) => {
 
 type NursesPageProps = {
   onOpenHistoryRecord?: (triageId: string) => void;
+  initialSelectedNurseId?: string | null;
 };
 
 const emptyForm: NewNurseForm = {
@@ -83,11 +84,13 @@ const emptyForm: NewNurseForm = {
   licenseNo: "",
 };
 
-const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
+const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord, initialSelectedNurseId }) => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
   const [nurses, setNurses] = useState<NurseRecord[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [recordSearchQuery, setRecordSearchQuery] = useState<string>("");
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [form, setForm] = useState<NewNurseForm>(emptyForm);
@@ -110,6 +113,25 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
     () => nurses.find((n) => n.nurseId === selectedId) || null,
     [nurses, selectedId]
   );
+
+  const filteredRecords = useMemo(() => {
+    const query = recordSearchQuery.trim().toLowerCase();
+    if (!query || !selected) return selected?.records || [];
+    return (selected.records || []).filter((record) =>
+      record.patientName.toLowerCase().includes(query) ||
+      record.arrivalAt.toLowerCase().includes(query) ||
+      record.triageId.toLowerCase().includes(query)
+    );
+  }, [recordSearchQuery, selected]);
+
+  const filteredNurses = useMemo(() => {
+    const query = (searchQuery || "").toString().trim().toLowerCase(); // 加入 (searchQuery || "")
+  if (!query) return nurses;
+  return nurses.filter((n) =>
+    n.name.toLowerCase().includes(query) ||
+    n.nurseId.toLowerCase().includes(query)
+  );
+}, [nurses, searchQuery]);
 
   const nurseSummary = useMemo(() => {
     return {
@@ -140,6 +162,19 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
   useEffect(() => {
     void fetchNurses();
   }, [fetchNurses]);
+
+useEffect(() => {
+  // 只有當 initialSelectedNurseId 真的有值（非 null/undefined/空字串）時才動作
+  if (!initialSelectedNurseId) return;
+
+  const nurseNameStr = String(initialSelectedNurseId); // 強制轉成字串
+  setSearchQuery(nurseNameStr);
+  void openNurseDetail(nurseNameStr);
+}, [initialSelectedNurseId]);
+
+  useEffect(() => {
+    setRecordSearchQuery("");
+  }, [selectedId]);
 
   const openNurseDetail = async (nurseId: string) => {
     setSelectedId(nurseId);
@@ -360,6 +395,22 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
         {loading && <div className="mb-3 text-sm text-gray-500">讀取中...</div>}
         {!!errorMsg && <div className="mb-3 text-sm text-red-600">{errorMsg}</div>}
 
+        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-left md:justify-between">
+          <div className="flex-1">
+            <label className="text-xs text-gray-500">搜尋護理師</label>
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="護理師姓名或帳號"
+              className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-200 outline-none"
+            />
+          </div>
+          <div className="text-sm text-gray-500">
+            搜尋結果：{filteredNurses.length} / {nurses.length}
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px] text-sm">
             <thead className="bg-gray-50 text-gray-600">
@@ -375,7 +426,7 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
               </tr>
             </thead>
             <tbody>
-              {nurses.map((nurse) => (
+              {filteredNurses.map((nurse) => (
                 <tr
                   key={nurse.nurseId}
                   onClick={() => openNurseDetail(nurse.nurseId)}
@@ -410,10 +461,10 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
                 </tr>
               ))}
 
-              {nurses.length === 0 && !loading && (
+              {filteredNurses.length === 0 && !loading && (
                 <tr className="border-t border-gray-200">
                   <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
-                    目前沒有護理師帳號
+                    {nurses.length === 0 ? "目前沒有護理師帳號" : "查無符合搜尋條件"}
                   </td>
                 </tr>
               )}
@@ -485,9 +536,20 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
                 </div>
 
                 <div className="mt-6">
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-left sm:justify-between mb-3">
                     <h4 className="text-lg font-bold text-gray-800">此護理師的檢傷紀錄</h4>
-                    <span className="text-sm text-gray-500">由後端載入</span>
+                    <div className="flex items-center gap-3">
+                      <div className="text-sm text-gray-500">由後端載入</div>
+                      <div className="min-w-[220px]">
+                        <input
+                          type="search"
+                          value={recordSearchQuery}
+                          onChange={(e) => setRecordSearchQuery(e.target.value)}
+                          placeholder="病患姓名 / 到院時間 / 檢傷號"
+                          className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-200 outline-none"
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   <div className="overflow-x-auto border border-gray-200 rounded-xl">
@@ -503,7 +565,7 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
                         </tr>
                       </thead>
                       <tbody>
-                        {selected.records.map((record) => (
+                        {filteredRecords.map((record) => (
                           <tr
                             key={record.triageId}
                             onClick={() => onOpenHistoryRecord?.(record.triageId)}
@@ -523,7 +585,7 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord }) => {
                             </td>
                           </tr>
                         ))}
-                        {selected.records.length === 0 && (
+                        {filteredRecords.length === 0 && (
                           <tr className="border-t border-gray-200">
                             <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                               尚無檢傷紀錄

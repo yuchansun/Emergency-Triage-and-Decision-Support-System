@@ -11,6 +11,7 @@ import EmergencyTriageReport from './components/EmergencyTriageReport';
 import HistoryPage from './components/HistoryPage';
 import NursesPage from './components/NursesPage';
 import StatsPage from './components/StatsPage';
+import StaffProfile from './components/StaffProfile';
 import { openVoiceConsentPopup } from './components/VoiceConsentModal';
 
 interface ToccState {
@@ -26,7 +27,7 @@ interface ToccState {
 }
 
 function App() {
-  const [stage, setStage] = useState<"login" | "addpatient" | "main" | "triageReport" | "history" | "nurses" | "stats">(
+  const [stage, setStage] = useState<"login" | "addpatient" | "main" | "triageReport" | "history" | "nurses" | "stats" | "profile">(
     (localStorage.getItem("isLoggedIn") === "true") ? "addpatient" : "login"
   );
 
@@ -39,6 +40,26 @@ function App() {
   const [llmMode, setLlmMode] = useState<'cloud' | 'local'>('local');
   const [historyKeyword, setHistoryKeyword] = useState<string>('');
   const [historySelectedId, setHistorySelectedId] = useState<string | null>(null);
+  const [selectedNurseId, setSelectedNurseId] = useState<string | null>(null);
+  const [userSettings, setUserSettings] = useState(() => {
+    const saved = localStorage.getItem("userSettings");
+
+    return saved
+      ? JSON.parse(saved)
+      : {
+        confirmBeforeSave: false,
+      };
+  });
+
+  const [globalConfig, setGlobalConfig] = useState(() => {
+    const saved = localStorage.getItem("globalConfig");
+
+    return saved
+      ? JSON.parse(saved)
+      : {
+        requireTOCC: false,
+      };
+  });
 
   const [voiceConsented, setVoiceConsented] = useState<boolean>(
     localStorage.getItem("voiceConsented") === "true"
@@ -78,6 +99,7 @@ function App() {
   });
 
   const isAdmin = (currentUser?.role || "").toLowerCase() === "admin";
+
 
   const resetAllTriageState = () => {
     setSelectedSymptoms(new Set());
@@ -142,7 +164,9 @@ function App() {
   };
 
   const handleConfirmAndSaveTriage = async (
+    
     triageData: any,
+
     options?: {
       afterSaveStage?: "triageReport" | "addpatient";
       overrideRuleCode?: string;
@@ -153,6 +177,21 @@ function App() {
       alert("教學/模擬模式：不會送出或儲存檢傷資料");
       return;
     }
+    if (globalConfig.requireTOCC) {
+  const isToccEmpty =
+    !tocc.travel &&
+    !tocc.travelStart &&
+    !tocc.travelEnd &&
+    !tocc.occupation &&
+    tocc.contactItems.length === 0 &&
+    tocc.clusterItems.length === 0 &&
+    tocc.symptoms.length === 0;
+
+  if (isToccEmpty) {
+    alert("TOCC 為必填，請完成 TOCC 資料");
+    return;
+  }
+}
 
     const fullPayload = {
       triage_id: patientData?.triage_id ?? null,
@@ -202,7 +241,11 @@ function App() {
         if (options?.afterSaveStage === "addpatient") {
           goToAddPatientClean();
         } else {
-          setStage("triageReport");
+          if (userSettings.confirmBeforeSave) {
+            setStage("triageReport");
+          } else {
+            goToAddPatientClean();
+          }
         }
       } else {
         const errorData = await res.json();
@@ -299,9 +342,9 @@ function App() {
             birthDate: p.birth_date ?? prev.birthDate,
             gender:
               p.gender === "M" ? "男" :
-              p.gender === "F" ? "女" :
-              p.gender === "U" ? "不詳" :
-              prev.gender,
+                p.gender === "F" ? "女" :
+                  p.gender === "U" ? "不詳" :
+                    prev.gender,
             age: p.age ?? prev.age,
             medicalId: p.medical_id ?? prev.medicalId,
             visitNumber: p.visit_number ?? prev.visitNumber,
@@ -327,6 +370,25 @@ function App() {
     setHistorySelectedId(triageId ?? null);
     setStage("history");
   }, []);
+
+  const openNursePage = useCallback((nurseId: string) => {
+    setSelectedNurseId(nurseId);
+    setStage("nurses");
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "userSettings",
+      JSON.stringify(userSettings)
+    );
+  }, [userSettings]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "globalConfig",
+      JSON.stringify(globalConfig)
+    );
+  }, [globalConfig]);
 
   // 非 admin 若被手動導到 nurses，強制導回
   useEffect(() => {
@@ -354,7 +416,8 @@ function App() {
             ...(isAdmin
               ? [{ id: 'nurses', label: '護理師資訊', icon: 'M17 20h5v-1a4 4 0 00-4-4h-1M9 20H4v-1a4 4 0 014-4h1m6 0a4 4 0 10-8 0 4 4 0 008 0zm6-7a3 3 0 11-6 0 3 3 0 016 0z' }]
               : []),
-            { id: 'stats', label: '統計分析', icon: 'M4 19V5m0 14h16M7 16V9m4 7V7m4 9v-4m4 4V4' }
+            { id: 'stats', label: '統計分析', icon: 'M4 19V5m0 14h16M7 16V9m4 7V7m4 9v-4m4 4V4' },
+            { id: 'profile', label: '個人設定與管理', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' }
           ].map((item) => (
             <button
               key={item.id}
@@ -362,6 +425,9 @@ function App() {
                 if (item.id === 'history') {
                   setHistoryKeyword('');
                   setHistorySelectedId(null);
+                }
+                if (item.id === 'nurses') {
+                  setSelectedNurseId(null);
                 }
                 setStage(item.id as any);
               }}
@@ -427,10 +493,20 @@ function App() {
         {stage === "main" && (
           <div className="px-6 py-8 mx-auto max-w-screen-2xl grid grid-cols-10 gap-8">
             <div className="col-span-10">
-              <PatientInfo patient={patientData} bed={bed} setBed={setBed} patientSource={patientSource} setPatientSource={setPatientSource} majorIncident={majorIncident} setMajorIncident={setMajorIncident} onToccChange={setTocc} />
+              <PatientInfo
+                patient={patientData}
+                bed={bed}
+                setBed={setBed}
+                patientSource={patientSource}
+                setPatientSource={setPatientSource}
+                majorIncident={majorIncident}
+                setMajorIncident={setMajorIncident}
+                onToccChange={setTocc}
+                requireTOCC={globalConfig.requireTOCC}
+              />
             </div>
             <div className="col-span-6">
-                <LeftPanel selectedSymptoms={selectedSymptoms} setSelectedSymptoms={setSelectedSymptoms} inputText={inputText} setInputText={setInputText} onWorstDegreeChange={setWorstSelectedDegree} onDirectToER={handleDirectToER} directToERSelected={directToERSelected} age={patientData?.age} voiceConsented={voiceConsented} vitals={vitals} onChiefComplaintChange={handleChiefComplaintChange} llmMode={llmMode}/>
+              <LeftPanel selectedSymptoms={selectedSymptoms} setSelectedSymptoms={setSelectedSymptoms} inputText={inputText} setInputText={setInputText} onWorstDegreeChange={setWorstSelectedDegree} onDirectToER={handleDirectToER} directToERSelected={directToERSelected} age={patientData?.age} voiceConsented={voiceConsented} vitals={vitals} onChiefComplaintChange={handleChiefComplaintChange} llmMode={llmMode} />
             </div>
             <div className="col-span-4 flex flex-col gap-6">
               <SystemRecommendation
@@ -444,7 +520,14 @@ function App() {
                     alert("教學/模擬模式：不開啟檢傷報告頁");
                     return;
                   }
-                  setStage("triageReport");
+
+                  if (userSettings.confirmBeforeSave) {
+                    setStage("triageReport");
+                  } else {
+                    handleConfirmAndSaveTriage({
+                      selectedLevel: worstSelectedDegree,
+                    });
+                  }
                 }}
                 onConfirmAndSave={handleConfirmAndSaveTriage}
               />
@@ -458,11 +541,27 @@ function App() {
             patientData={patientData}
             initialKeyword={historyKeyword}
             initialSelectedTriageId={historySelectedId}
+            onViewNurse={openNursePage}
           />
         )}
 
         {stage === "nurses" && isAdmin && (
-          <NursesPage onOpenHistoryRecord={openHistoryFromNurse} />
+          <NursesPage
+            onOpenHistoryRecord={openHistoryFromNurse}
+            initialSelectedNurseId={selectedNurseId}
+          />
+        )}
+
+        {/* --- 新增個人設定頁面 --- */}
+        {stage === "profile" && (
+          <StaffProfile
+            nurseInfo={currentUser}   // 把這裡的 nurseData 改成 currentUser
+            isAdmin={isAdmin}
+            userSettings={userSettings} // 記得要在 App 頂部定義這些 State (見下方)
+            setUserSettings={setUserSettings}
+            globalConfig={globalConfig}
+            setGlobalConfig={setGlobalConfig}
+          />
         )}
 
         {stage === "stats" && (
