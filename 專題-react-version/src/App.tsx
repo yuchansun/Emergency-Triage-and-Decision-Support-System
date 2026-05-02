@@ -39,6 +39,7 @@ function App() {
   const [llmMode, setLlmMode] = useState<'cloud' | 'local'>('local');
   const [historyKeyword, setHistoryKeyword] = useState<string>('');
   const [historySelectedId, setHistorySelectedId] = useState<string | null>(null);
+  const [selectedNurseId, setSelectedNurseId] = useState<string | null>(null);
 
   const [voiceConsented, setVoiceConsented] = useState<boolean>(
     localStorage.getItem("voiceConsented") === "true"
@@ -328,6 +329,11 @@ function App() {
     setStage("history");
   }, []);
 
+  const openNursePage = useCallback((nurseId: string) => {
+    setSelectedNurseId(nurseId);
+    setStage("nurses");
+  }, []);
+
   // 非 admin 若被手動導到 nurses，強制導回
   useEffect(() => {
     if (stage === "nurses" && !isAdmin) {
@@ -362,6 +368,9 @@ function App() {
                 if (item.id === 'history') {
                   setHistoryKeyword('');
                   setHistorySelectedId(null);
+                }
+                if (item.id === 'nurses') {
+                  setSelectedNurseId(null);
                 }
                 setStage(item.id as any);
               }}
@@ -458,11 +467,15 @@ function App() {
             patientData={patientData}
             initialKeyword={historyKeyword}
             initialSelectedTriageId={historySelectedId}
+            onViewNurse={openNursePage}
           />
         )}
 
         {stage === "nurses" && isAdmin && (
-          <NursesPage onOpenHistoryRecord={openHistoryFromNurse} />
+          <NursesPage
+            onOpenHistoryRecord={openHistoryFromNurse}
+            initialSelectedNurseId={selectedNurseId}
+          />
         )}
 
         {stage === "stats" && (
