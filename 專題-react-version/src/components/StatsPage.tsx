@@ -1,47 +1,23 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 type RangeKey = "today" | "week" | "month";
 
-type TriageStatRecord = {
-  triageId: string;
-  gender: "M" | "F";
-  age: number;
-  triageLevel: 1 | 2 | 3 | 4 | 5;
-  arrivalAt: string; // YYYY-MM-DD HH:mm
+//定義從API獲取的統計資料格式
+type StatsApiResponse = {
+  success: boolean;
+  data?: {
+    range: RangeKey;
+    total: number;
+    male: number;
+    female: number;
+    avgAge: number;
+    levelCounts: Record<string, number>;
+    ageCounts: Record<string, number>;
+  };
+  detail?: string;
 };
 
-const pad2 = (n: number) => String(n).padStart(2, "0");
-const toDateKey = (value: string) => value.slice(0, 10);
-
-const formatDateTime = (date: Date) =>
-  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(
-    date.getHours()
-  )}:${pad2(date.getMinutes())}`;
-
-const makeMockRecords = (): TriageStatRecord[] => {
-  const base = new Date("2026-04-12T12:00:00");
-  const ages = [8, 15, 22, 28, 34, 41, 48, 56, 63, 72];
-
-  return Array.from({ length: 48 }).map((_, i) => {
-    const offsetDays =
-      i < 4 ? 0 : i < 12 ? i - 3 : i < 24 ? (i - 11) % 7 + 1 : (i - 23) % 18 + 2;
-
-    const d = new Date(base);
-    d.setDate(d.getDate() - offsetDays);
-    d.setHours(8 + (i % 10), (i * 7) % 60, 0, 0);
-
-    return {
-      triageId: `TRI-${String(i + 1).padStart(3, "0")}`,
-      gender: i % 2 === 0 ? "M" : "F",
-      age: ages[i % ages.length],
-      triageLevel: ((i % 5) + 1) as 1 | 2 | 3 | 4 | 5,
-      arrivalAt: formatDateTime(d),
-    };
-  });
-};
-
-const MOCK_RECORDS = makeMockRecords();
-
+//定義前端顯示用的級數和年齡區間對應資料
 const levelMeta = [
   { label: "第1級", value: 1, color: "bg-red-500" },
   { label: "第2級", value: 2, color: "bg-orange-500" },
@@ -50,6 +26,7 @@ const levelMeta = [
   { label: "第5級", value: 5, color: "bg-blue-500" },
 ] as const;
 
+//年齡區間定義，max為Infinity表示61歲以上
 const ageMeta = [
   { label: "0–18", min: 0, max: 18, color: "bg-sky-500" },
   { label: "19–30", min: 19, max: 30, color: "bg-cyan-500" },
@@ -58,68 +35,78 @@ const ageMeta = [
   { label: "61+", min: 61, max: Infinity, color: "bg-rose-500" },
 ];
 
+//定義前端顯示用的統計資料格式，從API獲取的原始資料會轉換為這個格式
 const tabs: { key: RangeKey; label: string }[] = [
   { key: "today", label: "今日" },
   { key: "week", label: "本周" },
   { key: "month", label: "本月" },
 ];
 
+//StatsPage組件負責顯示統計分析頁面，包含從API獲取資料、處理資料格式以及渲染統計圖表和數據
 const StatsPage: React.FC = () => {
   const [range, setRange] = useState<RangeKey>("month");
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [statsRaw, setStatsRaw] = useState<NonNullable<StatsApiResponse["data"]>>({
+    range: "month",
+    total: 0,
+    male: 0,
+    female: 0,
+    avgAge: 0,
+    levelCounts: { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0, none: 0 },
+    ageCounts: { "0-18": 0, "19-30": 0, "31-45": 0, "46-60": 0, "61+": 0 },
+  });
 
-  const filteredRecords = useMemo(() => {
-    const now = new Date("2026-04-12T12:00:00");
-    const nowKey = toDateKey(formatDateTime(now));
-    const nowMonth = now.getMonth();
-    const nowYear = now.getFullYear();
+  useEffect(() => {
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
-    return MOCK_RECORDS.filter((record) => {
-      const recordDate = new Date(record.arrivalAt.replace(" ", "T"));
-      const recordKey = toDateKey(record.arrivalAt);
-
-      if (range === "today") return recordKey === nowKey;
-
-      if (range === "week") {
-        const diffDays = Math.floor(
-          (now.getTime() -
-            new Date(recordDate.getFullYear(), recordDate.getMonth(), recordDate.getDate()).getTime()) /
-            86400000
-        );
-        return diffDays >= 0 && diffDays < 7;
+    const fetchStats = async () => {
+      setLoading(true);
+      setErrorMsg("");
+      try {
+        const res = await fetch(`${API_BASE_URL}/stats/overview?range=${encodeURIComponent(range)}`);
+        const result = (await res.json()) as StatsApiResponse;
+        if (!res.ok || !result.success || !result.data) {
+          throw new Error(result.detail || "讀取統計資料失敗");
+        }
+        setStatsRaw(result.data);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "讀取統計資料失敗";
+        setErrorMsg(message);
+      } finally {
+        setLoading(false);
       }
+    };
 
-      return recordDate.getFullYear() === nowYear && recordDate.getMonth() === nowMonth;
-    });
+    void fetchStats();
   }, [range]);
 
+  //將原始API資料轉換為適合前端顯示的格式
   const stats = useMemo(() => {
-    const total = filteredRecords.length;
-    const male = filteredRecords.filter((r) => r.gender === "M").length;
-    const female = filteredRecords.filter((r) => r.gender === "F").length;
-    const avgAge =
-      total > 0 ? (filteredRecords.reduce((sum, r) => sum + r.age, 0) / total).toFixed(1) : "0.0";
-
     const levelCounts = levelMeta.map((item) => ({
       ...item,
-      count: filteredRecords.filter((r) => r.triageLevel === item.value).length,
+      //從API回傳的levelCounts物件中取出對應級數的筆數，若沒有則預設為0
+      count: statsRaw.levelCounts[String(item.value)] || 0,
     }));
 
-    const ageCounts = ageMeta.map((item) => ({
-      ...item,
-      count: filteredRecords.filter((r) => r.age >= item.min && r.age <= item.max).length,
-    }));
+    const ageCounts = ageMeta.map((item) => {
+      const key = item.max === Infinity ? "61+" : `${item.min}-${item.max}`;
+      return {
+        ...item,
+        count: statsRaw.ageCounts[key] || 0,
+      };
+    });
 
     return {
-      total,
-      male,
-      female,
-      avgAge,
+      total: statsRaw.total,
+      male: statsRaw.male,
+      female: statsRaw.female,
+      avgAge: Number(statsRaw.avgAge || 0).toFixed(1),
       levelCounts,
       ageCounts,
     };
-  }, [filteredRecords]);
-
-  const currentLabel = tabs.find((t) => t.key === range)?.label ?? "本月";
+  //statsRaw是從API獲取的原始資料，當它更新時，stats會重新計算並更新前端顯示的統計數據
+  }, [statsRaw]);
 
   return (
     <div className="px-6 py-8 mx-auto max-w-6xl">
@@ -147,7 +134,17 @@ const StatsPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 mb-6">
+      <div className="mb-4 h-6 text-sm" aria-live="polite">
+        {loading ? (
+          <div className="text-gray-500">統計資料讀取中...</div>
+        ) : errorMsg ? (
+          <div className="text-red-600">{errorMsg}</div>
+        ) : (
+          <div className="invisible">.</div>
+        )}
+      </div>
+
+      {/* <div className="grid grid-cols-2 gap-4 mb-6">
         <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
           <div className="text-sm text-gray-500">{currentLabel}檢傷筆數</div>
           <div className="mt-2 text-2xl font-bold text-gray-800">{stats.total}</div>
@@ -160,7 +157,7 @@ const StatsPage: React.FC = () => {
           <div className="mt-1 text-xs text-blue-600">目前區間統計</div>
         </div>
 
-        {/* <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+        <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
           <div className="text-sm text-gray-500">男性</div>
           <div className="mt-2 text-2xl font-bold text-gray-800">{stats.male}</div>
           <div className="mt-1 text-xs text-blue-600">目前區間統計</div>
@@ -170,8 +167,8 @@ const StatsPage: React.FC = () => {
           <div className="text-sm text-gray-500">女性</div>
           <div className="mt-2 text-2xl font-bold text-gray-800">{stats.female}</div>
           <div className="mt-1 text-xs text-pink-600">目前區間統計</div>
-        </div> */}
-      </div>
+        </div>
+      </div> */}
 
       <div className="grid grid-cols-2 gap-4 items-start">
         <div className="space-y-4 min-w-0">
@@ -185,18 +182,13 @@ const StatsPage: React.FC = () => {
               </div>
 
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <div className="text-sm text-gray-500">平均年齡</div>
-                <div className="mt-1 text-2xl font-bold text-gray-800">{stats.avgAge} 歲</div>
-              </div>
-
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <div className="text-sm text-gray-500">男性</div>
+                <div className="text-sm text-gray-500">本區間人數</div>
                 <div className="mt-1 text-2xl font-bold text-gray-800">{stats.male}</div>
               </div>
 
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <div className="text-sm text-gray-500">女性</div>
-                <div className="mt-1 text-2xl font-bold text-gray-800">{stats.female}</div>
+                <div className="text-sm text-gray-500">平均年齡</div>
+                <div className="mt-1 text-2xl font-bold text-gray-800">{stats.avgAge} 歲</div>
               </div>
             </div>
           </div>

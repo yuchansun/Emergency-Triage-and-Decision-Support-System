@@ -7,6 +7,7 @@ const API_BASE =
 const NHICARD_BASE =
   import.meta.env.VITE_NHICARD_URL || "http://127.0.0.1:8002";
 
+//定義病人資料結構
 export interface PatientData {
   name: string;
   idNumber: string;
@@ -20,12 +21,15 @@ export interface PatientData {
   visitNumber?: string;
 }
 
+//病人資料輸入與掛號流程
 export default function AddPatient({
   onNext,
   onDemo,
+  nurseId, 
 }: {
   onNext: (data: PatientData) => void;
   onDemo: () => void;
+  nurseId?: string | null; 
 }) {
   const [name, setName] = useState("");
   const [idNumber, setIdNumber] = useState("");
@@ -36,18 +40,22 @@ export default function AddPatient({
 
   // 1. 自動搜尋現有病人 (手打身分證後觸發)
   const checkPatient = async (id: string) => {
-    if (!id || id.length < 5) return;
+    const lookupId = id.trim().toUpperCase();
+    if (!lookupId || lookupId.length < 4) return;
     try {
-      const res = await fetch(`${API_BASE}/patients/search/${id}`);
+      const res = await fetch(`${API_BASE}/patients/search/${lookupId}`);
       const result = await res.json();
-      if (result.success && result.data) {
+      if (res.ok && result.success && result.data) {
         const p = result.data;
         setName(p.name);
         setBirthDate(p.birth_date || "");
         setGender(p.gender === "M" ? "男" : p.gender === "F" ? "女" : "不詳");
         setExistingPatientId(p.patient_id);
+      } else {
+        setExistingPatientId(null);
       }
     } catch (e) {
+      setExistingPatientId(null);
       console.log("新病人");
     }
   };
@@ -98,7 +106,7 @@ const handleConfirm = async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           patient_id: existingPatientId, 
-          name: name || "匿名", 
+          name: name || "不詳", 
           id_number: idNumber, 
           birth_date: birthDate || null, 
           gender: gender === "男" ? "M" : gender === "女" ? "F" : "U" 
@@ -114,7 +122,7 @@ const handleConfirm = async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           patientId: pResult.patient_id, 
-          nurseId: "N01",
+          nurseId: nurseId || "1",
           vitals: {}, 
           result: {}, 
           bed: "",

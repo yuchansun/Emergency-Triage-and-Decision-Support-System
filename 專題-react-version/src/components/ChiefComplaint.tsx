@@ -12,6 +12,7 @@ interface ChiefComplaintProps {
   directToERSelected?: boolean;
   age?: number;
   llmMode: 'cloud' | 'local';
+  voiceConsented?: boolean;
   vitals?: {
     temperature: string;
     heartRate: string;
@@ -57,6 +58,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
   directToERSelected, 
   age,
   llmMode, 
+  voiceConsented = true,
   vitals,
   onChiefComplaintChange,  // ← 新增解構
 }) => {
@@ -1467,11 +1469,15 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
         <button
           type="button"
           onClick={handleVoiceInputClick}
-          className={`absolute bottom-3 right-28 flex items-center justify-center size-10 rounded-full text-white transition-all duration-200 shadow-md ${
-            isListening
+           disabled={!voiceConsented}
+            className={`absolute bottom-3 right-28 flex items-center justify-center size-10 rounded-full text-white transition-all duration-200 shadow-md ${
+                !voiceConsented
+                  ? 'bg-gray-400 cursor-not-allowed opacity-50'
+                  : isListening
               ? 'bg-red-500 hover:bg-red-600 scale-110 shadow-red-500/50 animate-pulse'
               : 'bg-primary hover:bg-primary/90'
           }`}
+           title={!voiceConsented ? "請先同意語音同意書才能使用語音功能" : ""}
         >
           <span className="material-symbols-outlined">{isListening ? 'stop_circle' : 'mic'}</span>
         </button>

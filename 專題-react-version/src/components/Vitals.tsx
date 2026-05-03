@@ -101,7 +101,24 @@ const Vitals: React.FC<VitalsProps> = ({
   const setPastHistory = (val: string[]) => setVitals({ ...vitals, pastHistory: val });
 
   const drugAllergy = vitals.drugAllergy;
-  const setDrugAllergy = (val: string | null) => setVitals({ ...vitals, drugAllergy: val });
+  const parseDrugAllergy = (raw: string | null): { status: string | null; detail: string } => {
+    const value = String(raw || '').trim();
+    if (!value) return { status: null, detail: '' };
+    if (value.startsWith('有-')) return { status: '有', detail: value.slice(2).trim() };
+    if (value === '有' || value === '無' || value === '不詳') return { status: value, detail: '' };
+    return { status: '有', detail: value };
+  };
+  const formatDrugAllergy = (status: string | null, detail: string): string | null => {
+    if (!status) return null;
+    if (status === '有') {
+      const normalizedDetail = detail.trim();
+      return normalizedDetail ? `有-${normalizedDetail}` : '有';
+    }
+    return status;
+  };
+  const allergyParsed = parseDrugAllergy(drugAllergy);
+  const setDrugAllergy = (status: string | null, detail: string = allergyParsed.detail) =>
+    setVitals({ ...vitals, drugAllergy: formatDrugAllergy(status, detail) });
 
   const painScore = vitals.painScore;
   const setPainScore = (val: number | null) => setVitals({ ...vitals, painScore: val });
@@ -181,8 +198,9 @@ const Vitals: React.FC<VitalsProps> = ({
   // 這裡先用 local state，因為資料庫沒有這個欄位
   const [otherHistoryDetails, setOtherHistoryDetails] = useState<string>('');
 
-  // === 新增：藥物過敏詳情的 state
-  const [allergyDetails, setAllergyDetails] = useState<string>('');
+  // 藥物過敏詳情由 vitals.drugAllergy 解析，不再使用 local state，避免未儲存
+  const allergyDetails = allergyParsed.detail;
+  const setAllergyDetails = (val: string) => setDrugAllergy('有', val);
 
   // === 新增：LMP/EDC 的 local state（如果不需要存到資料庫）
   const [lmp, setLmp] = useState<string>('');
@@ -478,7 +496,7 @@ const Vitals: React.FC<VitalsProps> = ({
           <legend className="block text-sm font-medium pb-2">藥物過敏</legend>
           <div className="flex flex-wrap gap-2 z-10 relative">
             {['無', '不詳', '有'].map(label => {
-              const isSelected = drugAllergy === label;
+              const isSelected = allergyParsed.status === label;
               return (
                 <button
                   key={label}
@@ -496,13 +514,15 @@ const Vitals: React.FC<VitalsProps> = ({
               );
             })}
           </div>
-          <input
-            value={allergyDetails}  // ← 新增
-            onChange={(e) => setAllergyDetails(e.target.value)}  // ← 新增
-            placeholder="藥物過敏詳情（如：盤尼西林、阿斯匹靈等）"
-            type="text"
-            className="form-input w-full rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-10 px-3 text-sm focus:ring-primary focus:border-primary mt-2"
-          />
+          {allergyParsed.status === '有' && (
+            <input
+              value={allergyDetails}
+              onChange={(e) => setAllergyDetails(e.target.value)}
+              placeholder="藥物過敏詳情（如：盤尼西林、阿斯匹靈等）"
+              type="text"
+              className="form-input w-full rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-10 px-3 text-sm focus:ring-primary focus:border-primary mt-2"
+            />
+          )}
         </fieldset>
 
         {/* 疼痛指數 */}

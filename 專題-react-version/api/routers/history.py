@@ -21,6 +21,20 @@ def calc_age(birth_date: Any) -> Optional[int]:
     return today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
 
 
+def normalize_triage_level(value: Any) -> int:
+    if value is None:
+        return 5
+    try:
+        level = int(value)
+    except (TypeError, ValueError):
+        return 5
+    if level <= 0:
+        return 1
+    if level >= 5:
+        return 5
+    return level
+
+
 def build_where_clause(
     keyword: Optional[str],
     from_date: Optional[str],
@@ -131,7 +145,7 @@ async def get_history_records(
                     p.gender,
                     p.birth_date,
                     p.id_number,
-                    COALESCE(tragg.triage_level, 5) AS triage_level,
+                    tragg.triage_level AS triage_level,
                     COALESCE(tragg.chief_complaint, '') AS chief_complaint_note,
                     COALESCE(e.tocc_symptoms, '') AS final_symptoms_raw,
                     COALESCE(e.visit_time, t.created_at) AS arrival_at,
@@ -149,6 +163,7 @@ async def get_history_records(
                 r = row if isinstance(row, dict) else {}
                 birth_date = r.get("birth_date")
                 final_symptoms_raw = r.get("final_symptoms_raw") or ""
+                triage_level = r.get("triage_level")
                 records.append(
                     {
                         "triageId": r.get("triage_id"),
@@ -158,7 +173,7 @@ async def get_history_records(
                         "birthday": str(birth_date) if birth_date else "",
                         "age": calc_age(birth_date),
                         "idNumber": r.get("id_number") or "",
-                        "triageLevel": int(r.get("triage_level") or 5),
+                        "triageLevel": "none" if triage_level is None else normalize_triage_level(triage_level),
                         "chiefComplaintNote": r.get("chief_complaint_note") or "",
                         "finalSymptoms": [s.strip() for s in final_symptoms_raw.split(",") if s.strip()],
                         "arrivalAt": str(r.get("arrival_at") or ""),

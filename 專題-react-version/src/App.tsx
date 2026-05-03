@@ -11,6 +11,7 @@ import EmergencyTriageReport from './components/EmergencyTriageReport';
 import HistoryPage from './components/HistoryPage';
 import NursesPage from './components/NursesPage';
 import StatsPage from './components/StatsPage';
+import { openVoiceConsentPopup } from './components/VoiceConsentModal';
 
 interface ToccState {
   travel: string;
@@ -25,21 +26,23 @@ interface ToccState {
 }
 
 function App() {
-  // === 1. State 定義 ===
   const [stage, setStage] = useState<"login" | "addpatient" | "main" | "triageReport" | "history" | "nurses" | "stats">(
     (localStorage.getItem("isLoggedIn") === "true") ? "addpatient" : "login"
   );
-  
+
   const [currentUser, setCurrentUser] = useState<{ name: string; nurseId: string; role: string } | null>(
     localStorage.getItem("userData") ? JSON.parse(localStorage.getItem("userData")!) : null
   );
 
-  // 控制側邊欄收縮 (預設收起)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  const [llmMode, setLlmMode] = useState<'cloud' | 'local'>('local'); // 預設為地端模式，開發階段方便測試
+  const [llmMode, setLlmMode] = useState<'cloud' | 'local'>('local');
   const [historyKeyword, setHistoryKeyword] = useState<string>('');
   const [historySelectedId, setHistorySelectedId] = useState<string | null>(null);
+
+  const [voiceConsented, setVoiceConsented] = useState<boolean>(
+    localStorage.getItem("voiceConsented") === "true"
+  );
 
   const [selectedSymptoms, setSelectedSymptoms] = useState<Set<string>>(new Set());
   const [inputText, setInputText] = useState<string>('');
@@ -74,6 +77,8 @@ function App() {
     supplementText: '',
   });
 
+  const isAdmin = (currentUser?.role || "").toLowerCase() === "admin";
+
   const resetAllTriageState = () => {
     setSelectedSymptoms(new Set());
     setInputText('');
@@ -94,7 +99,6 @@ function App() {
     });
   };
 
-  // === 2. 邏輯函式 ===
   const resetMainScreen = () => {
     setSelectedSymptoms(new Set());
     setInputText('');
@@ -123,12 +127,12 @@ function App() {
       });
       const data = await res.json();
       console.log("login response:", data);
-      
+
       if (res.ok && data.success) {
         localStorage.setItem("isLoggedIn", "true");
         localStorage.setItem("userData", JSON.stringify(data.user));
         setCurrentUser(data.user);
-        setStage("addpatient"); 
+        setStage("addpatient");
       } else {
         alert(data.detail || "帳號或密碼錯誤");
       }
@@ -137,14 +141,20 @@ function App() {
     }
   };
 
-  const handleConfirmAndSaveTriage = async (triageData: any) => {
+  const handleConfirmAndSaveTriage = async (
+    triageData: any,
+    options?: {
+      afterSaveStage?: "triageReport" | "addpatient";
+      overrideRuleCode?: string;
+      overrideChiefComplaint?: string;
+    }
+  ) => {
     if (isDemoMode) {
       alert("教學/模擬模式：不會送出或儲存檢傷資料");
       return;
     }
 
     const fullPayload = {
-      // ✅ 關鍵：沿用既有紀錄，不要每次新開
       triage_id: patientData?.triage_id ?? null,
       triageId: patientData?.triage_id ?? null,
       patientId: patientData?.patient_id ?? null,
@@ -159,8 +169,8 @@ function App() {
       tocc_cluster_other: tocc.clusterOther, tocc_symptoms: tocc.symptoms.join(', '),
       selectedSymptoms: Array.from(selectedSymptoms), inputText, worstSelectedDegree, selectedLevel: triageData.selectedLevel,
       result: {
-        rule_code: Object.keys(chiefComplaintData.selectedRules).join(';'),
-        chief_complaint: inputText?.trim() || null,
+        rule_code: options?.overrideRuleCode ?? Object.keys(chiefComplaintData.selectedRules).join(';'),
+        chief_complaint: options?.overrideChiefComplaint ?? (inputText?.trim() || null),
         notes: chiefComplaintData.supplementText
       },
       vitals: {
@@ -189,9 +199,11 @@ function App() {
         );
 
         alert(`檢傷資料已儲存，ID: ${responseData.triageId}`);
-
-        // ✅ 儲存後留在報告頁，不要立刻清空/跳走
-        setStage("triageReport");
+        if (options?.afterSaveStage === "addpatient") {
+          goToAddPatientClean();
+        } else {
+          setStage("triageReport");
+        }
       } else {
         const errorData = await res.json();
         alert(`儲存失敗: ${errorData.detail || '未知錯誤'}`);
@@ -203,17 +215,66 @@ function App() {
 
   const handleDirectToER = () => {
     if (!window.confirm('確定直入急救室？')) return;
+
+    if (!patientData?.patient_id) {
+      alert('尚未有病患資料，請先完成掛號');
+      return;
+    }
+
+    const directRuleCode = 'R00000';
+    const directJudgeName = '直入急救室 (OHCA/極危急)';
+
+    setChiefComplaintData((prev) => ({
+      ...prev,
+      selectedRules: {
+        [directRuleCode]: {
+          degree: 1,
+          judge: directJudgeName,
+          rule_code: directRuleCode,
+          symptom_name: '直入急救室',
+        },
+      },
+    }));
+
     setForceLevel1(true);
     setDirectToERSelected(true);
-    alert('確定級數：第1級');
-    resetMainScreen();
+
+    void handleConfirmAndSaveTriage(
+      {
+        selectedLevel: 1,
+      },
+      {
+        afterSaveStage: 'addpatient',
+        overrideRuleCode: directRuleCode,
+        overrideChiefComplaint: '直入急救室',
+      }
+    );
   };
 
   const handleChiefComplaintChange = useCallback((data: any) => {
     setChiefComplaintData(data);
   }, []);
 
-  // Fetch patient detail when patientData changes and is not demo mode
+  const runVoiceConsentFlow = async () => {
+    const result = await openVoiceConsentPopup();
+
+    if (result === 'agree') {
+      setVoiceConsented(true);
+      localStorage.setItem('voiceConsented', 'true');
+      setStage('main');
+      return;
+    }
+
+    if (result === 'disagree') {
+      setVoiceConsented(false);
+      localStorage.setItem('voiceConsented', 'false');
+      setStage('main');
+      return;
+    }
+
+    alert('同意書視窗未開啟，請確認瀏覽器已允許彈出視窗');
+  };
+
   useEffect(() => {
     if (!patientData?.patient_id) return;
     if (isDemoMode) return;
@@ -267,27 +328,17 @@ function App() {
     setStage("history");
   }, []);
 
-  const openTriageReportById = useCallback((triageId: string) => {
-    setPatientData((prev) => ({
-      ...(prev ?? {
-        name: "",
-        idNumber: "",
-        birthDate: "",
-        gender: "",
-        icCard: false,
-      }),
-      triage_id: triageId,
-    }));
-    setStage("triageReport");
-  }, []);
+  // 非 admin 若被手動導到 nurses，強制導回
+  useEffect(() => {
+    if (stage === "nurses" && !isAdmin) {
+      setStage("addpatient");
+    }
+  }, [stage, isAdmin]);
 
-  // === 3. 渲染判斷 ===
   if (stage === "login") return <Login onLogin={handleLogin} />;
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background-light dark:bg-background-dark font-display text-text-light dark:text-text-dark">
-      
-      {/* === 側邊導覽欄 (Sidebar) === */}
       <aside className={`bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col shrink-0 shadow-xl z-50 transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
         <div className="p-4 flex flex-col items-center">
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-3 mb-4 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors">
@@ -299,17 +350,10 @@ function App() {
         <nav className="flex-1 px-3 space-y-2 mt-4">
           {[
             { id: 'addpatient', label: '新病患掛號', icon: 'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z' },
-            {
-              id: 'history',
-              label: '過去病史查詢',
-              icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
-              onClick: () => {
-                setHistoryKeyword('');
-                setHistorySelectedId(null);
-                setStage('history');
-              },
-            },
-            { id: 'nurses', label: '護理師資訊', icon: 'M17 20h5v-1a4 4 0 00-4-4h-1M9 20H4v-1a4 4 0 014-4h1m6 0a4 4 0 10-8 0 4 4 0 008 0zm6-7a3 3 0 11-6 0 3 3 0 016 0zM10 7a3 3 0 11-6 0 3 3 0 016 0z' },
+            { id: 'history', label: '過去病史查詢', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
+            ...(isAdmin
+              ? [{ id: 'nurses', label: '護理師資訊', icon: 'M17 20h5v-1a4 4 0 00-4-4h-1M9 20H4v-1a4 4 0 014-4h1m6 0a4 4 0 10-8 0 4 4 0 008 0zm6-7a3 3 0 11-6 0 3 3 0 016 0z' }]
+              : []),
             { id: 'stats', label: '統計分析', icon: 'M4 19V5m0 14h16M7 16V9m4 7V7m4 9v-4m4 4V4' }
           ].map((item) => (
             <button
@@ -353,18 +397,17 @@ function App() {
         </div>
       </aside>
 
-      {/* === 右側主內容 === */}
       <main className="flex-1 relative overflow-y-auto bg-[#F8FAFC]">
         {stage === "addpatient" && (
           <AddPatient
             onNext={(data) => {
-              resetAllTriageState(); // ✅ 清掉上一位
+              resetAllTriageState();
               setPatientData(data);
               setIsDemoMode(false);
-              setStage("main");
+              void runVoiceConsentFlow();
             }}
             onDemo={() => {
-              resetAllTriageState(); // ✅ 清掉上一位
+              resetAllTriageState();
               setPatientData({
                 name: "教學測試病患",
                 idNumber: "(測試帶入)",
@@ -376,7 +419,7 @@ function App() {
                 age: 11,
               });
               setIsDemoMode(true);
-              setStage("main");
+              void runVoiceConsentFlow();
             }}
           />
         )}
@@ -387,7 +430,7 @@ function App() {
               <PatientInfo patient={patientData} bed={bed} setBed={setBed} patientSource={patientSource} setPatientSource={setPatientSource} majorIncident={majorIncident} setMajorIncident={setMajorIncident} onToccChange={setTocc} />
             </div>
             <div className="col-span-6">
-              <LeftPanel selectedSymptoms={selectedSymptoms} setSelectedSymptoms={setSelectedSymptoms} inputText={inputText} setInputText={setInputText} onWorstDegreeChange={setWorstSelectedDegree} onDirectToER={handleDirectToER} directToERSelected={directToERSelected} age={patientData?.age} vitals={vitals} onChiefComplaintChange={handleChiefComplaintChange} llmMode={llmMode}/>
+                <LeftPanel selectedSymptoms={selectedSymptoms} setSelectedSymptoms={setSelectedSymptoms} inputText={inputText} setInputText={setInputText} onWorstDegreeChange={setWorstSelectedDegree} onDirectToER={handleDirectToER} directToERSelected={directToERSelected} age={patientData?.age} voiceConsented={voiceConsented} vitals={vitals} onChiefComplaintChange={handleChiefComplaintChange} llmMode={llmMode}/>
             </div>
             <div className="col-span-4 flex flex-col gap-6">
               <SystemRecommendation
@@ -399,7 +442,7 @@ function App() {
                 onOpenTriageReport={() => {
                   if (isDemoMode) {
                     alert("教學/模擬模式：不開啟檢傷報告頁");
-                    return; // ✅ 擋進報告頁
+                    return;
                   }
                   setStage("triageReport");
                 }}
@@ -415,11 +458,10 @@ function App() {
             patientData={patientData}
             initialKeyword={historyKeyword}
             initialSelectedTriageId={historySelectedId}
-            onEditRecord={openTriageReportById}
           />
         )}
 
-        {stage === "nurses" && (
+        {stage === "nurses" && isAdmin && (
           <NursesPage onOpenHistoryRecord={openHistoryFromNurse} />
         )}
 

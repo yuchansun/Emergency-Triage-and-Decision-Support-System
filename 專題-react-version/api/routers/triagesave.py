@@ -4,12 +4,15 @@ import pymysql
 import logging
 from db import get_conn
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import secrets
 
 router = APIRouter()
+#錯誤日誌紀錄器
 logger = logging.getLogger(__name__)
+TAIPEI_TZ = ZoneInfo("Asia/Taipei")
 
-# 正確的寫法（Python 3.9 相容）
+#生成唯一的 triage_id（醫療紀錄號碼）
 def generate_medical_number(patient_id: Optional[str]) -> str:    
     date_part = datetime.now().strftime("%Y%m%d")
     
@@ -20,7 +23,7 @@ def generate_medical_number(patient_id: Optional[str]) -> str:
         pid_part = clean_id.zfill(6)[-6:] 
     else:
         pid_part = "000000"
-        
+    # 生成4位隨機十六進位數字，確保每次生成的triage_id都不一樣
     rand_part = secrets.token_hex(2).upper()
     return f"MRN-{date_part}-{pid_part}-{rand_part}"
 
@@ -32,7 +35,7 @@ async def create_triagesave(triagesave_data: dict):
         with conn.cursor() as cur:
             cur.execute("START TRANSACTION")
 
-            # ✅ 同時吃 camelCase / snake_case
+            #️從前端資料中提取 patient_id、nurse_id 和 triage_id，並確保 patient_id 不為空
             patient_id = triagesave_data.get("patientId") or triagesave_data.get("patient_id")
             nurse_id = triagesave_data.get("nurseId") or triagesave_data.get("nurse_id")
             triage_id = triagesave_data.get("triage_id") or triagesave_data.get("triageId")
@@ -51,19 +54,30 @@ async def create_triagesave(triagesave_data: dict):
                 if not triage_id:
                     raise HTTPException(status_code=500, detail="triage_id 產生失敗")
 
-            # ✅ 同一 triage_id: 更新，不新增第二筆
+            # --- 新增 final_level 儲存邏輯到 triage_record ---
+            final_level = triagesave_data.get("selectedLevel")
+            system_recommended_level = triagesave_data.get("worstSelectedDegree")
+
+            # 確保 final_level 的儲存邏輯正確
+            if system_recommended_level is None or final_level != system_recommended_level:
+                final_level = triagesave_data.get("selectedLevel")
+            else:
+                final_level = None
+
+            # ✅ 同一 triage_id: 更新，不新增第二筆，並更新 final_level
             cur.execute(
                 """
-                INSERT INTO triage_record (triage_id, patient_id, nurse_id)
-                VALUES (%s, %s, %s)
+                INSERT INTO triage_record (triage_id, patient_id, nurse_id, final_level)
+                VALUES (%s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE
                   patient_id = VALUES(patient_id),
-                  nurse_id = VALUES(nurse_id)
+                  nurse_id = VALUES(nurse_id),
+                  final_level = VALUES(final_level)
                 """,
-                (triage_id, patient_id, nurse_id)
+                (triage_id, patient_id, nurse_id, final_level)
             )
 
-            # --- vital_signs：先刪舊再寫新，避免同 triage_id 多筆 ---
+            #vital_signs：先刪舊再寫新，避免同 triage_id 多筆 ---
             cur.execute("DELETE FROM vital_signs WHERE triage_id = %s", (triage_id,))
             vitals = triagesave_data.get("vitals", {})
             do_not_treat = vitals.get("do_not_treat")
@@ -91,19 +105,18 @@ async def create_triagesave(triagesave_data: dict):
             cur.execute("DELETE FROM triage_result WHERE triage_id = %s", (triage_id,))
             result = triagesave_data.get("result", {})
             rule_codes = [c.strip() for c in (result.get("rule_code") or "").split(";") if c.strip()]
-            notes = result.get("notes") or ""
             chief_complaint = (result.get("chief_complaint") or triagesave_data.get("inputText") or "").strip()
 
             if rule_codes:
                 for rule_code in rule_codes:
                     cur.execute(
-                        "INSERT INTO triage_result (triage_id, rule_code, chief_complaint, notes) VALUES (%s, %s, %s, %s)",
-                        (triage_id, rule_code, chief_complaint, notes)
+                        "INSERT INTO triage_result (triage_id, rule_code, chief_complaint) VALUES (%s, %s, %s)",
+                        (triage_id, rule_code, chief_complaint)
                     )
-            elif notes or chief_complaint:
+            elif chief_complaint:
                 cur.execute(
-                    "INSERT INTO triage_result (triage_id, rule_code, chief_complaint, notes) VALUES (%s, %s, %s, %s)",
-                    (triage_id, None, chief_complaint, notes)
+                    "INSERT INTO triage_result (triage_id, rule_code, chief_complaint) VALUES (%s, %s, %s)",
+                    (triage_id, None, chief_complaint)
                 )
 
             # --- encounter_extra：先刪舊再寫新 ---
@@ -112,15 +125,20 @@ async def create_triagesave(triagesave_data: dict):
             visit_time = triagesave_data.get("visitTime")
             if visit_time:
                 try:
-                    # 處理 '2026-03-17T06:56:19.371Z' 格式
-                    if visit_time.endswith('Z'):
-                        visit_time = visit_time.replace('Z', '+00:00')
-                    dt = datetime.fromisoformat(visit_time.replace('Z', '+00:00'))
+                    # 將前端送來的 UTC 時間轉成台灣時間再存入資料庫
+                    visit_time_text = str(visit_time).strip()
+                    if visit_time_text.endswith('Z'):
+                        visit_time_text = visit_time_text.replace('Z', '+00:00')
+                    dt = datetime.fromisoformat(visit_time_text)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=TAIPEI_TZ)
+                    else:
+                        dt = dt.astimezone(TAIPEI_TZ)
                     visit_time = dt.strftime('%Y-%m-%d %H:%M:%S')
                 except:
-                    visit_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    visit_time = datetime.now(TAIPEI_TZ).strftime('%Y-%m-%d %H:%M:%S')
             else:
-                visit_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                visit_time = datetime.now(TAIPEI_TZ).strftime('%Y-%m-%d %H:%M:%S')
 
             # 處理其他日期欄位的空值
             def convert_date_field(date_value):
@@ -137,7 +155,7 @@ async def create_triagesave(triagesave_data: dict):
             tocc_travel_start = convert_date_field(triagesave_data.get("tocc_travel_start"))
             tocc_travel_end = convert_date_field(triagesave_data.get("tocc_travel_end"))
 
-
+            # 將encounter_extra的資料寫入資料庫
             cur.execute(
                 """INSERT INTO encounter_extra (
                     triage_id, bed, patient_source, major_incident, visit_time,

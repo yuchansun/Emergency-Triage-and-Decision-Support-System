@@ -134,7 +134,7 @@ async def get_triage_report(triage_id: str):
             # 4) triage_result
             cur.execute(
                 """
-                SELECT rule_code, chief_complaint, notes
+                SELECT rule_code, chief_complaint
                 FROM triage_result
                 WHERE triage_id = %s
                 ORDER BY rule_code
@@ -145,7 +145,6 @@ async def get_triage_report(triage_id: str):
 
             rule_codes = []
             chief_complaints = []
-            notes_list = []
 
             for item in result_rows:
                 if not isinstance(item, dict):
@@ -155,8 +154,6 @@ async def get_triage_report(triage_id: str):
                     rule_codes.append(item["rule_code"])
                 if item.get("chief_complaint"):
                     chief_complaints.append(item["chief_complaint"])
-                if item.get("notes"):
-                    notes_list.append(item["notes"])
 
             # 4-1) 由 rule_code -> triage_hierarchy.ttas_degree 取得檢傷級數（最嚴重取 MIN）
             triage_level = None
@@ -177,13 +174,44 @@ async def get_triage_report(triage_id: str):
                 else:
                     triage_level = lv_row[0]
 
+            # 4-2) 由 rule_code 取得 症狀 + 判斷規則
+            cur.execute(
+                """
+                SELECT DISTINCT
+                    h.symptom_name,
+                    h.judge_name
+                FROM triage_result r
+                JOIN triage_hierarchy h ON h.rule_code = r.rule_code
+                WHERE r.triage_id = %s
+                  AND h.symptom_name IS NOT NULL
+                  AND h.judge_name IS NOT NULL
+                ORDER BY h.ttas_degree ASC, h.symptom_name ASC
+                """,
+                (triage_id,)
+            )
+            symptom_rule_rows = cur.fetchall() or []
+            symptom_rule_pairs = []
+            for row in symptom_rule_rows:
+                if not isinstance(row, dict):
+                    cols = [desc[0] for desc in cur.description]
+                    row = dict(zip(cols, row))
+                symptom_name = (row.get("symptom_name") or "").strip()
+                judge_name = (row.get("judge_name") or "").strip() #
+                if symptom_name and judge_name:
+                    symptom_rule_pairs.append(
+                        {
+                            "symptom_name": symptom_name,
+                            "judge_name": judge_name,
+                        }
+                    )
+
             birth_date = p_row.get("birth_date")
             data = {
                 "triage_id": base_row.get("triage_id"),
                 "patient_id": resolved_patient_id,
                 "nurse_id": base_row.get("nurse_id"),
                 "created_at": base_row.get("created_at"),
-                "triage_level": triage_level,  # ✅ 新增
+                "triage_level": triage_level, 
 
                 "name": p_row.get("name"),
                 "id_number": p_row.get("id_number"),
@@ -224,7 +252,8 @@ async def get_triage_report(triage_id: str):
 
                 "rule_code": ";".join(rule_codes),
                 "chief_complaint": "\n".join(dict.fromkeys(chief_complaints)),
-                "notes": "\n".join(dict.fromkeys(notes_list)),
+                "symptom_rule_pairs": symptom_rule_pairs,
+                "triage_level": triage_level,
             }
 
             return {"success": True, "data": data}
