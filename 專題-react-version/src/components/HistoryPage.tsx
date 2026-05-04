@@ -4,6 +4,7 @@ type HistoryPageProps = {
   patientData?: any;
   initialKeyword?: string;
   initialSelectedTriageId?: string | null;
+  onViewNurse?: (nurseId: string) => void;
 };
 
 type TriageRecord = {
@@ -19,6 +20,7 @@ type TriageRecord = {
   finalSymptoms: string[]; // 最後症狀
   arrivalAt: string; // YYYY-MM-DD HH:mm
   nurseId: string;
+  nurseName?: string;
   vitals: {
     temperature: number;
     heartRate: number;
@@ -71,20 +73,31 @@ const createDefaultFilter = (): FilterForm => ({
 });
 
 const normalizeTriageLevel = (value: any): 1 | 2 | 3 | 4 | 5 | null => {
+  if (value === null || value === undefined || value === "") return null;
+
   const n = Number(value);
   return [1, 2, 3, 4, 5].includes(n) ? (n as 1 | 2 | 3 | 4 | 5) : null;
 };
 
-const levelColor = (level: number | null | undefined) =>
-({
-  1: "text-red-700 bg-red-50 border-red-200",
-  2: "text-orange-700 bg-orange-50 border-orange-200",
-  3: "text-yellow-700 bg-yellow-50 border-yellow-200",
-  4: "text-green-700 bg-green-50 border-green-200",
-  5: "text-blue-700 bg-blue-50 border-blue-200",
-}[level] || "text-gray-700 bg-gray-50 border-gray-200");
+const isValidTriageLevel = (value: number | null | undefined): value is 1 | 2 | 3 | 4 | 5 =>
+  [1, 2, 3, 4, 5].includes(Number(value));
 
-const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, initialKeyword, initialSelectedTriageId }) => {
+const formatTriageLabel = (level: number | null | undefined) =>
+  isValidTriageLevel(level) ? `第 ${level} 級` : "none";
+
+const levelColor = (level: number | null | undefined) => {
+  const colors: Record<number, string> = {
+    1: "text-red-700 bg-red-50 border-red-200",
+    2: "text-orange-700 bg-orange-50 border-orange-200",
+    3: "text-yellow-700 bg-yellow-50 border-yellow-200",
+    4: "text-green-700 bg-green-50 border-green-200",
+    5: "text-blue-700 bg-blue-50 border-blue-200",
+  };
+
+  return colors[level ?? -1] || "text-gray-700 bg-gray-50 border-gray-200";
+};
+
+const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, initialKeyword, initialSelectedTriageId, onViewNurse }) => {
   const [form, setForm] = useState<FilterForm>(createDefaultFilter());
   const [applied, setApplied] = useState<FilterForm>(createDefaultFilter());
   const [page, setPage] = useState(1);
@@ -216,6 +229,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, in
               .filter(Boolean),
         arrivalAt: d.visit_time ? String(d.visit_time) : String(d.created_at || ""),
         nurseId: d.nurse_id || "",
+        nurseName: d.nurse_name || "",
         vitals: {
           temperature: Number(d.temperature || 0),
           heartRate: Number(d.heart_rate || 0),
@@ -519,7 +533,7 @@ td, th {
 
       <tr>
         <td class="small">檢傷人員</td>
-        <td class="c">${safe(data?.nurse_id)}</td>
+        <td class="c">${safe(data?.nurse_name ?? data?.nurse_id)}</td>
         <td colspan="5"></td>
       </tr>
     </table>
@@ -765,10 +779,7 @@ td, th {
                     <td className="px-4 py-3">{r.chiefComplaintNote}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2.5 py-1 rounded-lg border text-xs font-semibold ${levelColor(r.triageLevel)}`}>
-                        {(r.triageLevel && r.triageLevel >= 1 && r.triageLevel <= 5)
-                          ? `第 ${r.triageLevel} 級`
-                          : 'none'
-                        }
+                        {formatTriageLabel(r.triageLevel)}
                       </span>
                     </td>
                   </tr>
@@ -866,11 +877,7 @@ td, th {
             <div className={`rounded-xl border px-4 py-3 mt-4 mb-4 ${levelColor(editDraft.triageLevel)}`}>
               <div className="text-xs">檢傷級數</div>
               <div className="text-xl font-bold">
-                {
-                  (Number(editDraft.triageLevel) >= 1 && Number(editDraft.triageLevel) <= 5)
-                    ? `第 ${editDraft.triageLevel} 級`
-                    : 'none'
-                }
+                {formatTriageLabel(editDraft.triageLevel)}
               </div>
               <div className="mt-2 text-base font-semibold">姓名：{editDraft.name}</div>
             </div>
@@ -884,15 +891,19 @@ td, th {
               <div><div className="text-gray-500">生日</div><div className="font-semibold">{selected.birthday}</div></div>
               <div><div className="text-gray-500">到院時間</div><div className="font-semibold">{editDraft.arrivalAt}</div></div>
               <div>
-                <div className="text-gray-500">檢傷人員</div>
+                        <div className="text-gray-500">檢傷人員</div>
                 {isEditing ? (
-                  <input
-                    value={editDraft.nurseId}
-                    onChange={(e) => setDraftField("nurseId", e.target.value)}
-                    className="mt-1 w-full rounded border border-gray-300 px-2 py-1"
-                  />
+                  <div className="mt-1 w-full rounded border border-gray-300 bg-gray-50 px-2 py-1 text-sm text-gray-700">
+                    {editDraft.nurseName || editDraft.nurseId}
+                  </div>
                 ) : (
-                  <div className="font-semibold">{editDraft.nurseId}</div>
+                  <div
+                    className={`font-semibold ${editDraft.nurseId ? 'text-blue-600 cursor-pointer hover:underline' : ''}`}
+                    onClick={() => editDraft.nurseId && onViewNurse?.(editDraft.nurseId)}
+                    title={editDraft.nurseId ? '前往護理師資料管理' : undefined}
+                  >
+                    {editDraft.nurseName || editDraft.nurseId || '無'}
+                  </div>
                 )}
               </div>
             </div>

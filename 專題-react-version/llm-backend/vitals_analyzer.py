@@ -2,6 +2,41 @@
 
 from typing import Dict, List, Optional, Tuple
 
+# 分析器產出的標籤 → 候選症狀庫可能出現的名稱（供 recommend-symptoms / RAG 共用）
+VITAL_LABEL_TO_CANDIDATE_SYMPTOMS: Dict[str, List[str]] = {
+    "發燒": ["發燒", "體溫過高", "發熱"],
+    "高燒": ["高燒", "體溫過高", "發熱", "發燒"],
+    "超高熱": ["超高熱", "體溫過高", "發熱", "高燒", "發燒"],
+    "輕度高血壓": ["輕度高血壓", "高血壓", "血壓過高"],
+    "重度高血壓": ["重度高血壓", "高血壓", "血壓過高", "嚴重高血壓"],
+    "嚴重高血壓": ["嚴重高血壓", "高血壓", "血壓過高", "重度高血壓"],
+    "舒張期高血壓": ["舒張期高血壓", "高血壓", "血壓過高"],
+    "低血壓": ["低血壓", "血壓過低"],
+    "心跳過速": ["心跳過速", "心悸", "心跳快"],
+    "心跳過緩": ["心跳過緩", "心跳慢"],
+    "輕微低血氧": ["輕微低血氧", "低血氧", "血氧過低"],
+    "嚴重低血氧": ["嚴重低血氧", "低血氧", "血氧過低", "缺氧"],
+    "呼吸急促": ["呼吸急促", "呼吸困難", "呼吸快"],
+    "呼吸過緩": ["呼吸過緩", "呼吸慢"],
+    "高血糖": ["高血糖", "血糖過高"],
+    "低血糖": ["低血糖", "血糖過低", "血糖偏低"],
+}
+
+
+def match_vital_labels_to_symptom_candidates(
+    vital_labels: List[str], symptom_candidates: List[str]
+) -> List[str]:
+    """依生命徵象標籤，在候選症狀清單中各取第一個對得上之名稱（順序與 vital_labels 一致）。"""
+    matched: List[str] = []
+    for vital_label in vital_labels:
+        options = VITAL_LABEL_TO_CANDIDATE_SYMPTOMS.get(vital_label, [vital_label])
+        for name in options:
+            if name in symptom_candidates:
+                matched.append(name)
+                break
+    return matched
+
+
 class VitalsAnalyzer:
     def __init__(self):
         # 成人生命徵象正常範圍設定
@@ -186,6 +221,7 @@ class VitalsAnalyzer:
         symptoms = []
         abnormal_summary = {}
         
+        # 每個欄位都拆開判斷，最後再合併，方便後續調單一規則
         # 體溫
         temp = self.parse_vital_value(vitals.get('temperature'))
         temp_symptoms = self.analyze_temperature(temp)
@@ -279,7 +315,7 @@ class VitalsAnalyzer:
                 'symptoms': pain_symptoms
             }
         
-        # 去除重複症狀並保持順序
+        # 同一病人可能命中多條規則，這裡做去重避免後續 prompt 太亂
         unique_symptoms = []
         seen = set()
         for symptom in symptoms:

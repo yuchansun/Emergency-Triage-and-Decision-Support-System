@@ -24,9 +24,11 @@ interface PatientInfoProps {
 
   // ← 新增這個
   onToccChange?: (toccData: ToccState) => void;
+  requireTOCC?: boolean;
 }
 
 interface ToccState {
+  requireTOCC?: boolean;
   travel: string;
   travelStart: string;
   travelEnd: string;
@@ -47,6 +49,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
   majorIncident,
   setMajorIncident,
   onToccChange,  // ← 新增解構
+  requireTOCC,
 }) => {
 
   // ===== 標籤狀態 =====
@@ -89,6 +92,14 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
     clusterOther: "",
     symptoms: [],
   });
+
+  const isToccValid = !requireTOCC || (
+  tocc.travel.trim() !== "" ||
+  tocc.occupation.trim() !== "" ||
+  (tocc.contactItems?.length ?? 0) > 0 ||
+  (tocc.clusterItems?.length ?? 0) > 0 ||
+  (tocc.symptoms?.length ?? 0) > 0
+);
 
   const popupRef = useRef<HTMLDivElement>(null);
 
@@ -423,10 +434,15 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
                   </button>
 
                   <button
-                    className="text-xs bg-blue-500 text-white px-3 py-1 rounded"
+                    disabled={!isToccValid}
+                    className={`text-xs px-3 py-1 rounded ${isToccValid
+                        ? "bg-blue-500 text-white"
+                        : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                      }`}
                     onClick={() => {
+                      if (!isToccValid) return;
                       setShowTOCCOptions(false);
-                      onToccChange?.(tocc); // ← 新增這行
+                      onToccChange?.(tocc);
                     }}
                   >
                     確認

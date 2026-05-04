@@ -1293,7 +1293,8 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
                 ttas_degree: Number(rule.ttas_degree),
               }))
           : [];
-        setRecommendedRules(normalized.slice(0, 3));
+        // 後端：每個已選症狀各最多 3 條 AI 推薦，不再只截前 3 筆
+        setRecommendedRules(normalized);
       } catch (err) {
         console.error('[RULES] 推薦判斷規則失敗', err);
         if (!cancelled) setRecommendedRules([]);
@@ -1626,7 +1627,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
                     const isSelected = !!selectedRules[rule.rule_code];
                     return (
                       <button
-                        key={rule.rule_code}
+                        key={`${rule.symptom_name}__${rule.rule_code}`}
                         type="button"
                         onClick={() =>
                           setSelectedRules(prev => {
