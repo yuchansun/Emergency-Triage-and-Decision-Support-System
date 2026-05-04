@@ -1,7 +1,6 @@
 import json
 import os
 import pandas as pd
-import PyPDF2
 from typing import List, Dict, Any
 
 class DataLoader:
@@ -21,35 +20,6 @@ class DataLoader:
                 'content': content,
                 'metadata': {'category': category, 'source': file_path}
             })
-        return documents
-    
-    def load_from_pdf(self, file_path: str, category: str) -> List[Dict[str, Any]]:
-        """從 PDF 檔案載入資料"""
-        documents = []
-        try:
-            with open(file_path, 'rb') as file:
-                pdf_reader = PyPDF2.PdfReader(file)
-                text_content = ""
-                
-                # 逐頁抽文字，避免只讀第一頁
-                for page_num in range(len(pdf_reader.pages)):
-                    page = pdf_reader.pages[page_num]
-                    text_content += page.extract_text() + "\n"
-                
-                if text_content.strip():
-                    documents.append({
-                        'id': os.path.basename(file_path),
-                        'content': text_content.strip(),
-                        'metadata': {
-                            'category': category,
-                            'source': file_path,
-                            'type': 'pdf',
-                            'pages': len(pdf_reader.pages)
-                        }
-                    })
-        except Exception as e:
-            print(f"❌ PDF 載入失敗 {file_path}: {e}")
-        
         return documents
     
     def load_from_csv(self, file_path: str, category: str, text_column: str = None) -> List[Dict[str, Any]]:
@@ -95,12 +65,18 @@ class DataLoader:
                         content_parts.append(f"傷病類型: {row['T_NAMEC']}")
                     
                     content = " | ".join(content_parts)
-                    metadata.update({
-                        'symptom': row.get('CC_NAMEC', ''),
-                        'judgment': row.get('JUDGE_NAMEC', ''),
-                        'ttas_level': str(row.get('TTAS_DEGREE', '')),
-                        'body_part': row.get('T_NAMEC', '')
-                    })
+                    try:
+                        ttas_deg = int(float(row.get("TTAS_DEGREE")))
+                    except (TypeError, ValueError):
+                        ttas_deg = 0
+                    metadata.update(
+                        {
+                            "symptom": str(row.get("CC_NAMEC", "") or ""),
+                            "judgment": str(row.get("JUDGE_NAMEC", "") or ""),
+                            "ttas_level": ttas_deg,
+                            "body_part": str(row.get("T_NAMEC", "") or ""),
+                        }
+                    )
                 else:
                     # 一般 CSV 處理
                     if text_column and text_column in df.columns:
