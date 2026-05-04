@@ -1,17 +1,18 @@
 # RAG 管線，協調檢索和生成
 
 import json
-from typing import List, Dict, Any, Optional
-from vector_store import vector_store
+from typing import Any, Dict, List, Optional, Tuple
 from knowledge_base import knowledge_base
-from vitals_analyzer import vitals_analyzer
+from vitals_analyzer import match_vital_labels_to_symptom_candidates, vitals_analyzer
 
 class RAGPipeline:
     def __init__(self):
+        # 這裡不自己建 DB，直接共用全域 knowledge_base 物件
         self.knowledge_base = knowledge_base
     
     def retrieve_relevant_knowledge(self, query: str, category: str = None, n_results: int = 3) -> List[Dict[str, Any]]:
         """檢索相關醫學知識"""
+        # 單純代理到知識庫層，方便後續統一加 retry 或 logging
         try:
             results = self.knowledge_base.search_medical_knowledge(query, category, n_results)
             return results
@@ -24,6 +25,7 @@ class RAGPipeline:
         if not retrieved_docs:
             return "沒有找到相關的醫學知識。"
         
+        # context 盡量維持固定格式，讓模型比較容易抓重點
         context = "相關醫學知識：\n\n"
         for i, doc in enumerate(retrieved_docs, 1):
             content = doc.get('content', '')
@@ -61,7 +63,7 @@ class RAGPipeline:
             if vitals_symptoms:
                 all_symptoms.extend(vitals_symptoms)
             
-            # 即使沒有原始文字，只要有生命徵象異常也要進行檢索
+            # 沒有文字也可以靠生命徵象做檢索（例如現場只先量到 vitals）
             if all_symptoms:
                 query = f"症狀：{', '.join(all_symptoms)}"
                 if vitals_symptoms:
@@ -117,14 +119,14 @@ class RAGPipeline:
                     # 只檢索少量相關資料，避免干擾
                     retrieved_docs = self.retrieve_relevant_knowledge(query, None, 1)  # 只檢索1個結果
                 else:
-                    # 沒有生命徵象時，檢查是否需要使用 RAG
+                    # 沒有 vitals 干擾時，先做一次低成本檢索
                     query = f"症狀：{original_text}"
                     retrieved_docs = self.retrieve_relevant_knowledge(query, None, 1)  # 減少到1個結果
                     
                     # 檢查檢索結果是否與輸入相關
                     if retrieved_docs:
                         context = self.format_context_for_llm(retrieved_docs)
-                        # 簡單的相關性檢查：如果檢索結果中沒有包含輸入文字的關鍵詞，就不使用 RAG
+                        # 簡單防呆：避免抓到完全不相干的知識把模型帶偏
                         input_keywords = set(original_text.replace('我', '').replace('覺得', '').replace('很', '').replace('難受', '').split())
                         context_lower = context.lower()
                         relevant = len(input_keywords) > 0 and any(keyword in context_lower for keyword in input_keywords if len(keyword) > 1)
@@ -150,7 +152,7 @@ class RAGPipeline:
 生命徵象異常是客觀測量結果，比檢索到的文獻更可靠。
 """
                 
-                # 如果沒有檢索結果，提供更簡單的指令
+                # 沒撈到可靠 context，就退回較保守的 prompt
                 if not retrieved_docs:
                     enhanced_prompt = f"""
 你是一位急診分級護理師助手。請根據以下資訊整理症狀關鍵詞：
@@ -185,6 +187,7 @@ class RAGPipeline:
 {text_section}{vitals_summary}
 
 {priority_instruction}
+不要預設最嚴重情況；只能依主訴與上述摘錄整理，資訊不足時勿添加未提及之危急症狀。
 請參考上述醫學知識，整理出主要症狀關鍵詞。
 請特別注意：
 - 體溫 >= 38°C 要識別為「發燒」
@@ -258,35 +261,10 @@ class RAGPipeline:
             
             # 如果是純生命徵象輸入（沒有文字），使用簡化的推薦邏輯
             if not text and vitals_symptoms:
-                # 建立生命徵象症狀到症狀庫的映射
-                vitals_to_symptoms_mapping = {
-                    "發燒": ["發燒", "體溫過高", "發熱"],
-                    "高燒": ["高燒", "體溫過高", "發熱", "發燒"],
-                    "超高熱": ["超高熱", "體溫過高", "發熱", "高燒", "發燒"],
-                    "輕度高血壓": ["輕度高血壓", "高血壓", "血壓過高"],
-                    "重度高血壓": ["重度高血壓", "高血壓", "血壓過高", "嚴重高血壓"],
-                    "嚴重高血壓": ["嚴重高血壓", "高血壓", "血壓過高", "重度高血壓"],
-                    "低血壓": ["低血壓", "血壓過低"],
-                    "心跳過速": ["心跳過速", "心悸", "心跳快"],
-                    "心跳過緩": ["心跳過緩", "心跳慢"],
-                    "輕微低血氧": ["輕微低血氧", "低血氧", "血氧過低"],
-                    "嚴重低血氧": ["嚴重低血氧", "低血氧", "血氧過低", "缺氧"],
-                    "呼吸急促": ["呼吸急促", "呼吸困難", "呼吸快"],
-                    "呼吸過緩": ["呼吸過緩", "呼吸慢"],
-                    "高血糖": ["高血糖", "血糖過高"],
-                    "低血糖": ["低血糖", "血糖過低", "血糖偏低"]
-                }
-                
-                # 找到匹配的症狀
-                matched_symptoms = []
-                for vital_symptom in vitals_symptoms:
-                    possible_symptoms = vitals_to_symptoms_mapping.get(vital_symptom, [vital_symptom])
-                    for symptom in possible_symptoms:
-                        if symptom in symptom_candidates:
-                            matched_symptoms.append(symptom)
-                            break
-                
-                # 如果找到匹配的症狀，直接返回
+                matched_symptoms = match_vital_labels_to_symptom_candidates(
+                    vitals_symptoms, symptom_candidates
+                )
+                # 純 vitals 情境下，直接走 deterministic mapping，少繞一層 LLM
                 if matched_symptoms:
                     return f"""
 請從以下症狀中選擇最相關的：
@@ -312,7 +290,7 @@ class RAGPipeline:
                 if vitals_symptoms:
                     query += f" 生命徵象：{', '.join(vitals_symptoms)}"
                 
-                retrieved_docs = self.retrieve_relevant_knowledge(query, 'symptoms', 3)
+                retrieved_docs = self.retrieve_relevant_knowledge(query, None, 3)
                 
                 # 格式化上下文
                 context = self.format_context_for_llm(retrieved_docs)
@@ -367,37 +345,49 @@ class RAGPipeline:
 範例：["頭痛", "胸痛", "發燒"]
 """
     
-    def enhance_triage_recommendation(self, symptoms: List[str], vitals: Dict[str, str] = None) -> str:
-        """使用 RAG 增強檢傷分級建議"""
-        # 檢索檢傷分級指引
-        query = f"症狀：{', '.join(symptoms)}"
-        retrieved_docs = self.retrieve_relevant_knowledge(query, 'triage_level', 3)
-        
-        # 格式化上下文
+    def enhance_triage_recommendation(
+        self,
+        symptoms: List[str],
+        vitals: Dict[str, Any] = None,
+        n_docs: int = 8,
+        pre_retrieved: Optional[List[Dict[str, Any]]] = None,
+    ) -> str:
+        """
+        產生給 LLM 的 prompt：僅症狀整理與 TTAS 規則引用。
+        檢傷級別須由規則層決定，不得請模型直接輸出分級。
+        """
+        if pre_retrieved is not None:
+            retrieved_docs = pre_retrieved
+        else:
+            query = f"症狀：{', '.join(symptoms)}"
+            retrieved_docs = self.retrieve_relevant_knowledge(query, None, n_docs)
         context = self.format_context_for_llm(retrieved_docs)
-        
-        # 建構增強的 prompt
+
         vitals_info = ""
         if vitals:
-            vitals_info = f"\n生命徵象：{json.dumps(vitals, ensure_ascii=False)}"
-        
-        enhanced_prompt = f"""
-你是一位急診分級專家。請根據以下資訊提供檢傷分級建議：
+            vitals_info = f"\n生命徵象（僅供整理，勿過度推論）：{json.dumps(vitals, ensure_ascii=False)}"
 
+        return f"""你是急診檢傷輔助系統（TTAS）。請嚴格遵守：
+- 不要預設最嚴重情況；只能依「患者資料」與下方「TTAS 規則摘錄」整理與引用。
+- 只能根據提供資料與 TTAS 規則判斷；資訊不足時措辭保守，勿臆測危急狀況。
+- 資訊不足時應維持較低嚴重度之描述，不可自行升級為瀕死或需立即急救之情境。
+- **禁止輸出檢傷級別**：不可寫「第幾級」、Level、或單獨用 1–5 數字表示分級結論。
+
+患者症狀關鍵詞：{", ".join(symptoms)}
+{vitals_info}
+
+TTAS 規則摘錄（向量檢索自官方準則表，非完整全文）：
 {context}
 
-症狀：{', '.join(symptoms)}{vitals_info}
-
-請參考上述檢傷指引，建議最適合的檢傷分級（1-5級）並說明理由。
-格式：
-分級：[數字]
-理由：[說明]
+請依下列子標題輸出（繁體中文）：
+【症狀整理】
+【TTAS 規則引用】（逐條摘錄與患者可能相關之準則文字，並註明摘錄來自檢索片段）
+（勿包含任何檢傷分級結論或數字分級）
 """
-        return enhanced_prompt
     
     def search_emergency_protocol(self, condition: str) -> str:
-        """搜尋急診處理協議"""
-        retrieved_docs = self.retrieve_relevant_knowledge(condition, 'emergency_protocol', 1)
+        """搜尋急診處理協議（知識庫僅 TTAS CSV 時，改為語意檢索最接近之準則列）"""
+        retrieved_docs = self.retrieve_relevant_knowledge(condition, None, 1)
         
         if retrieved_docs:
             protocol = retrieved_docs[0].get('content', '')
@@ -407,3 +397,137 @@ class RAGPipeline:
 
 # 初始化 RAG 管線
 rag_pipeline = RAGPipeline()
+
+# --- 檢傷規則層（與 triage-advice 併用；最終級別不由 LLM 單獨決定）---
+
+CRITICAL_SYMPTOM_PHRASES = (
+    "心肺停止",
+    "無呼吸",
+    "沒有呼吸",
+    "無脈搏",
+    "無脈",
+    "瀕死",
+    "昏迷",
+    "沒意識",
+    "意識喪失",
+    "大量出血",
+    "止不住的血",
+    "休克",
+    "喘不過氣",
+    "窒息",
+    "紫紺",
+    "抽搐不止",
+    "OHCA",
+    "到院前死亡",
+)
+
+
+def _safe_float(v: Any) -> Optional[float]:
+    if v is None:
+        return None
+    if isinstance(v, str) and not v.strip():
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_int(v: Any) -> Optional[int]:
+    if v is None:
+        return None
+    try:
+        return int(float(str(v).strip()))
+    except (TypeError, ValueError):
+        return None
+
+
+def has_explicit_critical_vitals(vitals: Optional[Dict[str, Any]]) -> bool:
+    if not vitals:
+        return False
+    spo2 = _safe_float(vitals.get("spo2"))
+    if spo2 is not None and spo2 < 90:
+        return True
+    sbp = _safe_float(vitals.get("systolicBP"))
+    if sbp is not None and sbp < 80:
+        return True
+    try:
+        if all(k in vitals for k in ("gcsEye", "gcsVerbal", "gcsMotor")):
+            gcs = int(vitals["gcsEye"]) + int(vitals["gcsVerbal"]) + int(vitals["gcsMotor"])
+            if gcs <= 8:
+                return True
+    except (TypeError, ValueError, KeyError):
+        pass
+    return False
+
+
+def has_explicit_critical_symptoms(symptoms: List[str]) -> bool:
+    blob = " ".join(s.strip() for s in symptoms if isinstance(s, str) and s.strip())
+    if not blob:
+        return False
+    return any(phrase in blob for phrase in CRITICAL_SYMPTOM_PHRASES)
+
+
+def _symptom_overlap(symptoms: List[str], doc_symptom: str) -> bool:
+    if not doc_symptom or not symptoms:
+        return False
+    d = str(doc_symptom).strip()
+    for s in symptoms:
+        t = str(s).strip()
+        if not t:
+            continue
+        if t in d or d in t:
+            return True
+    return False
+
+
+def compute_final_ttas_degree(
+    symptoms: List[str],
+    vitals: Optional[Dict[str, Any]],
+    retrieved: List[Dict[str, Any]],
+) -> Tuple[int, str]:
+    vitals = vitals or {}
+    critical_ok = has_explicit_critical_vitals(vitals) or has_explicit_critical_symptoms(
+        symptoms
+    )
+
+    parsed_rows: List[Tuple[int, str, str, bool]] = []
+    for r in retrieved:
+        meta = r.get("metadata") or {}
+        deg = _safe_int(meta.get("ttas_level"))
+        if deg is None or deg < 1 or deg > 5:
+            continue
+        judge = str(meta.get("judgment") or "")
+        doc_sym = str(meta.get("symptom") or "")
+        overlap = _symptom_overlap(symptoms, doc_sym)
+        parsed_rows.append((deg, judge, doc_sym, overlap))
+
+    if not parsed_rows:
+        return 4, "檢索無有效 TTAS 規則列，依保守預設為第四級（請補齊主訴與徵象）。"
+
+    overlapped = [x for x in parsed_rows if x[3]]
+    if overlapped:
+        candidate = min(x[0] for x in overlapped)
+        basis = "主訴與 TTAS 主訴欄位有重疊之規則中，取最嚴重符合級別。"
+    else:
+        candidate = max(x[0] for x in parsed_rows)
+        basis = "檢索規則與主訴關聯性低，取檢索結果中最輕級別以避免過度升級。"
+
+    if candidate == 1 and not critical_ok:
+        return (
+            2,
+            basis
+            + " 未偵測到明確危急徵象（生命徵象或主訴關鍵字），依政策不逕予第一級，改為第二級。",
+        )
+
+    return candidate, basis
+
+
+def format_advice_with_rule_layer(
+    llm_text: str, final_degree: int, rule_rationale: str
+) -> str:
+    return (
+        f"{llm_text.strip()}\n\n"
+        f"【規則層決定之建議檢傷級別】第 {final_degree} 級\n"
+        f"【規則說明】{rule_rationale}"
+    )

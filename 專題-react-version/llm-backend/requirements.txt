@@ -8,5 +8,7 @@ numpy
 python-dotenv
 requests
 mysql-connector-python
-PyPDF2
 pandas
+langchain>=0.3.0
+langchain-community>=0.3.0
+langchain-chroma>=0.1.0
