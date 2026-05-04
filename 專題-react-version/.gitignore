@@ -31,3 +31,8 @@ llm-backend/chroma_db/
 .env
 __pycache__/
 *.pyc
+
+# ChromaDB and Database files
+**/chroma_db/
+*.sqlite3
+*.pickle

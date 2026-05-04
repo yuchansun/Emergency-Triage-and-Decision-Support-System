@@ -37,6 +37,10 @@ export default function AddPatient({
   const [gender, setGender] = useState<"男" | "女" | "不詳" | "">("");
   const [icCard, setIcCard] = useState(false);
   const [existingPatientId, setExistingPatientId] = useState<string | null>(null);
+  const [directErModal, setDirectErModal] = useState<{
+    patientId: string;
+    wristbandSuffix: string;
+  } | null>(null);
 
   // 1. 自動搜尋現有病人 (手打身分證後觸發)
   const checkPatient = async (id: string) => {
@@ -97,8 +101,7 @@ export default function AddPatient({
     setExistingPatientId(null);
   };
 
-  // 3. 確認掛號
-const handleConfirm = async () => {
+  const registerPatient = async (directToER: boolean) => {
     try {
       // Step A: 儲存病人
       const pResponse = await fetch(`${API_BASE}/patients/save`, {
@@ -120,26 +123,46 @@ const handleConfirm = async () => {
       const tResponse = await fetch(`${API_BASE}/triagesave`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          patientId: pResult.patient_id, 
-          nurseId: nurseId || "1",
-          vitals: {}, 
-          result: {}, 
-          bed: "",
-          patientSource: "自行就醫",
-          majorIncident: "否",
-          visitTime: new Date().toISOString()
-        }),
+        body: JSON.stringify(
+          directToER
+            ? {
+                patientId: pResult.patient_id,
+                nurseId: nurseId || "1",
+                vitals: {},
+                result: { selectedLevel: 1 },
+                bed: "",
+                patientSource: "直入急救室",
+                majorIncident: "否",
+                visitTime: new Date().toISOString(),
+                directToER: true,
+              }
+            : {
+                patientId: pResult.patient_id,
+                nurseId: nurseId || "1",
+                vitals: {},
+                result: {},
+                bed: "",
+                patientSource: "自行就醫",
+                majorIncident: "否",
+                visitTime: new Date().toISOString(),
+                directToER: false,
+              }
+        ),
       });
       const tResult = await tResponse.json();
 
       if (tResult.success) {
-        // --- 重點修改區域 ---
-        // 使用 pResult.message (後端回傳的初診/回診訊息) 加上 tResult.triageId
+        if (directToER) {
+          const wristbandSuffix = String(pResult.patient_id).slice(-5);
+          setDirectErModal({
+            patientId: String(pResult.patient_id),
+            wristbandSuffix,
+          });
+          return;
+        }
+
         const statusMsg = pResult.is_returning ? "【回診】" : "【初診】";
         alert(`掛號成功！${statusMsg}\n編號: ${tResult.triageId}`);
-        // ------------------
-
         onNext({
           name,
           idNumber,
@@ -156,6 +179,15 @@ const handleConfirm = async () => {
       console.error(error);
       alert("連線失敗，請檢查後端 Terminal 報錯訊息");
     }
+  };
+
+  // 3. 確認掛號
+  const handleConfirm = async () => {
+    await registerPatient(false);
+  };
+
+  const handleDirectToER = async () => {
+    await registerPatient(true);
   };
 
   return (
@@ -205,11 +237,53 @@ const handleConfirm = async () => {
           <button onClick={handleClear} className="flex-1 bg-slate-100 py-4 rounded-2xl hover:bg-slate-200 transition font-bold text-slate-500">
             清除
           </button>
-          <button onClick={handleConfirm} className="flex-[2] bg-emerald-500 text-white py-4 rounded-2xl hover:bg-emerald-600 shadow-lg transition-all font-bold text-xl active:scale-95">
+          <button onClick={handleConfirm} className="flex-1 bg-emerald-500 text-white py-4 rounded-2xl hover:bg-emerald-600 shadow-lg transition-all font-bold text-xl active:scale-95">
             確認掛號
           </button>
         </div>
+        <div className="mt-4">
+          <button onClick={handleDirectToER} className="w-full bg-red-600 text-white py-4 rounded-2xl hover:bg-red-700 shadow-lg transition-all font-bold text-xl active:scale-95">
+            直入急救室
+          </button>
+        </div>
       </div>
+
+      {directErModal && (
+        <div className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-gray-200 p-6">
+            <h2 className="text-xl font-bold text-slate-800">✅ 直入急救室 - 掛號成功</h2>
+            <div className="mt-3 border-t border-gray-200 pt-4 space-y-4">
+              <div>
+                <div className="text-sm text-slate-500">病歷號</div>
+                <div className="mt-1 text-3xl font-extrabold text-slate-800 tracking-wide">
+                  {directErModal.patientId}
+                </div>
+              </div>
+              <div>
+                <div className="text-sm text-slate-500">手環號碼（後五碼）</div>
+                <div className="mt-1 text-4xl font-extrabold text-red-600 tracking-wider">
+                  {directErModal.wristbandSuffix}
+                </div>
+              </div>
+              <div className="text-sm text-amber-700 leading-relaxed">
+                ⚠ 請護理師將手環號碼
+                <br />
+                記錄於病患手環以利辨識
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setDirectErModal(null);
+                  handleClear();
+                }}
+                className="w-full bg-emerald-600 text-white py-3 rounded-xl hover:bg-emerald-700 transition font-bold"
+              >
+                確認
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <button
         type="button"
