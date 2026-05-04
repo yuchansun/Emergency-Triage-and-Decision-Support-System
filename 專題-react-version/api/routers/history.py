@@ -82,7 +82,7 @@ def build_where_clause(
         params.append(birth_to)
 
     if triage_level:
-        clauses.append("tragg.triage_level = %s")
+        clauses.append("COALESCE(tragg.triage_level, t.final_level) = %s")
         params.append(triage_level)
 
     if not clauses:
@@ -145,7 +145,7 @@ async def get_history_records(
                     p.gender,
                     p.birth_date,
                     p.id_number,
-                    tragg.triage_level AS triage_level,
+                    COALESCE(tragg.triage_level, t.final_level) AS triage_level,
                     COALESCE(tragg.chief_complaint, '') AS chief_complaint_note,
                     COALESCE(e.tocc_symptoms, '') AS final_symptoms_raw,
                     COALESCE(e.visit_time, t.created_at) AS arrival_at,

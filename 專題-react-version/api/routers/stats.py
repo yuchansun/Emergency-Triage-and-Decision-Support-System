@@ -145,3 +145,71 @@ async def get_stats_overview(range: str = Query("month", pattern="^(today|week|m
     finally:
         if conn:
             conn.close()
+
+
+@router.get("/hourly")
+async def get_stats_hourly_today():
+    """今日各 2 小時時段 × 檢傷級數人數（供儀表板堆疊圖／KPI 使用）。"""
+    conn = None
+    try:
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    COALESCE(e.visit_time, t.created_at) AS arrival_at,
+                    tragg.triage_level
+                FROM triage_record t
+                LEFT JOIN encounter_extra e ON e.triage_id = t.triage_id
+                LEFT JOIN (
+                    SELECT
+                        r.triage_id,
+                        MIN(h.ttas_degree) AS triage_level
+                    FROM triage_result r
+                    LEFT JOIN triage_hierarchy h ON h.rule_code = r.rule_code
+                    GROUP BY r.triage_id
+                ) tragg ON tragg.triage_id = t.triage_id
+                """
+            )
+            rows = cur.fetchall() or []
+
+        today = date.today()
+        slot_labels = [f"{h:02d}:00" for h in range(0, 24, 2)]
+        hourly = {label: {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0, "none": 0} for label in slot_labels}
+        today_level_totals = {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0, "none": 0}
+
+        for row in rows:
+            r = row if isinstance(row, dict) else {}
+            arrival_at = r.get("arrival_at")
+            if isinstance(arrival_at, str):
+                try:
+                    arrival_at = datetime.fromisoformat(arrival_at.replace("T", " ").replace("Z", ""))
+                except ValueError:
+                    continue
+            if not isinstance(arrival_at, datetime):
+                continue
+            if arrival_at.date() != today:
+                continue
+
+            lvl = normalize_triage_level(r.get("triage_level"))
+            key = str(lvl) if lvl != "none" else "none"
+            today_level_totals[key] = today_level_totals.get(key, 0) + 1
+
+            hour = arrival_at.hour
+            slot_hour = (hour // 2) * 2
+            slot_label = f"{slot_hour:02d}:00"
+            if slot_label in hourly:
+                hourly[slot_label][key] = hourly[slot_label].get(key, 0) + 1
+
+        return {
+            "success": True,
+            "data": {
+                "hourly": [{"slot": k, **v} for k, v in hourly.items()],
+                "todayLevelTotals": today_level_totals,
+            },
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"讀取時段統計失敗: {str(e)}")
+    finally:
+        if conn:
+            conn.close()

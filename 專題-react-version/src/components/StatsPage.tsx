@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import StatsHourlySection from "./StatsHourlySection";
 
 type RangeKey = "today" | "week" | "month";
 
@@ -45,6 +46,7 @@ const tabs: { key: RangeKey; label: string }[] = [
 //StatsPage組件負責顯示統計分析頁面，包含從API獲取資料、處理資料格式以及渲染統計圖表和數據
 const StatsPage: React.FC = () => {
   const [range, setRange] = useState<RangeKey>("month");
+  const [viewMode, setViewMode] = useState<"overview" | "hourly">("overview");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [statsRaw, setStatsRaw] = useState<NonNullable<StatsApiResponse["data"]>>({
@@ -58,6 +60,7 @@ const StatsPage: React.FC = () => {
   });
 
   useEffect(() => {
+    if (viewMode !== "overview") return;
     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
     const fetchStats = async () => {
@@ -79,7 +82,7 @@ const StatsPage: React.FC = () => {
     };
 
     void fetchStats();
-  }, [range]);
+  }, [range, viewMode]);
 
   //將原始API資料轉換為適合前端顯示的格式
   const stats = useMemo(() => {
@@ -123,26 +126,42 @@ const StatsPage: React.FC = () => {
             <button
               key={tab.key}
               type="button"
-              onClick={() => setRange(tab.key)}
+              onClick={() => {
+                setViewMode("overview");
+                setRange(tab.key);
+              }}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
-                range === tab.key ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-100"
+                viewMode === "overview" && range === tab.key
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-600 hover:bg-gray-100"
               }`}
             >
               {tab.label}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setViewMode("hourly")}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+              viewMode === "hourly" ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            時段統計
+          </button>
         </div>
       </div>
 
-      <div className="mb-4 h-6 text-sm" aria-live="polite">
-        {loading ? (
-          <div className="text-gray-500">統計資料讀取中...</div>
-        ) : errorMsg ? (
-          <div className="text-red-600">{errorMsg}</div>
-        ) : (
-          <div className="invisible">.</div>
-        )}
-      </div>
+      {viewMode === "overview" && (
+        <div className="mb-4 h-6 text-sm" aria-live="polite">
+          {loading ? (
+            <div className="text-gray-500">統計資料讀取中...</div>
+          ) : errorMsg ? (
+            <div className="text-red-600">{errorMsg}</div>
+          ) : (
+            <div className="invisible">.</div>
+          )}
+        </div>
+      )}
 
       {/* <div className="grid grid-cols-2 gap-4 mb-6">
         <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
@@ -170,111 +189,115 @@ const StatsPage: React.FC = () => {
         </div>
       </div> */}
 
-      <div className="grid grid-cols-2 gap-4 items-start">
-        <div className="space-y-4 min-w-0">
-          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
-            <h2 className="text-lg font-bold text-gray-800 mb-4">主要統計</h2>
+      {viewMode === "hourly" ? (
+        <StatsHourlySection />
+      ) : (
+        <div className="grid grid-cols-2 gap-4 items-start">
+          <div className="space-y-4 min-w-0">
+            <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+              <h2 className="text-lg font-bold text-gray-800 mb-4">主要統計</h2>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <div className="text-sm text-gray-500">本區間筆數</div>
-                <div className="mt-1 text-2xl font-bold text-gray-800">{stats.total}</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="text-sm text-gray-500">本區間筆數</div>
+                  <div className="mt-1 text-2xl font-bold text-gray-800">{stats.total}</div>
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="text-sm text-gray-500">本區間人數</div>
+                  <div className="mt-1 text-2xl font-bold text-gray-800">{stats.male}</div>
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="text-sm text-gray-500">平均年齡</div>
+                  <div className="mt-1 text-2xl font-bold text-gray-800">{stats.avgAge} 歲</div>
+                </div>
               </div>
+            </div>
 
+            <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+              <h3 className="text-base font-bold text-gray-800 mb-3">性別分布</h3>
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <div className="text-sm text-gray-500">本區間人數</div>
-                <div className="mt-1 text-2xl font-bold text-gray-800">{stats.male}</div>
-              </div>
+                <div className="flex items-center gap-6">
+                  <div className="relative w-32 h-32 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden">
+                    <div
+                      className="absolute inset-0 rounded-full"
+                      style={{
+                        background: `conic-gradient(#3b82f6 0% ${
+                          stats.total ? (stats.male / stats.total) * 100 : 0
+                        }%, #ec4899 ${stats.total ? (stats.male / stats.total) * 100 : 0}% 100%)`,
+                      }}
+                    />
+                    <div className="relative z-10 bg-white w-20 h-20 rounded-full flex flex-col items-center justify-center">
+                      <div className="text-base font-bold text-gray-800">{stats.total}</div>
+                      <div className="text-xs text-gray-500">總筆數</div>
+                    </div>
+                  </div>
 
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <div className="text-sm text-gray-500">平均年齡</div>
-                <div className="mt-1 text-2xl font-bold text-gray-800">{stats.avgAge} 歲</div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="w-3 h-3 rounded-full bg-blue-500" />
+                      <span className="text-gray-700">男</span>
+                      <span className="text-gray-500">{stats.male} 筆</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="w-3 h-3 rounded-full bg-pink-500" />
+                      <span className="text-gray-700">女</span>
+                      <span className="text-gray-500">{stats.female} 筆</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
-            <h3 className="text-base font-bold text-gray-800 mb-3">性別分布</h3>
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-              <div className="flex items-center gap-6">
-                <div className="relative w-32 h-32 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden">
-                  <div
-                    className="absolute inset-0 rounded-full"
-                    style={{
-                      background: `conic-gradient(#3b82f6 0% ${
-                        stats.total ? (stats.male / stats.total) * 100 : 0
-                      }%, #ec4899 ${stats.total ? (stats.male / stats.total) * 100 : 0}% 100%)`,
-                    }}
-                  />
-                  <div className="relative z-10 bg-white w-20 h-20 rounded-full flex flex-col items-center justify-center">
-                    <div className="text-base font-bold text-gray-800">{stats.total}</div>
-                    <div className="text-xs text-gray-500">總筆數</div>
-                  </div>
-                </div>
+          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm min-w-0">
+            <h2 className="text-lg font-bold text-gray-800 mb-4">分布統計</h2>
 
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="w-3 h-3 rounded-full bg-blue-500" />
-                    <span className="text-gray-700">男</span>
-                    <span className="text-gray-500">{stats.male} 筆</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="w-3 h-3 rounded-full bg-pink-500" />
-                    <span className="text-gray-700">女</span>
-                    <span className="text-gray-500">{stats.female} 筆</span>
-                  </div>
+            <div className="space-y-5">
+              <div>
+                <h3 className="text-base font-bold text-gray-800 mb-3">各級數分布</h3>
+                <div className="space-y-3">
+                  {stats.levelCounts.map((item) => (
+                    <div key={item.label}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-700">{item.label}</span>
+                        <span className="text-gray-500">{item.count} 筆</span>
+                      </div>
+                      <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${item.color}`}
+                          style={{ width: `${stats.total ? (item.count / stats.total) * 100 : 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-base font-bold text-gray-800 mb-3">各年齡分布</h3>
+                <div className="space-y-3">
+                  {stats.ageCounts.map((item) => (
+                    <div key={item.label}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-700">{item.label} 歲</span>
+                        <span className="text-gray-500">{item.count} 筆</span>
+                      </div>
+                      <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${item.color}`}
+                          style={{ width: `${stats.total ? (item.count / stats.total) * 100 : 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           </div>
         </div>
-
-        <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm min-w-0">
-          <h2 className="text-lg font-bold text-gray-800 mb-4">分布統計</h2>
-
-          <div className="space-y-5">
-            <div>
-              <h3 className="text-base font-bold text-gray-800 mb-3">各級數分布</h3>
-              <div className="space-y-3">
-                {stats.levelCounts.map((item) => (
-                  <div key={item.label}>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-gray-700">{item.label}</span>
-                      <span className="text-gray-500">{item.count} 筆</span>
-                    </div>
-                    <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${item.color}`}
-                        style={{ width: `${stats.total ? (item.count / stats.total) * 100 : 0}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-base font-bold text-gray-800 mb-3">各年齡分布</h3>
-              <div className="space-y-3">
-                {stats.ageCounts.map((item) => (
-                  <div key={item.label}>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-gray-700">{item.label} 歲</span>
-                      <span className="text-gray-500">{item.count} 筆</span>
-                    </div>
-                    <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${item.color}`}
-                        style={{ width: `${stats.total ? (item.count / stats.total) * 100 : 0}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

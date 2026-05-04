@@ -8,6 +8,8 @@ interface SymptomSelectionProps {
 }
 
 const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, setSelectedSymptoms, activeTab, age }) => {
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+
   interface TriageRow {
     category: string;
     system_code: string;
@@ -58,7 +60,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
 
     const loadFromDb = async () => {
       try {
-        const res = await fetch('http://localhost:8000/triage_hierarchy');
+        const res = await fetch(`${API_BASE_URL}/triage_hierarchy`);
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
@@ -83,7 +85,7 @@ const SymptomSelection: React.FC<SymptomSelectionProps> = ({ selectedSymptoms, s
 
     const loadCcFromDb = async () => {
       try {
-        const res = await fetch('http://localhost:8000/cc_with_counts');
+        const res = await fetch(`${API_BASE_URL}/cc_with_counts`);
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
@@ -309,17 +311,17 @@ const filteredSearchResults = useMemo(() => {
         <h3 className="text-2xl font-bold flex-1">選擇症狀</h3>
         <div className="flex items-center gap-3 ml-auto h-full">
           {activeTab === 't' && (
-            <div className="bg-primary/5 p-2.5 rounded-lg border border-primary/20 flex items-center gap-2 max-w-[40rem]">
-              <h5 className="font-semibold text-sm flex items-center gap-1 whitespace-nowrap">
+            <div className="bg-primary/5 p-2.5 rounded-lg border border-primary/20 flex min-w-0 flex-wrap items-center gap-2 max-w-[40rem]">
+              <h5 className="font-semibold text-base flex items-center gap-1 whitespace-nowrap">
                 <span className="material-symbols-outlined text-primary text-base">emergency</span>
                 <span>常見外傷</span>
               </h5>
-              <div className="flex flex-wrap gap-2 justify-end">
+              <div className="flex min-w-0 flex-wrap gap-2 justify-end">
                 {commonTrauma.map(item => (
                   <button
                     key={item.symptom_code}
                     onClick={() => toggleSelect(`t:common:${item.symptom_name}`)}
-                    className={`symptom-option-btn px-3 py-1.5 rounded-full text-xs bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${(selectedSymptoms.has(`t:common:${item.symptom_name}`) || isSymptomSelected(item.symptom_name)) ? 'selected' : ''}`}
+                    className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-sm bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${(selectedSymptoms.has(`t:common:${item.symptom_name}`) || isSymptomSelected(item.symptom_name)) ? 'selected' : ''}`}
                   >
                     {item.symptom_name}
                     
@@ -329,18 +331,18 @@ const filteredSearchResults = useMemo(() => {
             </div>
           )}
           {activeTab === 'a' && (
-            <div className="bg-primary/5 p-2.5 rounded-lg border border-primary/20 flex items-center gap-2 max-w-[40rem]">
+            <div className="bg-primary/5 p-2.5 rounded-lg border border-primary/20 flex min-w-0 flex-wrap items-center gap-2 max-w-[40rem]">
               <h5 className="font-semibold text-sm mb-0 flex items-center gap-1 whitespace-nowrap">
                 <span className="material-symbols-outlined text-primary text-base">emergency</span>
                 <span>常見非外傷</span>
               </h5>
               <div className="flex flex-col gap-1 flex-1">
-                <div className="flex flex-wrap gap-2 justify-end">
+                <div className="flex min-w-0 flex-wrap gap-2 justify-end">
                   {commonNonTrauma.slice(0, 3).map(item => (
                     <button
                       key={item.symptom_code}
                       onClick={() => toggleSelect(`a:common:${item.symptom_name}`)}
-                      className={`symptom-option-btn px-3 py-1.5 rounded-full text-xs bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${(selectedSymptoms.has(`a:common:${item.symptom_name}`) || isSymptomSelected(item.symptom_name)) ? 'selected' : ''}`}
+                      className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-sm bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${(selectedSymptoms.has(`a:common:${item.symptom_name}`) || isSymptomSelected(item.symptom_name)) ? 'selected' : ''}`}
                     >
                       {item.symptom_name}
                       
@@ -348,12 +350,12 @@ const filteredSearchResults = useMemo(() => {
                   ))}
                 </div>
                 {commonNonTrauma.length > 3 && (
-                  <div className="flex flex-wrap gap-2 justify-end">
+                  <div className="flex min-w-0 flex-wrap gap-2 justify-end">
                     {commonNonTrauma.slice(3).map(item => (
                       <button
                         key={item.symptom_code}
                         onClick={() => toggleSelect(`a:common:${item.symptom_name}`)}
-                        className={`symptom-option-btn px-3 py-1.5 rounded-full text-xs bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${(selectedSymptoms.has(`a:common:${item.symptom_name}`) || isSymptomSelected(item.symptom_name)) ? 'selected' : ''}`}
+                        className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-sm bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors ${(selectedSymptoms.has(`a:common:${item.symptom_name}`) || isSymptomSelected(item.symptom_name)) ? 'selected' : ''}`}
                       >
                         {item.symptom_name}
                         
@@ -396,13 +398,13 @@ const filteredSearchResults = useMemo(() => {
         <div className="h-[1px] flex-1 bg-primary/10"></div>
       </div>
       
-      <div className="flex flex-wrap gap-2">
+      <div className="flex min-w-0 flex-wrap gap-2">
         {filteredSearchResults.length > 0 ? (
           filteredSearchResults.map(item => (
             <button
               key={`${item.system_code}-${item.symptom_code}`}
               onClick={() => toggleSelect(`${activeTab}:search:${item.symptom_name}`)}
-              className={`symptom-option-btn px-3 py-1.5 rounded-full text-xs bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors 
+              className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-sm bg-white dark:bg-background-dark border border-primary/30 text-primary hover:bg-primary/10 transition-colors 
                 ${isSymptomSelected(item.symptom_name) ? 'selected' : ''}`}
             >
               {item.symptom_name}
@@ -443,16 +445,16 @@ const filteredSearchResults = useMemo(() => {
                 <div className="flex-1 flex flex-col">
                   <div id="t-head-trauma-options" className={`${tBodies.has('head') ? '' : 'hidden'} space-y-6`}>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">psychology</span>
                         <span>頭部</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('外傷', '頭部外傷').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`t:head:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:head:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:head:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -460,16 +462,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">face</span>
                         <span>顏面部</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('外傷', '顏面部外傷').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`t:face:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:face:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:face:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -477,16 +479,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">visibility</span>
                         <span>眼睛</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('外傷', '眼睛外傷').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`t:eye:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:eye:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:eye:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -494,16 +496,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">face_retouching_natural</span>
                         <span>鼻子</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('外傷', '鼻子外傷').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`t:nose:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:nose:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:nose:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -511,16 +513,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">hearing</span>
                         <span>耳朵</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('外傷', '耳朵外傷').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`t:ear:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:ear:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:ear:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -528,16 +530,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">accessibility_new</span>
                         <span>頸部</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('外傷', '頸部外傷').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`t:neck:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:neck:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:neck:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -547,16 +549,16 @@ const filteredSearchResults = useMemo(() => {
                   </div>
                   <div id="t-upperbody-trauma-options" className={`${tBodies.has('upper') ? '' : 'hidden'} space-y-6`}>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">favorite</span>
                         <span>胸部</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('外傷', '胸部外傷').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`t:chest:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:chest:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:chest:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -564,16 +566,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">emergency</span>
                         <span>腹部(含骨盆)</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('外傷', '腹部(含骨盆)外傷').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`t:abdomen:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:abdomen:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:abdomen:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -581,16 +583,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">back_hand</span>
                         <span>上肢</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('外傷', '肢體外傷').filter(name => name.includes('上肢')).map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`t:upperlimb:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:upperlimb:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:upperlimb:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -598,16 +600,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">airline_seat_recline_normal</span>
                         <span>腰背部</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('外傷', '腰、背部外傷').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`t:back:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:back:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:back:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -617,16 +619,16 @@ const filteredSearchResults = useMemo(() => {
                   </div>
                   <div id="t-lowerbody-trauma-options" className={`${tBodies.has('lower') ? '' : 'hidden'} space-y-6`}>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">wc</span>
                         <span>會陰部及生殖器官</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('外傷', '會陰部及生殖器官外傷').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`t:perineum:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:perineum:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:perineum:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -634,16 +636,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">directions_walk</span>
                         <span>下肢</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('外傷', '肢體外傷').filter(name => name.includes('下肢')).map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`t:lowerlimb:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:lowerlimb:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:lowerlimb:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -651,16 +653,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items_center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">local_fire_department</span>
                         <span>皮膚</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('外傷', '皮膚外傷').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`t:skin:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:skin:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:skin:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -668,16 +670,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">report</span>
                         <span>一般和其他傷害</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('外傷', '一般和其他傷害').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`t:other:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:other:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:other:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -685,11 +687,11 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">eco</span>
                         <span>環境</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('外傷', '環境').map(label => {
                           const iconMap: Record<string, string> = {
                             '昆蟲螫傷': 'bug_report',
@@ -709,7 +711,7 @@ const filteredSearchResults = useMemo(() => {
                             <button
                               key={label}
                               onClick={() => toggleSelect(`t:env:${label}`)}
-                              className={`symptom-option-btn flex items-center justify-start gap-2 px-4 py-2 rounded-lg text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:env:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                              className={`symptom-option-btn flex max-w-full min-w-0 items-center justify-start gap-2 px-[18px] py-2.5 rounded-lg text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`t:env:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                             >
                               <span className="material-symbols-outlined">{icon}</span>
                               <span className="symptom-text">{label}</span>
@@ -742,16 +744,16 @@ const filteredSearchResults = useMemo(() => {
                 <div className="flex-1">
                   <div id="a-head-options" className={`${aBodies.has('head') ? '' : 'hidden'} space-y-6`}>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">neurology</span>
                         <span>神經系統</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('非外傷', '神經系統').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`a:neuro:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:neuro:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:neuro:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -759,16 +761,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">visibility</span>
                         <span>眼科</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('非外傷', '眼科').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`a:eye:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:eye:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:eye:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -776,16 +778,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">air</span>
                         <span>呼吸系統</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('非外傷', '呼吸系統').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`a:resp:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:resp:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:resp:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -793,16 +795,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">hearing</span>
                         <span>耳鼻喉系統</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('非外傷', '耳鼻喉系統').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`a:ent:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:ent:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:ent:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -812,16 +814,16 @@ const filteredSearchResults = useMemo(() => {
                   </div>
                   <div id="a-upperbody-options" className={`${aBodies.has('upper') ? '' : 'hidden'} space-y-6`}>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">cardiology</span>
                         <span>心臟血管系統</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('非外傷', '心臟血管系統').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`a:cardio:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:cardio:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:cardio:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -829,16 +831,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">psychology</span>
                         <span>心理健康</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('非外傷', '心理健康').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`a:mental:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:mental:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:mental:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -846,16 +848,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">coronavirus</span>
                         <span>腸胃系統</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('非外傷', '腸胃系統').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`a:gi:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:gi:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:gi:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -863,16 +865,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">emergency_home</span>
                         <span>骨骼系統</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('非外傷', '骨骼系統').filter(name => name.includes('上肢') || name.includes('背') || name.includes('關節')).map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`a:bone:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:bone:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:bone:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -882,16 +884,16 @@ const filteredSearchResults = useMemo(() => {
                   </div>
                   <div id="a-lowerbody-options" className={`${aBodies.has('lower') ? '' : 'hidden'} space-y-6`}>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">urology</span>
                         <span>泌尿系統</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('非外傷', '泌尿系統').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`a:uro:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:uro:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:uro:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -899,16 +901,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">female</span>
                         <span>婦產科</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('非外傷', '婦產科').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`a:obgy:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:obgy:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:obgy:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -916,16 +918,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">emergency_home</span>
                         <span>骨骼系統</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('非外傷', '骨骼系統').filter(name => name.includes('下肢') || name.includes('關節')).map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`a:bone:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:bone:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:bone:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -933,16 +935,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">dermatology</span>
                         <span>皮膚系統</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('非外傷', '皮膚系統').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`a:derm:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:derm:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:derm:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>
@@ -950,16 +952,16 @@ const filteredSearchResults = useMemo(() => {
                       </div>
                     </div>
                     <div>
-                      <h5 className="font-semibold text-base flex items-center gap-2">
+                      <h5 className="font-semibold text-lg flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary/80">clinical_notes</span>
                         <span>一般與其他</span>
                       </h5>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex min-w-0 flex-wrap gap-2 mt-2">
                         {getSymptoms('非外傷', '一般和其他').map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`a:general:${label}`)}
-                            className={`symptom-option-btn px-3 py-1.5 rounded-full text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:general:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
+                            className={`symptom-option-btn max-w-full px-3.5 py-2 rounded-full text-base bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${(selectedSymptoms.has(`a:general:${label}`) || isSymptomSelected(label)) ? 'selected' : ''}`}
                           >
                             {label}
                           </button>

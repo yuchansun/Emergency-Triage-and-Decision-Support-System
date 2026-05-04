@@ -62,6 +62,10 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
   vitals,
   onChiefComplaintChange,  // ← 新增解構
 }) => {
+  // 保留 prop 定義（依需求不刪 interface 與 prop），目前畫面不直接使用
+  void onDirectToER;
+  void directToERSelected;
+
   interface TriageRow {
     category: string;
     system_code: string;
@@ -1347,6 +1351,17 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     return Math.min(...degrees);
   }, [selectedRules]);
 
+  const recommendedRulesByDegree = useMemo(() => {
+    const grouped = new Map<number, typeof recommendedRules>();
+    for (const rule of recommendedRules) {
+      const degree = Number(rule.ttas_degree);
+      const list = grouped.get(degree) ?? [];
+      list.push(rule);
+      grouped.set(degree, list);
+    }
+    return Array.from(grouped.entries()).sort((a, b) => a[0] - b[0]);
+  }, [recommendedRules]);
+
   useEffect(() => {
     if (onWorstDegreeChange) {
       onWorstDegreeChange(worstSelectedDegree);
@@ -1356,16 +1371,16 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
   const getRuleColors = (degree: number) => {
     switch (degree) {
       case 1:
-        return { border: 'border-red-500', bg: 'bg-red-500/10 hover:bg-red-500/20', text: 'text-red-500' };
+        return { border: 'border-red-500', bg: 'bg-red-500/20 hover:bg-red-500/30', text: 'text-red-500' };
       case 2:
-        return { border: 'border-orange-500', bg: 'bg-orange-500/10 hover:bg-orange-500/20', text: 'text-orange-500' };
+        return { border: 'border-orange-500', bg: 'bg-orange-500/20 hover:bg-orange-500/30', text: 'text-orange-500' };
       case 3:
-        return { border: 'border-yellow-500', bg: 'bg-yellow-500/10 hover:bg-yellow-500/20', text: 'text-yellow-500' };
+        return { border: 'border-yellow-500', bg: 'bg-yellow-500/20 hover:bg-yellow-500/30', text: 'text-yellow-500' };
       case 4:
-        return { border: 'border-green-500', bg: 'bg-green-500/10 hover:bg-green-500/20', text: 'text-green-500' };
+        return { border: 'border-green-500', bg: 'bg-green-500/20 hover:bg-green-500/30', text: 'text-green-500' };
       case 5:
       default:
-        return { border: 'border-blue-500', bg: 'bg-blue-500/10 hover:bg-blue-500/20', text: 'text-blue-500' };
+        return { border: 'border-blue-500', bg: 'bg-blue-500/20 hover:bg-blue-500/30', text: 'text-blue-500' };
     }
   };
 
@@ -1430,14 +1445,6 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
           >
             <span className="material-symbols-outlined text-sm">cardiology</span>
             <span>心跳停止</span>
-          </button>
-          <button 
-            type="button"
-            onClick={onDirectToER}
-            className={`symptom-option-btn flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors ${directToERSelected ? 'selected' : ''}`}
-          >
-            <span className="material-symbols-outlined text-sm">emergency</span>
-            <span>直入急救室</span>
           </button>
         </div>
       </div>
@@ -1587,7 +1594,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       {/* 已選症狀標籤 */}
       {symptomTags.length > 0 && (
         <div className="mb-4">
-          <h4 className="text-sm font-semibold mb-2">已選症狀</h4>
+          <h4 className="text-base font-semibold mb-2">已選症狀</h4>
           <div className="flex flex-wrap gap-2">
             {symptomTags.map(({ display }) => (
               <div
@@ -1611,7 +1618,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       {/* 判斷規則：列出各症狀所有 TTAS 判斷依據並可點選 */}
       {symptomTags.length > 0 && (
         <div className="mb-4">
-          <h4 className="text-sm font-semibold mb-2">判斷規則</h4>
+          <h4 className="text-base font-semibold mb-2">判斷規則</h4>
           {(isRecommendRulesLoading || recommendedRules.length > 0) && (
             <div className="mb-3 pb-3 border-b border-dashed border-primary/40">
               <div className="text-xs font-semibold text-primary mb-2 flex items-center gap-2">
@@ -1621,39 +1628,43 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
                 )}
               </div>
               {recommendedRules.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {recommendedRules.map(rule => {
-                    const colors = getRuleColors(rule.ttas_degree);
-                    const isSelected = !!selectedRules[rule.rule_code];
-                    return (
-                      <button
-                        key={`${rule.symptom_name}__${rule.rule_code}`}
-                        type="button"
-                        onClick={() =>
-                          setSelectedRules(prev => {
-                            const next = { ...prev };
-                            Object.keys(next).forEach(ruleCode => {
-                              if (next[ruleCode].symptom_name === rule.symptom_name) {
-                                delete next[ruleCode];
-                              }
-                            });
-                            if (prev[rule.rule_code]) return next;
-                            next[rule.rule_code] = {
-                              degree: rule.ttas_degree,
-                              judge: rule.judge_name,
-                              rule_code: rule.rule_code,
-                              symptom_name: rule.symptom_name,
-                            };
-                            return next;
-                          })
-                        }
-                        className={`px-2.5 py-1 rounded-full border text-[10px] leading-snug text-left ${colors.border} ${isSelected ? `${colors.bg.replace('10', '90')} text-white ring-2 ring-offset-1 ring-primary` : `${colors.bg} ${colors.text}`}`}
-                        title={`${rule.symptom_name}｜第${rule.ttas_degree}級：${rule.judge_name}`}
-                      >
-                        {rule.symptom_name}｜第{rule.ttas_degree}級：{rule.judge_name}
-                      </button>
-                    );
-                  })}
+                <div className="space-y-2 min-w-0">
+                  {recommendedRulesByDegree.map(([degree, rules]) => (
+                    <div key={`degree-${degree}`} className="flex flex-wrap gap-2 min-w-0">
+                      {rules.map(rule => {
+                        const colors = getRuleColors(rule.ttas_degree);
+                        const isSelected = !!selectedRules[rule.rule_code];
+                        return (
+                          <button
+                            key={`${rule.symptom_name}__${rule.rule_code}`}
+                            type="button"
+                            onClick={() =>
+                              setSelectedRules(prev => {
+                                const next = { ...prev };
+                                Object.keys(next).forEach(ruleCode => {
+                                  if (next[ruleCode].symptom_name === rule.symptom_name) {
+                                    delete next[ruleCode];
+                                  }
+                                });
+                                if (prev[rule.rule_code]) return next;
+                                next[rule.rule_code] = {
+                                  degree: rule.ttas_degree,
+                                  judge: rule.judge_name,
+                                  rule_code: rule.rule_code,
+                                  symptom_name: rule.symptom_name,
+                                };
+                                return next;
+                              })
+                            }
+                            className={`px-3 py-1.5 rounded-full border text-xs leading-snug text-left max-w-full ${colors.border} ${isSelected ? `${colors.bg.replace('20', '90')} text-white ring-2 ring-offset-1 ring-primary` : `${colors.bg} text-black`}`}
+                            title={`${rule.symptom_name}｜第${rule.ttas_degree}級：${rule.judge_name}`}
+                          >
+                            {rule.symptom_name}｜第{rule.ttas_degree}級：{rule.judge_name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -1662,10 +1673,10 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
             {symptomTags.map(({ display, criteria }) => (
               criteria.length > 0 && (
                 <div key={display} className="space-y-1">
-                  <div className="text-xs font-semibold text-subtext-light dark:text-subtext-dark">
+                  <div className="text-sm font-semibold text-subtext-light dark:text-subtext-dark">
                     {display}
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2 min-w-0">
                     {criteria.map(item => {
                       const colors = getRuleColors(item.degree);
                       // ← 把多餘的 current 那行刪掉
@@ -1702,7 +1713,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
                               return next;
                             })
                           }
-                          className={`px-2.5 py-1 rounded-full border text-[10px] leading-snug text-left ${colors.border} ${isSelected ? `${colors.bg.replace('10', '90')} text-white ring-2 ring-offset-1 ring-primary` : `${colors.bg} ${colors.text}`}`}
+                          className={`px-3 py-1.5 rounded-full border text-xs leading-snug text-left max-w-full ${colors.border} ${isSelected ? `${colors.bg.replace('20', '90')} text-white ring-2 ring-offset-1 ring-primary` : `${colors.bg} text-black`}`}
                           title={`第${item.degree}級：${item.judge}`}
                         >
                           第{item.degree}級：{item.judge}
@@ -1715,7 +1726,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
             ))}
           </div>
           {worstSelectedDegree !== null && (
-            <div className="mt-2 text-[11px] text-subtext-light dark:text-subtext-dark">
+            <div className="mt-2 text-xs text-subtext-light dark:text-subtext-dark">
               所有已選判斷依據中最嚴重的級數：
               <span className="font-semibold">第{worstSelectedDegree}級</span>
             </div>
@@ -1723,7 +1734,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
         </div>
       )}
       
-      <p className="text-xs text-subtext-light dark:text-subtext-dark">💡 系統會自動分析主訴中的所有關鍵字並持續推薦相關症狀，無論游標位置在哪裡。點擊症狀標籤的 ✕ 可移除。包含所有外傷、非外傷、環境症狀。</p>
+      <p className="text-sm text-subtext-light dark:text-subtext-dark">💡 系統會自動分析主訴中的所有關鍵字並持續推薦相關症狀，無論游標位置在哪裡。點擊症狀標籤的 ✕ 可移除。包含所有外傷、非外傷、環境症狀。</p>
     </div>
   );
 };
