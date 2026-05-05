@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import json
 import os
+import re
 import requests
 from collections import defaultdict
 from database import fetch_all
@@ -430,6 +431,7 @@ class TriageAdviceResponse(BaseModel):
 
 class RecommendRulesRequest(BaseModel):
     selected_symptoms: list[str]
+    chief_complaint: str = ""
     vitals: dict = None
     llm_mode: str = "local"
 
@@ -469,6 +471,7 @@ async def recommend_rules(body: RecommendRulesRequest):
     # 這支 API 是「候選規則內重排」，不是讓 LLM 自由生成規則
     try:
         selected_symptoms = [s.strip() for s in body.selected_symptoms if isinstance(s, str) and s.strip()]
+        chief_complaint = str(body.chief_complaint or "").strip()
         vitals = body.vitals or {}
         llm_mode = body.llm_mode
         if not selected_symptoms:
@@ -504,7 +507,16 @@ async def recommend_rules(body: RecommendRulesRequest):
             elif v is not None:
                 filled_vitals[k] = v
 
-        # 僅根據「已選症狀」（每個症狀各自 Top-K 推薦，提高命中率）
+        # 候選症狀僅使用「已選症狀」，避免未選症狀出現在規則推薦中
+        def extract_terms(text: str) -> list[str]:
+            if not text:
+                return []
+            return [
+                t for t in re.split(r"[\s,，、。；;：:/\\|()\[\]{}]+", text)
+                if len(t.strip()) >= 2
+            ]
+
+        complaint_terms = extract_terms(chief_complaint)
         candidate_symptoms = list(dict.fromkeys(selected_symptoms))
         if not any(symptom_rules_map.get(s) for s in candidate_symptoms):
             return RecommendRulesResponse(recommended_rules=[])
@@ -643,6 +655,16 @@ async def recommend_rules(body: RecommendRulesRequest):
             """同一症狀下若多個 rule_code 對應相同級別+判斷文字，畫面會重複；用此指紋去重。"""
             return (int(r["ttas_degree"]), (r.get("judge_name") or "").strip())
 
+        def complaint_rule_score(symptom: str, judge_name: str) -> int:
+            if not complaint_terms:
+                return 0
+            score = 0
+            if any(term in symptom for term in complaint_terms):
+                score += 12
+            if any(term in str(judge_name or "") for term in complaint_terms):
+                score += 8
+            return score
+
         def scored_list_for_symptom(symptom: str):
             # 同一 (級別, 判斷文字) 只保留分數最高的一筆（避免 DB 重複列造成兩顆相同按鈕）
             best_by_fp: dict = {}
@@ -651,7 +673,8 @@ async def recommend_rules(body: RecommendRulesRequest):
                 vital_score = vitals_rule_score(r["judge_name"])
                 if vital_score <= -900:
                     continue
-                score = 30 + vital_score
+                selected_boost = 30 if symptom in selected_symptoms else 0
+                score = selected_boost + vital_score + complaint_rule_score(symptom, r["judge_name"])
                 fp = _rule_display_fingerprint(r)
                 if fp not in best_by_fp or score > best_by_fp[fp][0]:
                     best_by_fp[fp] = (score, r)
@@ -723,7 +746,7 @@ async def recommend_rules(body: RecommendRulesRequest):
         try:
             for s in candidate_symptoms:
                 rag_docs = rag_pipeline.retrieve_relevant_knowledge(
-                    query=f"症狀：{s}；生命徵象：{json.dumps(filled_vitals, ensure_ascii=False)}",
+                    query=f"主訴：{chief_complaint}；症狀：{s}；生命徵象：{json.dumps(filled_vitals, ensure_ascii=False)}",
                     category=None,
                     n_results=RULES_TOP_K_PER_SYMPTOM,
                 )
@@ -735,7 +758,7 @@ async def recommend_rules(body: RecommendRulesRequest):
             print("[RULES] RAG 檢索失敗:", e)
         rag_context = "\n\n---\n\n".join(rag_chunks) if rag_chunks else ""
 
-        prompt = f"""你是急診檢傷專家。請依「已選症狀與已填生命徵象」推薦判斷規則。
+        prompt = f"""你是急診檢傷專家。請依「主訴 + 已選症狀 + 已填生命徵象」推薦判斷規則。
 
 **數量要求（重要）**：每個已選症狀請各自推薦 **2～3 條**（盡量 3 條）判斷規則；不同症狀分開考量，勿只為整體選一組規則。
 總輸出筆數最多 {max_total} 條。
@@ -745,6 +768,7 @@ async def recommend_rules(body: RecommendRulesRequest):
 - 若無明確危急徵象或數值不符，勿選第一級；資訊不足時選較低嚴重度之規則。
 - 只能從候選規則中選擇，不得發明規則；同一 rule_code 勿重複輸出。
 
+主訴：{chief_complaint if chief_complaint else "無"}
 已選症狀：{", ".join(selected_symptoms)}
 已填生命徵象：{json.dumps(filled_vitals, ensure_ascii=False) if filled_vitals else "無"}
 相關知識（僅供參考，依症狀分段）：
