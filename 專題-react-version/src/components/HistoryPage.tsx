@@ -11,7 +11,7 @@ type TriageRecord = {
   triageId: string;
   patientId: string;
   name: string;
-  gender: "M" | "F";
+  gender: "M" | "F" | "U";
   birthday: string;
   age: number;
   idNumber: string;
@@ -214,7 +214,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, in
         triageId: d.triage_id || "",
         patientId: d.patient_id || "",
         name: d.name || "",
-        gender: d.gender === "F" ? "F" : "M",
+        gender: d.gender === "F" ? "F" : d.gender === "M" ? "M" : "U",
         birthday: d.birth_date ? String(d.birth_date).slice(0, 10) : "",
         age: d.age || 0,
         idNumber: d.id_number || "",
@@ -318,6 +318,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, in
     };
     const isMale = (g: any) => g === "M" || g === "男";
     const isFemale = (g: any) => g === "F" || g === "女";
+    const isUnknown = (g: any) => g === "U" || g === "不詳";
     const LEVEL_COLORS: Record<number, string> = {
       1: "#EF4444",
       2: "#F97316",
@@ -449,7 +450,7 @@ td, th {
         <td>姓名<br><span class="en">Name</span></td>
         <td>${safe(data?.name)}</td>
         <td>性別<br><span class="en">Gender</span></td>
-        <td class="c">${isMale(data?.gender) ? "☑" : "☐"} 男 M ${isFemale(data?.gender) ? "☑" : "☐"} 女 F</td>
+        <td class="c">${isMale(data?.gender) ? "☑" : "☐"} 男 M ${isFemale(data?.gender) ? "☑" : "☐"} 女 F ${isUnknown(data?.gender) ? "☑" : "☐"} 不詳 U</td>
         <td class="c">${safe(data?.age ?? "無年齡資料")}<br>歲</td>
         <td>出生日期<br><span class="en">Birthday</span></td>
         <td class="c">${safe(data?.birth_date)}</td>
@@ -775,7 +776,7 @@ td, th {
                     <td className="px-4 py-3 text-blue-600">{r.triageId}</td>
                     <td className="px-4 py-3">{r.name}</td>
                     <td className="px-4 py-3">{r.patientId}</td>
-                    <td className="px-4 py-3">{r.gender === "M" ? "男" : "女"} / {r.age}</td>
+                    <td className="px-4 py-3">{r.gender === "M" ? "男" : r.gender === "F" ? "女" : "不詳"} / {r.age}</td>
                     <td className="px-4 py-3">{r.chiefComplaintNote}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2.5 py-1 rounded-lg border text-xs font-semibold ${levelColor(r.triageLevel)}`}>
@@ -887,7 +888,7 @@ td, th {
               <div><div className="text-gray-500">病歷號</div><div className="font-semibold">{selected.patientId}</div></div>
               <div><div className="text-gray-500">姓名</div><div className="font-semibold">{selected.name}</div></div>
               <div><div className="text-gray-500">身分證號</div><div className="font-semibold">{selected.idNumber}</div></div>
-              <div><div className="text-gray-500">性別 / 年齡</div><div className="font-semibold">{selected.gender === "M" ? "男" : "女"} / {selected.age}</div></div>
+              <div><div className="text-gray-500">性別 / 年齡</div><div className="font-semibold">{selected.gender === "M" ? "男" : selected.gender === "F" ? "女" : "不詳"} / {selected.age}</div></div>
               <div><div className="text-gray-500">生日</div><div className="font-semibold">{selected.birthday}</div></div>
               <div><div className="text-gray-500">到院時間</div><div className="font-semibold">{editDraft.arrivalAt}</div></div>
               <div>

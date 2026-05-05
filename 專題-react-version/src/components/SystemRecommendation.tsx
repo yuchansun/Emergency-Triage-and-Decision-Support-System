@@ -76,9 +76,12 @@ const SystemRecommendation: React.FC<SystemRecommendationProps> = ({
         timestamp: new Date().toISOString(),
       };
 
-      onConfirmAndSave?.(triageData);  // 傳回 App
-      onOpenTriageReport();
-      onSubmitLevel();
+      if (onConfirmAndSave) {
+        onConfirmAndSave(triageData); // 傳回 App，避免重複觸發第二條儲存流程
+      } else {
+        onOpenTriageReport();
+        onSubmitLevel();
+      }
     } else {
       alert('請先選擇級數');
     }
