@@ -66,10 +66,11 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
   // 為了處理 "其他" 可輸入情況，使用 local state 追蹤正在編輯的文字
   const [localPatientSourceOther, setLocalPatientSourceOther] = useState<string>('');
   const [localMajorIncidentOther, setLocalMajorIncidentOther] = useState<string>('');
+  const [ambulanceNumber, setAmbulanceNumber] = useState('');
 
   // 若 props 中帶入自訂文字，將其同步到 local state 以便顯示在輸入框
   useEffect(() => {
-    if (patientSource && !['急診', '門診', '住院', '其他'].includes(patientSource)) {
+    if (patientSource && !['急診', '門診', '住院', '其他', '救護車'].includes(patientSource)) {
       setLocalPatientSourceOther(patientSource);
     }
   }, [patientSource]);
@@ -94,12 +95,12 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
   });
 
   const isToccValid = !requireTOCC || (
-  tocc.travel.trim() !== "" ||
-  tocc.occupation.trim() !== "" ||
-  (tocc.contactItems?.length ?? 0) > 0 ||
-  (tocc.clusterItems?.length ?? 0) > 0 ||
-  (tocc.symptoms?.length ?? 0) > 0
-);
+    tocc.travel.trim() !== "" ||
+    tocc.occupation.trim() !== "" ||
+    (tocc.contactItems?.length ?? 0) > 0 ||
+    (tocc.clusterItems?.length ?? 0) > 0 ||
+    (tocc.symptoms?.length ?? 0) > 0
+  );
 
   const popupRef = useRef<HTMLDivElement>(null);
 
@@ -436,8 +437,8 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
                   <button
                     disabled={!isToccValid}
                     className={`text-xs px-3 py-1 rounded ${isToccValid
-                        ? "bg-blue-500 text-white"
-                        : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                      ? "bg-blue-500 text-white"
+                      : "bg-gray-300 text-gray-500 cursor-not-allowed"
                       }`}
                     onClick={() => {
                       if (!isToccValid) return;
@@ -455,7 +456,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
 
           {/* 病患來源 */}
           <select
-            value={patientSource === '' || ['急診', '門診', '住院', '其他'].includes(patientSource) ? patientSource : '其他'}
+            value={patientSource === '' || ['急診', '門診', '住院', '其他', '救護車'].includes(patientSource) ? patientSource : '其他'}
             onChange={(e) => {
               const v = e.target.value;
               if (v === '其他') {
@@ -474,24 +475,31 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
             <option value="">選擇病患來源</option>
             <option value="急診">急診</option>
             <option value="門診">門診</option>
+            <option value="救護車">救護車</option>
             <option value="住院">住院</option>
             <option value="其他">其他</option>
           </select>
 
           {/* 若來源為 '其他' 或為非預設選項時，顯示可編輯輸入欄 */}
-          {(patientSource === '其他' || (patientSource && !['急診', '門診', '住院', '其他'].includes(patientSource))) && (
+          {patientSource === '其他' && (
             <input
               type="text"
-              value={patientSource === '其他' ? localPatientSourceOther : patientSource}
+              value={localPatientSourceOther}
               onChange={(e) => {
                 const v = e.target.value;
-                if (patientSource === '其他') {
-                  setLocalPatientSourceOther(v);
-                }
-                // 直接把自訂來源寫回 props，方便匯出使用
+                setLocalPatientSourceOther(v);
                 setPatientSource(v);
               }}
               placeholder="請輸入其他來源"
+              className="px-2 py-0.5 rounded border text-xs ml-2"
+            />
+          )}
+          {patientSource === '救護車' && (
+            <input
+              type="text"
+              value={ambulanceNumber}
+              onChange={(e) => setAmbulanceNumber(e.target.value)}
+              placeholder="請輸入救護車車號"
               className="px-2 py-0.5 rounded border text-xs ml-2"
             />
           )}
