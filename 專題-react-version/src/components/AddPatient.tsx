@@ -128,8 +128,13 @@ export default function AddPatient({
             ? {
                 patientId: pResult.patient_id,
                 nurseId: nurseId || "1",
+                selectedLevel: 1,
                 vitals: {},
-                result: { selectedLevel: 1 },
+                result: {
+                  selectedLevel: 1,
+                  rule_code: "R00000",
+                  chief_complaint: "直入急救室",
+                },
                 bed: "",
                 patientSource: "直入急救室",
                 majorIncident: "否",
