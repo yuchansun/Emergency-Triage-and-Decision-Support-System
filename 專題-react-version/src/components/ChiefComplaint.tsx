@@ -130,6 +130,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     };
   }, []);
 
+<<<<<<< HEAD
   // 添加狀態來追蹤上次處理的生命徵象
   const [lastProcessedVitals, setLastProcessedVitals] = useState<any>(null);
 
@@ -242,6 +243,10 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       }
     }
   }, [vitals, inputText, lastProcessedVitals, isListening]);
+=======
+  // 注意：不再因生命徵象變化自動改寫主訴，避免多次統整後語意飄移。
+  // 主訴改寫只在「一鍵統整」與「語音結束」明確事件觸發。
+>>>>>>> nico2
 
   // 簡化語音處理，只處理語音辨識，統整成主訴
   const handleVoiceOnly = (rawText: string) => {
@@ -340,7 +345,8 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
   const [isLlmIntegrating, setIsLlmIntegrating] = useState<boolean>(false);
   const [lastLlmSummary, setLastLlmSummary] = useState<string>('');
   const [recommendationSource, setRecommendationSource] = useState<'llm' | 'fallback' | 'none'>('none');
-  const lastRecommendOnlyKeyRef = useRef<string>('');
+  const lastIntegrateSignatureRef = useRef<string>('');
+  const [rulesRefreshNonce, setRulesRefreshNonce] = useState(0);
   const [isSupplementOpen, setIsSupplementOpen] = useState<boolean>(false);
   const [supplementText, setSupplementText] = useState<string>('');
 
@@ -883,10 +889,21 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
 
     setIsLlmIntegrating(true);
     try {
-      const summary = await summarizeChiefComplaint(source);
-      setLastLlmSummary(summary.trim());
-      // 設置統整後的主訴
-      setInputText(summary);
+      const integrateSignature = `${normalizeForRecommend(source)}::${llmMode}::${JSON.stringify(vitals || {})}`;
+      const shouldReuseLastSummary =
+        integrateSignature === lastIntegrateSignatureRef.current &&
+        lastLlmSummary.trim().length > 0;
+
+      // 相同輸入 + 相同生命徵象時，不要重複改寫主訴文字，避免越按越失真
+      const summary = shouldReuseLastSummary
+        ? lastLlmSummary.trim()
+        : await summarizeChiefComplaint(source);
+
+      if (!shouldReuseLastSummary) {
+        setLastLlmSummary(summary.trim());
+        setInputText(summary);
+        lastIntegrateSignatureRef.current = integrateSignature;
+      }
 
       // 真正 unified RAG：一次檢索 + 一次推薦，再前端分類
       const unifiedList = await requestUnifiedRecommendations(summary);
@@ -898,18 +915,36 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       const llmHasResult = split.trauma.length > 0 || split.nonTrauma.length > 0;
       const traumaList = split.trauma.length ? split.trauma : getSafeFallbackByTab(summary, 't');
       const nonTraumaList = split.nonTrauma.length ? split.nonTrauma : getSafeFallbackByTab(summary, 'a');
+      const picked = new Set(
+        Array.from(selectedSymptoms).map(s =>
+          s.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '')
+        )
+      );
+      const filteredTrauma = traumaList.filter(name => !picked.has(name));
+      const filteredNonTrauma = nonTraumaList.filter(name => !picked.has(name));
 
-      setLlmTraumaSymptoms(traumaList);
-      setLlmNonTraumaSymptoms(nonTraumaList);
-      setRecommendationSource(llmHasResult ? 'llm' : (traumaList.length || nonTraumaList.length ? 'fallback' : 'none'));
-      console.log('[LLM] recommendation source =', llmHasResult ? 'llm' : (traumaList.length || nonTraumaList.length ? 'fallback' : 'none'));
+      setLlmTraumaSymptoms(filteredTrauma);
+      setLlmNonTraumaSymptoms(filteredNonTrauma);
+      setRecommendationSource(
+        llmHasResult
+          ? 'llm'
+          : (filteredTrauma.length || filteredNonTrauma.length ? 'fallback' : 'none')
+      );
+      console.log(
+        '[LLM] recommendation source =',
+        llmHasResult
+          ? 'llm'
+          : (filteredTrauma.length || filteredNonTrauma.length ? 'fallback' : 'none')
+      );
 
       // 一鍵統整後只顯示 LLM 結果，不回退關鍵字推薦
       if (activeTab === 't') {
-        setRecommendedSymptoms(traumaList);
+        setRecommendedSymptoms(filteredTrauma);
       } else {
-        setRecommendedSymptoms(nonTraumaList);
+        setRecommendedSymptoms(filteredNonTrauma);
       }
+      // 一鍵統整後，無論症狀是否剛好一樣，都強制重跑一次推薦判斷規則
+      setRulesRefreshNonce(prev => prev + 1);
     } finally {
       setIsLlmIntegrating(false);
     }
@@ -918,57 +953,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     fullVoiceRef.current = '';
   };
 
-  // 手動編輯主訴後：只重跑 LLM 推薦，不改寫主訴文字本身
-  const runLlmRecommendOnly = async (text: string) => {
-    const source = text.replace(/[、，,\s]+$/g, '').trim();
-    if (!source) {
-      setRecommendedSymptoms([]);
-      setRecommendationSource('none');
-      return;
-    }
-
-    setIsLlmIntegrating(true);
-    try {
-      const unifiedList = await requestUnifiedRecommendations(source);
-      const relevantUnified = filterSymptomsByComplaintRelevance(unifiedList ?? [], source);
-      const mustInclude = buildMustIncludeSymptoms(source);
-      console.log('[LLM] recommend-only must include symptoms =', mustInclude);
-      const mergedUnified = Array.from(new Set([...mustInclude, ...relevantUnified]));
-      const split = splitRecommendationsByTab(mergedUnified);
-      const llmHasResult = split.trauma.length > 0 || split.nonTrauma.length > 0;
-      const traumaList = split.trauma.length ? split.trauma : getSafeFallbackByTab(source, 't');
-      const nonTraumaList = split.nonTrauma.length ? split.nonTrauma : getSafeFallbackByTab(source, 'a');
-
-      setLlmTraumaSymptoms(traumaList);
-      setLlmNonTraumaSymptoms(nonTraumaList);
-      setRecommendationSource(llmHasResult ? 'llm' : (traumaList.length || nonTraumaList.length ? 'fallback' : 'none'));
-
-      if (activeTab === 't') {
-        setRecommendedSymptoms(traumaList);
-      } else {
-        setRecommendedSymptoms(nonTraumaList);
-      }
-    } finally {
-      setIsLlmIntegrating(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isListening || isLlmIntegrating) return;
-    const trimmed = normalizeForRecommend(inputText);
-    if (!trimmed) return;
-    // 與上一輪統整內容相同時，不重跑 recommend-only
-    if (trimmed === normalizeForRecommend(lastLlmSummary)) return;
-    const requestKey = `${trimmed}::${llmMode}::${JSON.stringify(vitals || {})}`;
-    if (lastRecommendOnlyKeyRef.current === requestKey) return;
-
-    const timer = setTimeout(() => {
-      lastRecommendOnlyKeyRef.current = requestKey;
-      void runLlmRecommendOnly(trimmed);
-    }, 700);
-
-    return () => clearTimeout(timer);
-  }, [inputText, isListening, isLlmIntegrating, lastLlmSummary, llmMode, vitals]);
+  // 手動編輯主訴：不自動呼叫 LLM，僅等待「一鍵統整」時觸發統整與重跑。
 
   const isSymptomSelectedByLabel = (label: string) => {
     return Array.from(selectedSymptoms).some(selected => {
@@ -1276,6 +1261,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             selected_symptoms: selectedSymptomNames,
+            chief_complaint: inputText || '',
             vitals: vitals || {},
             llm_mode: llmMode,
           }),
@@ -1313,7 +1299,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [symptomTags, vitals, llmMode, LLM_BASE_URL]);
+  }, [symptomTags, vitals, llmMode, LLM_BASE_URL, rulesRefreshNonce]);
 
   useEffect(() => {
     // 根據當前已選症狀，自動處理部分規則：
@@ -1353,15 +1339,18 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     return Math.min(...degrees);
   }, [selectedRules]);
 
-  const recommendedRulesByDegree = useMemo(() => {
-    const grouped = new Map<number, typeof recommendedRules>();
+  const recommendedRulesBySymptom = useMemo(() => {
+    const grouped = new Map<string, typeof recommendedRules>();
     for (const rule of recommendedRules) {
-      const degree = Number(rule.ttas_degree);
-      const list = grouped.get(degree) ?? [];
+      const key = rule.symptom_name;
+      const list = grouped.get(key) ?? [];
       list.push(rule);
-      grouped.set(degree, list);
+      grouped.set(key, list);
     }
-    return Array.from(grouped.entries()).sort((a, b) => a[0] - b[0]);
+    return Array.from(grouped.entries()).map(([symptom, rules]) => [
+      symptom,
+      [...rules].sort((a, b) => Number(a.ttas_degree) - Number(b.ttas_degree)),
+    ] as const);
   }, [recommendedRules]);
 
   useEffect(() => {
@@ -1467,10 +1456,18 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
           />
           <button
             onClick={handleOneClickIntegrate}
-            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors text-sm font-medium whitespace-nowrap"
+            disabled={isLlmIntegrating}
+            className={`px-4 py-2 rounded-lg focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors text-sm font-medium whitespace-nowrap inline-flex items-center gap-1.5 ${
+              isLlmIntegrating
+                ? 'bg-primary/70 text-white cursor-wait'
+                : 'bg-primary text-white hover:bg-primary-dark'
+            }`}
             title="統整主訴與生命徵象"
           >
-            一鍵統整
+            {isLlmIntegrating && (
+              <span className="material-symbols-outlined text-base animate-spin">sync</span>
+            )}
+            {isLlmIntegrating ? '統整中...' : '一鍵統整'}
           </button>
         </div>
         <button
@@ -1642,9 +1639,17 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       </div>
 
       {/* 推薦症狀 */}
-      {recommendedSymptoms.length > 0 && (
+      {(isLlmIntegrating || recommendedSymptoms.length > 0) && (
         <div className="mb-4 p-3 bg-primary/5 rounded-lg border border-primary/20">
-          <h4 className="text-sm font-semibold text-primary mb-2">推薦症狀</h4>
+          <h4 className="text-sm font-semibold text-primary mb-2 flex items-center gap-2">
+            <span>推薦症狀</span>
+            {isLlmIntegrating && (
+              <>
+                <span className="material-symbols-outlined text-base animate-spin">sync</span>
+                <span className="text-[10px] text-subtext-light dark:text-subtext-dark">分析中...</span>
+              </>
+            )}
+          </h4>
           <div className="flex flex-wrap gap-2">
             {recommendedSymptoms.map(symptom => (
               <button
@@ -1692,13 +1697,19 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
               <div className="text-xs font-semibold text-primary mb-2 flex items-center gap-2">
                 <span>AI 推薦判斷規則</span>
                 {isRecommendRulesLoading && (
-                  <span className="text-[10px] text-subtext-light dark:text-subtext-dark">分析中...</span>
+                  <>
+                    <span className="material-symbols-outlined text-base animate-spin">sync</span>
+                    <span className="text-[10px] text-subtext-light dark:text-subtext-dark">分析中...</span>
+                  </>
                 )}
               </div>
               {recommendedRules.length > 0 && (
                 <div className="space-y-2 min-w-0">
-                  {recommendedRulesByDegree.map(([degree, rules]) => (
-                    <div key={`degree-${degree}`} className="flex flex-wrap gap-2 min-w-0">
+                  {recommendedRulesBySymptom.map(([symptom, rules]) => (
+                    <div key={`symptom-${symptom}`} className="flex flex-wrap items-center gap-2 min-w-0">
+                      <span className="text-xs font-semibold text-subtext-light dark:text-subtext-dark shrink-0">
+                        {symptom}：
+                      </span>
                       {rules.map(rule => {
                         const colors = getRuleColors(rule.ttas_degree);
                         const isSelected = !!selectedRules[rule.rule_code];
@@ -1727,7 +1738,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
                             className={`px-3 py-1.5 rounded-full border text-xs leading-snug text-left max-w-full ${colors.border} ${isSelected ? `${colors.bg.replace('20', '90')} text-white ring-2 ring-offset-1 ring-primary` : `${colors.bg} text-black`}`}
                             title={`${rule.symptom_name}｜第${rule.ttas_degree}級：${rule.judge_name}`}
                           >
-                            {rule.symptom_name}｜第{rule.ttas_degree}級：{rule.judge_name}
+                            第{rule.ttas_degree}級：{rule.judge_name}
                           </button>
                         );
                       })}
@@ -1744,51 +1755,61 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
                   <div className="text-sm font-semibold text-subtext-light dark:text-subtext-dark">
                     {display}
                   </div>
-                  <div className="flex flex-wrap gap-2 min-w-0">
-                    {criteria.map(item => {
-                      const colors = getRuleColors(item.degree);
-                      // ← 把多餘的 current 那行刪掉
-                      const isSelected = !!selectedRules[item.rule_code];
-                      return (
-                        <button
-                          key={item.rule_code}
-                          type="button"
-                          onClick={() =>
-                            setSelectedRules(prev => {
-                              const next = { ...prev };
-                              const existing = prev[item.rule_code];
+                  {Array.from(
+                    criteria.reduce((acc, item) => {
+                      const list = acc.get(item.degree) ?? [];
+                      list.push(item);
+                      acc.set(item.degree, list);
+                      return acc;
+                    }, new Map<number, typeof criteria>())
+                  )
+                    .sort((a, b) => a[0] - b[0])
+                    .map(([degree, items]) => (
+                      <div key={`${display}-degree-${degree}`} className="flex flex-wrap gap-2 min-w-0">
+                        {items.map(item => {
+                          const colors = getRuleColors(item.degree);
+                          const isSelected = !!selectedRules[item.rule_code];
+                          return (
+                            <button
+                              key={item.rule_code}
+                              type="button"
+                              onClick={() =>
+                                setSelectedRules(prev => {
+                                  const next = { ...prev };
+                                  const existing = prev[item.rule_code];
 
-                              // 先移除同一症狀已選的其他規則
-                              Object.keys(next).forEach(ruleCode => {
-                                if (next[ruleCode].symptom_name === display) {
-                                  delete next[ruleCode];
-                                }
-                              });
+                                  // 先移除同一症狀已選的其他規則
+                                  Object.keys(next).forEach(ruleCode => {
+                                    if (next[ruleCode].symptom_name === display) {
+                                      delete next[ruleCode];
+                                    }
+                                  });
 
-                              // 如果原本點的這顆就是已選狀態，代表取消，不重加
-                              if (existing) {
-                                return next;
+                                  // 如果原本點的這顆就是已選狀態，代表取消，不重加
+                                  if (existing) {
+                                    return next;
+                                  }
+
+                                  // 否則改成這個症狀目前唯一選中的規則
+                                  next[item.rule_code] = {
+                                    degree: item.degree,
+                                    judge: item.judge,
+                                    rule_code: item.rule_code,
+                                    symptom_name: display,
+                                  };
+
+                                  return next;
+                                })
                               }
-
-                              // 否則改成這個症狀目前唯一選中的規則
-                              next[item.rule_code] = {
-                                degree: item.degree,
-                                judge: item.judge,
-                                rule_code: item.rule_code,
-                                symptom_name: display,
-                              };
-
-                              return next;
-                            })
-                          }
-                          className={`px-3 py-1.5 rounded-full border text-xs leading-snug text-left max-w-full ${colors.border} ${isSelected ? `${colors.bg.replace('20', '90')} text-white ring-2 ring-offset-1 ring-primary` : `${colors.bg} text-black`}`}
-                          title={`第${item.degree}級：${item.judge}`}
-                        >
-                          第{item.degree}級：{item.judge}
-                        </button>
-                      );
-                    })}
-                  </div>
+                              className={`px-3 py-1.5 rounded-full border text-xs leading-snug text-left max-w-full ${colors.border} ${isSelected ? `${colors.bg.replace('20', '90')} text-white ring-2 ring-offset-1 ring-primary` : `${colors.bg} text-black`}`}
+                              title={`第${item.degree}級：${item.judge}`}
+                            >
+                              第{item.degree}級：{item.judge}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
                 </div>
               )
             ))}
