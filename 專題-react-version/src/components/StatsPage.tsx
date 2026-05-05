@@ -11,6 +11,7 @@ type StatsApiResponse = {
     total: number;
     male: number;
     female: number;
+    unknown: number; // ✅ 加這行
     avgAge: number;
     levelCounts: Record<string, number>;
     ageCounts: Record<string, number>;
@@ -54,6 +55,7 @@ const StatsPage: React.FC = () => {
     total: 0,
     male: 0,
     female: 0,
+    unknown: 0, // ✅ 加這行
     avgAge: 0,
     levelCounts: { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0, none: 0 },
     ageCounts: { "0-18": 0, "19-30": 0, "31-45": 0, "46-60": 0, "61+": 0 },
@@ -104,6 +106,7 @@ const StatsPage: React.FC = () => {
       total: statsRaw.total,
       male: statsRaw.male,
       female: statsRaw.female,
+      unknown: statsRaw.unknown, // ✅ 重點！！
       avgAge: Number(statsRaw.avgAge || 0).toFixed(1),
       levelCounts,
       ageCounts,
@@ -225,7 +228,7 @@ const StatsPage: React.FC = () => {
                       style={{
                         background: `conic-gradient(#3b82f6 0% ${
                           stats.total ? (stats.male / stats.total) * 100 : 0
-                        }%, #ec4899 ${stats.total ? (stats.male / stats.total) * 100 : 0}% 100%)`,
+                        }%, #ec4899 ${stats.total ? (stats.male / stats.total) * 100 : 0}% ${stats.total ? ((stats.male + stats.female) / stats.total) * 100 : 0}%, #a3a3a3 ${stats.total ? ((stats.male + stats.female) / stats.total) * 100 : 0}% 100%)`,
                       }}
                     />
                     <div className="relative z-10 bg-white w-20 h-20 rounded-full flex flex-col items-center justify-center">
@@ -244,6 +247,11 @@ const StatsPage: React.FC = () => {
                       <span className="w-3 h-3 rounded-full bg-pink-500" />
                       <span className="text-gray-700">女</span>
                       <span className="text-gray-500">{stats.female} 筆</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="w-3 h-3 rounded-full bg-gray-400" />
+                      <span className="text-gray-700">不詳</span>
+                      <span className="text-gray-500">{stats.unknown ?? 0} 筆</span>
                     </div>
                   </div>
                 </div>

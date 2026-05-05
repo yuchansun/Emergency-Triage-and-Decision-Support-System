@@ -57,18 +57,11 @@ async def create_triagesave(triagesave_data: dict):
             # --- 新增 final_level 儲存邏輯到 triage_record ---
             # 相容兩種前端格式：selectedLevel（頂層）或 result.selectedLevel
             result_data = triagesave_data.get("result") or {}
-            final_level = triagesave_data.get("selectedLevel")
-            if final_level is None:
-                final_level = result_data.get("selectedLevel")
+            final_level = triagesave_data.get("selectedLevel") or result_data.get("selectedLevel")
             system_recommended_level = triagesave_data.get("worstSelectedDegree")
 
             # 確保 final_level 的儲存邏輯正確
-            if system_recommended_level is None or final_level != system_recommended_level:
-                if final_level is None:
-                    final_level = triagesave_data.get("selectedLevel")
-                    if final_level is None:
-                        final_level = result_data.get("selectedLevel")
-            else:
+            if system_recommended_level is not None and final_level == system_recommended_level:
                 final_level = None
 
             # ✅ 同一 triage_id: 更新，不新增第二筆，並更新 final_level

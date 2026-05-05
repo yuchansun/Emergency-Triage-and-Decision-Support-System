@@ -32,6 +32,7 @@ async def get_triage_report(triage_id: str):
                     t.triage_id,
                     t.patient_id,
                     t.nurse_id,
+                    t.final_level,  -- 務必加入這個欄位
                     s.name AS nurse_name,
                     t.created_at,
 
@@ -206,6 +207,28 @@ async def get_triage_report(triage_id: str):
                             "judge_name": judge_name,
                         }
                     )
+            # 在組裝 data 字典之前（約第 140 行）加入這段邏輯：
+
+            # 1. 取得兩個來源的級數
+            raw_final = base_row.get("final_level")  # 護理師手改的
+            raw_rule = triage_level                 # 系統規則算的
+
+            # 2. 執行優先級判定：如果有 final_level 就用它，沒有才用 rule 算的[cite: 1]
+            # 注意：要排除 None 和空字串，但保留數字 0[cite: 1]
+            if raw_final is not None and str(raw_final).strip() != "":
+                effective_level = raw_final
+            else:
+                effective_level = raw_rule
+
+            # 3. 處理「0 轉 1」的業務需求：如果是 0 級（直入），前端顯示為第 1 級[cite: 1]
+            if effective_level is not None:
+                try:
+                    level_int = int(effective_level)
+                    final_display_level = 1 if level_int == 0 else level_int
+                except (ValueError, TypeError):
+                    final_display_level = effective_level
+            else:
+                final_display_level = None
 
             birth_date = p_row.get("birth_date")
             data = {
@@ -213,7 +236,7 @@ async def get_triage_report(triage_id: str):
                 "patient_id": resolved_patient_id,
                 "nurse_id": base_row.get("nurse_id"),
                 "created_at": base_row.get("created_at"),
-                "triage_level": triage_level, 
+                "triage_level": final_display_level,
 
                 "name": p_row.get("name"),
                 "id_number": p_row.get("id_number"),
@@ -256,7 +279,6 @@ async def get_triage_report(triage_id: str):
                 "chief_complaint": "\n".join(dict.fromkeys(chief_complaints)),
                 "symptom_rule_pairs": symptom_rule_pairs,
                 "nurse_name": base_row.get("nurse_name"),
-                "triage_level": triage_level,
             }
 
             return {"success": True, "data": data}

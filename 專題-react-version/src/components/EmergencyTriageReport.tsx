@@ -29,6 +29,7 @@ const parseList = (v: any): string[] => {
 
 const isMale = (g: any) => g === "M" || g === "男";
 const isFemale = (g: any) => g === "F" || g === "女";
+const isUnknown = (g: any) => g === "U" || g === "不詳";
 
 const formatDateTime = (value: any): string => {
   if (!value) return "";
@@ -170,7 +171,7 @@ const getTemplateHTML = (color: string, data?: any) => `
         <td>姓名<br><span class="en">Name</span></td>
         <td>${safe(data?.name)}</td>
         <td>性別<br><span class="en">Gender</span></td>
-        <td class="c">${isMale(data?.gender) ? "☑" : "☐"} 男 M ${isFemale(data?.gender) ? "☑" : "☐"} 女 F</td>
+        <td class="c">${isMale(data?.gender) ? "☑" : "☐"} 男 M ${isFemale(data?.gender) ? "☑" : "☐"} 女 F ${isUnknown(data?.gender) ? "☑" : "☐"} 不詳 U</td>
         <td class="c">${safe(data?.age ?? "無年齡資料")}<br>歲</td>
         <td>出生日期<br><span class="en">Birthday</span></td>
         <td class="c">${safe(data?.birth_date)}</td>

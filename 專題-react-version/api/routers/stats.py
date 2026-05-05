@@ -101,6 +101,7 @@ async def get_stats_overview(range: str = Query("month", pattern="^(today|week|m
         total = len(filtered)
         male = sum(1 for item in filtered if item["gender"] == "M")
         female = sum(1 for item in filtered if item["gender"] == "F")
+        unknown = sum(1 for item in filtered if item["gender"] == "U")
         avg_age = round(sum(item["age"] for item in filtered) / total, 1) if total > 0 else 0.0
 
         level_counts = {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0, "none": 0}
@@ -135,6 +136,7 @@ async def get_stats_overview(range: str = Query("month", pattern="^(today|week|m
                 "total": total,
                 "male": male,
                 "female": female,
+                "unknown": unknown,
                 "avgAge": avg_age,
                 "levelCounts": level_counts,
                 "ageCounts": age_counts,

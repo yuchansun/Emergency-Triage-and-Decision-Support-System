@@ -23,14 +23,19 @@ def calc_age(birth_date: Any) -> Optional[int]:
 
 def normalize_triage_level(value: Any) -> int:
     if value is None:
-        return 5
+        return 5  # 如果真的完全沒資料，預設給 5
     try:
         level = int(value)
     except (TypeError, ValueError):
         return 5
-    if level <= 0:
+    
+    # 核心邏輯：如果是 0（直入急救室），回傳給前端數字 1
+    if level == 0:
         return 1
-    if level >= 5:
+    # 限制在 1-5 之間
+    if level < 1:
+        return 1
+    if level > 5:
         return 5
     return level
 
@@ -82,7 +87,8 @@ def build_where_clause(
         params.append(birth_to)
 
     if triage_level:
-        clauses.append("COALESCE(tragg.triage_level, t.final_level) = %s")
+        # 修改順序：優先過濾護理師手改的級數
+        clauses.append("COALESCE(t.final_level, tragg.triage_level) = %s")
         params.append(triage_level)
 
     if not clauses:
@@ -145,7 +151,8 @@ async def get_history_records(
                     p.gender,
                     p.birth_date,
                     p.id_number,
-                    COALESCE(tragg.triage_level, t.final_level) AS triage_level,
+                    -- 修改此處：優先取 final_level
+                    COALESCE(t.final_level, tragg.triage_level) AS triage_level,
                     COALESCE(tragg.chief_complaint, '') AS chief_complaint_note,
                     COALESCE(e.tocc_symptoms, '') AS final_symptoms_raw,
                     COALESCE(e.visit_time, t.created_at) AS arrival_at,
