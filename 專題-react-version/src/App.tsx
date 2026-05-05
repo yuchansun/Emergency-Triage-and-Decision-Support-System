@@ -282,6 +282,12 @@ function App() {
     setForceLevel1(true);
     setDirectToERSelected(true);
 
+    setSelectedSymptoms(prev => {
+      const newSet = new Set(prev);
+      newSet.add('直入急救室');
+      return newSet;
+    });
+
     void handleConfirmAndSaveTriage(
       {
         selectedLevel: 1,

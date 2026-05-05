@@ -730,7 +730,7 @@ td, th {
                 <label className="text-xs text-gray-600">檢傷級數</label>
                 <select value={form.triageLevel} onChange={(e) => setField("triageLevel", e.target.value)} className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 text-sm bg-white">
                   <option value="">全部</option>
-                  <option value="1">第一級</option>
+                  <option value="1" >第一級</option>
                   <option value="2">第二級</option>
                   <option value="3">第三級</option>
                   <option value="4">第四級</option>
@@ -740,13 +740,35 @@ td, th {
             </div>
           </div>
 
-          <div className="mt-4 flex justify-end gap-2">
-            <button onClick={resetFilters} className="px-4 py-2 rounded-xl bg-red-50 text-red-600 border border-red-200 text-sm font-medium hover:bg-red-100">
-              清除查詢
+          <div className="mt-4 flex justify-between items-center">
+            {/* 左邊 */}
+            <button
+              onClick={() => {
+                setForm((prev) => ({ ...prev, keyword: "直入急救室" }));
+                setField("keyword", "直入急救室");
+                handleSearch();
+              }}
+              className="px-4 py-2 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 shadow-sm"
+            >
+              直入急救室
             </button>
-            <button onClick={handleSearch} className="px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-medium hover:bg-emerald-600 shadow-sm">
-              查詢
-            </button>
+
+            {/* 右邊 */}
+            <div className="flex gap-2">
+              <button
+                onClick={resetFilters}
+                className="px-4 py-2 rounded-xl bg-red-50 text-red-600 border border-red-200 text-sm font-medium hover:bg-red-100"
+              >
+                清除查詢
+              </button>
+
+              <button
+                onClick={handleSearch}
+                className="px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-medium hover:bg-emerald-600 shadow-sm"
+              >
+                查詢
+              </button>
+            </div>
           </div>
         </div>
 
@@ -892,7 +914,7 @@ td, th {
               <div><div className="text-gray-500">生日</div><div className="font-semibold">{selected.birthday}</div></div>
               <div><div className="text-gray-500">到院時間</div><div className="font-semibold">{editDraft.arrivalAt}</div></div>
               <div>
-                        <div className="text-gray-500">檢傷人員</div>
+                <div className="text-gray-500">檢傷人員</div>
                 {isEditing ? (
                   <div className="mt-1 w-full rounded border border-gray-300 bg-gray-50 px-2 py-1 text-sm text-gray-700">
                     {editDraft.nurseName || editDraft.nurseId}
