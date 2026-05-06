@@ -5,6 +5,19 @@ from typing import Any, Dict, List, Optional, Tuple
 from knowledge_base import knowledge_base
 from vitals_analyzer import match_vital_labels_to_symptom_candidates, vitals_analyzer
 
+# 主訴 → 症狀關鍵詞時共用：強制繁中、忠實原文、避免英文殘留與臆測症狀
+CHIEF_COMPLAINT_SYMPTOM_KEYWORDS_RULES = """
+【輸出格式與語言】
+- 只輸出一行症狀關鍵詞，以頓號（、）分隔；不要前綴、後綴、說明或「症狀關鍵詞：」等標籤。
+- 每個關鍵詞必須為台灣繁體中文；不得保留英文、拼音或中英混雜（例如不得出現 coughing、blood、fever）。
+- 用詞精準：長期咳嗽口述整理為「咳嗽」；痰中帶血、咯血、coughed up blood 等一律整理為「咳血」，勿寫成「血液出血」等冗贅或非慣用說法。
+
+【忠實度】
+- 僅列出原始主訴字面或語意上明確提及的症狀；嚴禁臆測或補寫未提及的症狀。
+- 若原文未提到發燒，且所提供的生命徵象分析也未將體溫判為異常發燒，則不得輸出「發燒」「高燒」等。
+- 參考摘錄或醫學知識僅供對照用語，不得因而新增主訴未出現的症狀。
+"""
+
 class RAGPipeline:
     def __init__(self):
         # 這裡不自己建 DB，直接共用全域 knowledge_base 物件
@@ -148,7 +161,7 @@ class RAGPipeline:
                 priority_instruction = ""
                 if vitals_symptoms:
                     priority_instruction = """
-重要：請優先考慮生命徹象異常提供的症狀，不要被檢索到的醫學知識干擾。
+重要：請優先考慮生命徵象異常提供的症狀，不要被檢索到的醫學知識干擾。
 生命徵象異常是客觀測量結果，比檢索到的文獻更可靠。
 """
                 
@@ -159,9 +172,10 @@ class RAGPipeline:
 
 {text_section}{vitals_summary}
 
+{CHIEF_COMPLAINT_SYMPTOM_KEYWORDS_RULES}
 {priority_instruction}
-請從上述主訴中提取主要症狀關鍵詞。
-請特別注意：
+請從上述主訴與生命徵象分析中提取主要症狀關鍵詞（無則僅依主訴）。
+若下方有數值型生命徵象之判讀規則，僅在有對應測值時適用：
 - 體溫 >= 38°C 要識別為「發燒」
 - 體溫 >= 39°C 要識別為「高燒」
 - 體溫 >= 40°C 要識別為「超高熱」
@@ -173,8 +187,8 @@ class RAGPipeline:
 - 血氧 < 94% 要識別為「低血氧」
 - 其他生命徵象異常也要正確識別
 
-請嚴格使用頓號（、）分隔症狀，不要使用其他符號。
-範例格式：胸痛、呼吸困難、發燒、高血壓
+請嚴格使用頓號（、）分隔症狀。
+範例格式：咳嗽、咳血
 
 請只回傳症狀關鍵詞，不要加任何解釋。
 """
@@ -186,10 +200,11 @@ class RAGPipeline:
 
 {text_section}{vitals_summary}
 
+{CHIEF_COMPLAINT_SYMPTOM_KEYWORDS_RULES}
 {priority_instruction}
-不要預設最嚴重情況；只能依主訴與上述摘錄整理，資訊不足時勿添加未提及之危急症狀。
-請參考上述醫學知識，整理出主要症狀關鍵詞。
-請特別注意：
+不要預設最嚴重情況；只能依主訴與下列生命徵象判讀（若有測值）整理，資訊不足時勿添加未提及之危急症狀。
+請參考上述摘錄僅作用詞對照，整理出主要症狀關鍵詞。
+若下方有數值型生命徵象之判讀規則，僅在有對應測值時適用：
 - 體溫 >= 38°C 要識別為「發燒」
 - 體溫 >= 39°C 要識別為「高燒」
 - 體溫 >= 40°C 要識別為「超高熱」
@@ -201,8 +216,8 @@ class RAGPipeline:
 - 血氧 < 94% 要識別為「低血氧」
 - 其他生命徵象異常也要正確識別
 
-請嚴格使用頓號（、）分隔症狀，不要使用其他符號。
-範例格式：胸痛、呼吸困難、發燒、高血壓
+請嚴格使用頓號（、）分隔症狀。
+範例格式：咳嗽、咳血
 
 請只回傳症狀關鍵詞，不要加任何解釋。
 """
@@ -225,6 +240,7 @@ class RAGPipeline:
 
 {text_section}{vitals_summary}
 
+{CHIEF_COMPLAINT_SYMPTOM_KEYWORDS_RULES}
 請特別注意：
 - 體溫 >= 38°C 要識別為「發燒」
 - 體溫 >= 39°C 要識別為「高燒」
@@ -238,7 +254,7 @@ class RAGPipeline:
 - 其他生命徵象異常也要正確識別
 
 請嚴格使用頓號（、）分隔症狀，不要使用其他符號。
-範例格式：胸痛、呼吸困難、發燒、高血壓
+範例格式：咳嗽、咳血
 
 請只回傳症狀關鍵詞，不要加任何解釋。
 """

@@ -8,6 +8,7 @@ import requests
 from collections import defaultdict
 from database import fetch_all
 from rag_pipeline import (
+    CHIEF_COMPLAINT_SYMPTOM_KEYWORDS_RULES,
     rag_pipeline,
     compute_final_ttas_degree,
     format_advice_with_rule_layer,
@@ -118,21 +119,8 @@ async def summarize_cc(body: SummarizeRequest):
         raw = body.text.strip()
         vitals = body.vitals
         llm_mode = getattr(body, 'llm_mode', 'local')
-        
-        # 依 llm_mode 決定本地/雲端模型
         llm_fn = call_gemini_llm if llm_mode == "cloud" else call_local_llm
-        if llm_mode == "cloud":
-            prompt = (
-                "你是一位急診分級護理師的助手。請從以下原始主訴中，整理出主要症狀關鍵詞，"
-                "使用頓號（、）分隔，例如：『頭痛、頭暈、胸悶』。"
-                "不要預設最嚴重情況；只能依主訴字面合理整理，資訊不足時勿添加危急症狀。"
-                "只輸出症狀關鍵詞，不要加任何說明句子。\n\n"
-                "原始主訴：" + raw + "\n\n症狀關鍵詞："
-                )
-        else:
-            prompt = rag_pipeline.enhance_symptom_summary(raw)
-        summary = llm_fn(prompt).strip()
-        
+
         # 先把生命徵象轉成症狀標籤（例如：發燒、低血氧）
         vitals_symptoms = []
         if vitals:
@@ -154,15 +142,16 @@ async def summarize_cc(body: SummarizeRequest):
 
 原始主訴：{raw}
 
-請嚴格使用頓號（、）分隔症狀，不要使用其他符號。
-範例格式：頭痛、胸悶、胸痛
+{CHIEF_COMPLAINT_SYMPTOM_KEYWORDS_RULES}
+請嚴格使用頓號（、）分隔症狀。
+範例格式：頭痛、胸悶
 
 請只回傳症狀關鍵詞，不要加任何解釋。
 """
             
             voice_summary = ""
             try:
-                voice_summary = call_local_llm(voice_prompt).strip()
+                voice_summary = llm_fn(voice_prompt).strip()
                 print(f"[LLM] 語音統整原始結果：'{voice_summary}'")
                 
                 # 檢查LLM結果是否有效
@@ -201,16 +190,10 @@ async def summarize_cc(body: SummarizeRequest):
             return SummarizeResponse(summary=summary)
         
         # 一般流程：走 RAG 增強 prompt 後再請 LLM 摘要
-        print(f"[LLM] 使用 LLM 處理：'{raw}'")
+        print(f"[LLM] 使用 LLM 處理：'{raw}'（mode={llm_mode}）")
         enhanced_prompt = rag_pipeline.enhance_symptom_summary(raw, vitals=vitals)
-        response = call_local_llm(enhanced_prompt).strip()
-        
-        # 清理回應，確保格式正確
-        if response and len(response) > 0:
-            summary = response
-        else:
-            summary = raw
-            
+        summary = llm_fn(enhanced_prompt).strip() or raw
+
         return SummarizeResponse(summary=summary)
     except Exception as e:
         print("Summarize error:", e)
