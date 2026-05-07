@@ -78,9 +78,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     nhi_degree: string;
   }
   // const LLM_BASE_URL = 'http://localhost:9000';    
-  const LLM_BASE_URL = llmMode === 'cloud'
-    ? 'http://localhost:9000'  // 雲端LLM
-    : 'http://localhost:8001'; // 本地端LLM
+  const LLM_BASE_URL = 'http://localhost:8001';  // 永遠指向 LLM 後端
 
 
   const [triageRows, setTriageRows] = useState<TriageRow[] | null>(null);
@@ -1342,11 +1340,10 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
           <button
             onClick={handleOneClickIntegrate}
             disabled={isLlmIntegrating}
-            className={`px-4 py-2 rounded-lg focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors text-sm font-medium whitespace-nowrap inline-flex items-center gap-1.5 ${
-              isLlmIntegrating
+            className={`px-4 py-2 rounded-lg focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors text-sm font-medium whitespace-nowrap inline-flex items-center gap-1.5 ${isLlmIntegrating
                 ? 'bg-primary/70 text-white cursor-wait'
                 : 'bg-primary text-white hover:bg-primary-dark'
-            }`}
+              }`}
             title="統整主訴與生命徵象"
           >
             {isLlmIntegrating && (
@@ -1502,8 +1499,8 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
                 }
               }}
               className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-colors ${speechLang === 'id-ID'
-                  ? 'bg-primary text-white border-primary'
-                  : 'bg-transparent text-primary border-primary/40 hover:bg-primary/10'
+                ? 'bg-primary text-white border-primary'
+                : 'bg-transparent text-primary border-primary/40 hover:bg-primary/10'
                 }`}
             >
               印尼語 Bahasa
