@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import json
 import os
 import re
+import time
 import requests
 from collections import defaultdict
 from database import fetch_all
@@ -20,45 +21,131 @@ from dotenv import load_dotenv
 
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Gemini 模型也可由環境變數切換，例如想升級 gemini-2.0-flash 時不用動程式碼
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "models/gemini-1.5-flash")
 if GEMINI_API_KEY:
     client = genai_new.Client(api_key=GEMINI_API_KEY)
-    print("✅ Gemini API Key 載入成功")
+    print(f"✅ Gemini API Key 載入成功（model={GEMINI_MODEL}）")
 else:
     client = None
     print("⚠️ 找不到 GEMINI_API_KEY，雲端模式無法使用")
+
+# 本地端 Ollama 模型可由環境變數切換；開發用 7B、Demo/驗收時可改 14B。
+# 預設為 qwen2.5:7b-instruct（繁中表現遠優於 llama3）；
+# 若要切回舊模型或升 14B，在 .env 設 OLLAMA_MODEL 即可，不需動程式碼。
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct")
+try:
+    OLLAMA_NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "200"))
+except (TypeError, ValueError):
+    OLLAMA_NUM_PREDICT = 200
+try:
+    OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "30"))
+except (TypeError, ValueError):
+    OLLAMA_TIMEOUT = 30
+print(
+    "✅ Ollama 設定："
+    f"base_url={OLLAMA_BASE_URL}, model={OLLAMA_MODEL}, "
+    f"num_predict={OLLAMA_NUM_PREDICT}, timeout={OLLAMA_TIMEOUT}s"
+)
 
 from vitals_analyzer import match_vital_labels_to_symptom_candidates, vitals_analyzer
 
 app = FastAPI()
 
+
+def _normalize_symptom_token(s: str) -> str:
+    """正規化症狀字串以利去重：移除前後空白、全形/半形空白、零寬字元。"""
+    if not isinstance(s, str):
+        return ""
+    return (
+        s.replace("\u3000", "")
+         .replace("\u200b", "")
+         .replace(" ", "")
+         .strip()
+    )
+
+
+def _is_subsumed(a: str, b: str) -> bool:
+    """判斷 a 與 b 是否屬同一概念：兩者去空白後互為子字串即視為重複。
+
+    例：「嚴重意識障」 vs 「嚴重意識障礙」 → True（前者為後者的前綴）。
+    例：「血糖高」 vs 「高血糖」 → False（彼此皆非子字串，這類同義詞屬於 Phase 2 才處理）。
+    """
+    na = _normalize_symptom_token(a)
+    nb = _normalize_symptom_token(b)
+    if not na or not nb:
+        return False
+    return na in nb or nb in na
+
+
+def _merge_symptom_lists_preserve_order(*symptom_lists: list[str]) -> list[str]:
+    """依序合併多個症狀清單，遇到「被涵蓋的同概念」自動去重；較完整的詞會取代較短的詞。
+
+    保留輸入順序，避免後加入的生命徵象標籤把原本主訴語意洗掉。
+    """
+    merged: list[str] = []
+    for symptom_list in symptom_lists:
+        if not symptom_list:
+            continue
+        for sym in symptom_list:
+            if not isinstance(sym, str):
+                continue
+            sym_clean = sym.strip()
+            if not sym_clean:
+                continue
+            replaced = False
+            duplicate = False
+            for i, kept in enumerate(merged):
+                if _is_subsumed(sym_clean, kept):
+                    # 同概念，留下較長的版本（通常較完整、較貼近 TTAS 標準術語）
+                    if len(_normalize_symptom_token(sym_clean)) > len(
+                        _normalize_symptom_token(kept)
+                    ):
+                        merged[i] = sym_clean
+                        replaced = True
+                    duplicate = True
+                    break
+            if not duplicate and not replaced:
+                merged.append(sym_clean)
+    return merged
+
 # 本地模式：打 Ollama（速度快、離線可用）
+# 主機位置、模型與輸出長度由 OLLAMA_BASE_URL / OLLAMA_MODEL / OLLAMA_NUM_PREDICT 控制。
 def call_local_llm(prompt: str):
+    start = time.perf_counter()
     try:
-        url = "http://localhost:11434/api/generate"
-        
+        url = f"{OLLAMA_BASE_URL}/api/generate"
+
         payload = {
-            "model": "llama3",
+            "model": OLLAMA_MODEL,
             "prompt": prompt,
             "stream": False,
             "options": {
-                "temperature": 0.3,  # 稍微提高溫度增加靈活性
-                "top_p": 0.8,        # 提高生成效率
-                "max_tokens": 30,     # 進一步限制確保快速
-                "num_predict": 30,    # 預測token數限制
-                "repeat_penalty": 1.1  # 避免重複
-            }
+                "temperature": 0.3,
+                "top_p": 0.8,
+                # 預留足夠 token 給繁中輸出（llama 系列 tokenizer 對中文不友善，
+                # 一個中文字常佔 2~3 tokens；過低會把詞砍斷成「嚴重意識障」這種怪詞）。
+                "num_predict": OLLAMA_NUM_PREDICT,
+                "repeat_penalty": 1.1,
+            },
         }
-        
-        response = requests.post(url, json=payload, timeout=8)  # 稍微增加超時時間
+
+        response = requests.post(url, json=payload, timeout=OLLAMA_TIMEOUT)
         response.raise_for_status()
-        
+
         result = response.json()
+        elapsed = time.perf_counter() - start
+        # 推理耗時 log，方便比較不同模型（llama3 vs qwen2.5:7b vs qwen2.5:14b）的速度差異
+        print(f"[Ollama] model={OLLAMA_MODEL} elapsed={elapsed:.2f}s prompt_chars={len(prompt)}")
         return result.get("response", "")
     except requests.exceptions.RequestException as e:
-        print(f"❌ 本地端LLM API 呼叫失敗: {e}")
+        elapsed = time.perf_counter() - start
+        print(f"❌ 本地端LLM API 呼叫失敗（耗時 {elapsed:.2f}s）: {e}")
         return ""
     except Exception as e:
-        print(f"❌ 本地端LLM 處理失敗: {e}")
+        elapsed = time.perf_counter() - start
+        print(f"❌ 本地端LLM 處理失敗（耗時 {elapsed:.2f}s）: {e}")
         return ""
 
 # 雲端模式：打 Gemini（品質通常較穩，但要有 API Key）
@@ -69,9 +156,8 @@ def call_gemini_llm(prompt: str) -> str:
             return ""
         
         response = client.models.generate_content(
-            
-            model="models/gemini-1.5-flash",
-            contents=prompt
+            model=GEMINI_MODEL,
+            contents=prompt,
         )
         return response.text
     except Exception as e:
@@ -179,13 +265,12 @@ async def summarize_cc(body: SummarizeRequest):
             else:
                 print(f"[LLM] 語音統整失敗，使用原始內容：{raw}")
                 existing_symptoms = [symptom.strip() for symptom in raw.split("、") if symptom.strip()]
-            
-            # 添加生命徵象症狀，避免重複
-            for vital_symptom in vitals_symptoms:
-                if vital_symptom not in existing_symptoms:
-                    existing_symptoms.append(vital_symptom)
-            
-            summary = "、".join(existing_symptoms)
+
+            # 合併 LLM 整理結果 + 生命徵象標籤；用包含關係去重，並保留較完整的詞。
+            # 例：LLM 截斷的「嚴重意識障」與規則層的「嚴重意識障礙」會合併為後者，不再並存。
+            merged_symptoms = _merge_symptom_lists_preserve_order(existing_symptoms, vitals_symptoms)
+
+            summary = "、".join(merged_symptoms)
             print(f"[LLM] 最終合併結果：{summary}")
             return SummarizeResponse(summary=summary)
         
@@ -257,13 +342,14 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
                 print(f"[LLM] RAG檢索失敗: {e}")
         
         # 如果是純生命徵象輸入（沒有文字），使用直接的症狀映射
+        # match_vital_labels_to_symptom_candidates 內部會先查字典，未命中時走語意檢索
         if not text and vitals_symptoms:
             matched_symptoms = match_vital_labels_to_symptom_candidates(
                 vitals_symptoms, candidates
             )
             print(f"[LLM] 純生命徵象推薦：{vitals_symptoms} → {matched_symptoms}")
             return RecommendSymptomsResponse(recommended_symptoms=matched_symptoms[:max_results])
-        
+
         # 主訴有文字時，優先走 RAG 增強推薦
         if text:
             # 格式化檢索到的知識
@@ -271,9 +357,26 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
             if relevant_knowledge:
                 context = rag_pipeline.format_context_for_llm(relevant_knowledge)
                 print(f"[LLM] 使用RAG上下文：{context[:200]}...")
-            
-            # 建立候選症狀清單
-            candidate_lines = "\n".join(f"- {name}" for name in candidates)
+
+            # Phase 1：用語意檢索把全候選縮到 LLM 容易處理的範圍。
+            # 同時把 vitals 標籤併入 query，讓 GCS=8 → 嚴重意識障礙 → 意識程度改變 這條路打通。
+            semantic_query = text
+            if vitals_symptoms:
+                semantic_query = f"{text}；生命徵象異常：{', '.join(vitals_symptoms)}"
+            narrowed_candidates = rag_pipeline.find_similar_symptoms(
+                query=semantic_query,
+                candidates=candidates,
+                top_k=40,
+            )
+            if narrowed_candidates:
+                print(f"[LLM] 語意縮減候選 {len(candidates)} → {len(narrowed_candidates)}，前 10：{narrowed_candidates[:10]}")
+            else:
+                # 萬一語意檢索失敗，仍維持原本全量候選給 LLM
+                narrowed_candidates = candidates
+                print("[LLM] 語意縮減失敗，回退使用前端全候選")
+
+            # 建立候選症狀清單（縮減後）
+            candidate_lines = "\n".join(f"- {name}" for name in narrowed_candidates)
             
             # 建構包含RAG知識的提示
             prompt = (

@@ -77,8 +77,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     ttas_degree: string;
     nhi_degree: string;
   }
-  // const LLM_BASE_URL = 'http://localhost:9000';    
-  const LLM_BASE_URL = 'http://localhost:8001';  // 永遠指向 LLM 後端
+  const LLM_BASE_URL = import.meta.env.VITE_LLM_BASE_URL || 'http://localhost:8001';
 
 
   const [triageRows, setTriageRows] = useState<TriageRow[] | null>(null);
@@ -424,6 +423,10 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     return Array.from(new Set(terms));
   };
 
+  // ⚠️ DEPRECATED（Phase 2 起不再由一鍵統整流程呼叫）：
+  // 這層 substring 過濾會誤殺像「意識改變 vs 意識程度改變」這種語意相近但字面不互含的情況。
+  // 目前仍保留為「手動輸入時 keyword 推薦 / LLM 完全失敗時的 fallback」的內部使用。
+  // 若 Phase 1+2 穩定後不需要 fallback，可整段刪除。
   const isSymptomRelevantToTerms = (symptom: string, terms: string[]): boolean => {
     if (!terms.length) return true;
     return terms.some(term => {
@@ -434,6 +437,9 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     });
   };
 
+  // ⚠️ DEPRECATED（Phase 2 起不再由一鍵統整流程呼叫）：
+  // 用 substring 強行注入推薦會錯過語意相近但字面不重疊的標準症狀名。
+  // 一鍵統整改成信任後端 RAG/LLM 結果；此函式保留供未來必要時參考或清理。
   const buildMustIncludeSymptoms = (summary: string): string[] => {
     if (!triageRows) return [];
     const isAdult = age !== undefined ? age >= 18 : true;
@@ -462,6 +468,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     return Array.from(new Set(mustInclude));
   };
 
+  // ⚠️ DEPRECATED（Phase 2 起不再由一鍵統整流程呼叫）。
   const filterSymptomsByComplaintRelevance = (symptoms: string[], complaint: string): string[] => {
     const tokens = expandClinicalTerms(extractMeaningfulTokens(complaint));
     if (!tokens.length) return symptoms;
@@ -598,24 +605,14 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       candidateSet.add(row.symptom_name);
     }
 
-    const allCandidates = Array.from(candidateSet);
-    const relevanceTerms = expandClinicalTerms(Array.from(new Set([...extractMeaningfulTokens(summary), ...getVitalDrivenTerms()])));
-    const candidates = allCandidates
-      .map(symptom => ({
-        symptom,
-        score: relevanceTerms.reduce((acc, term) => {
-          if (isSymptomRelevantToTerms(symptom, [term])) return acc + 1;
-          return acc;
-        }, 0),
-      }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 80) // 縮小候選集合，降低 LLM 負擔、提升速度
-      .map(item => item.symptom);
+    // Phase 2：不再用 substring 分數預先剔除候選。
+    // 候選縮減交給後端 rag_pipeline.find_similar_symptoms（語意檢索）處理，
+    // 避免「意識改變」這種跟 TTAS 標準名「意識程度改變」字面不完全相同的詞被誤殺。
+    const candidates = Array.from(candidateSet);
 
     console.log('[LLM] unified recommendation');
     console.log('[LLM] summary =', summary);
-    console.log('[LLM] candidates count =', candidates.length, '(from', allCandidates.length, ')');
-    console.log('[LLM] candidates preview =', candidates.slice(0, 20));
+    console.log('[LLM] candidates count =', candidates.length, '(send full list to backend for semantic narrowing)');
 
     if (!candidates.length) return null;
 
@@ -652,7 +649,9 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
 
       if (!list.length) return null;
 
-      // 過濾掉已經選中的症狀，並限制顯示數量
+      // Phase 2：後端已用 RAG 語意檢索 + LLM 過一輪了，前端只負責「去重 + 過濾已選過」。
+      // 不再用 isSymptomRelevantToTerms 這種 substring 過濾，
+      // 否則「意識程度改變」這類語意相關但字面不重疊的症狀會被誤殺。
       const filtered = list.filter((name, index, arr) => {
         const isFirst = arr.indexOf(name) === index;
         if (!isFirst) return false;
@@ -660,9 +659,8 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
           const cleanSelected = selected.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
           return cleanSelected === name;
         });
-        if (already) return false;
-        return isSymptomRelevantToTerms(name, relevanceTerms);
-      }).slice(0, 5); // 限制為5個推薦，與LLM推薦一致
+        return !already;
+      }).slice(0, 5);
 
       return filtered.length > 0 ? filtered : null;
     } catch (err) {
@@ -789,12 +787,10 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       }
 
       // 真正 unified RAG：一次檢索 + 一次推薦，再前端分類
-      const unifiedList = await requestUnifiedRecommendations(summary);
-      const relevantUnified = filterSymptomsByComplaintRelevance(unifiedList ?? [], summary);
-      const mustInclude = buildMustIncludeSymptoms(summary);
-      console.log('[LLM] must include symptoms =', mustInclude);
-      const mergedUnified = Array.from(new Set([...mustInclude, ...relevantUnified]));
-      const split = splitRecommendationsByTab(mergedUnified);
+      // Phase 2：信任後端 RAG/LLM 已挑好的結果，前端不再做 substring 性質的相關性過濾或強制注入。
+      const unifiedList = (await requestUnifiedRecommendations(summary)) ?? [];
+      console.log('[LLM] unified recommendations from backend =', unifiedList);
+      const split = splitRecommendationsByTab(unifiedList);
       const llmHasResult = split.trauma.length > 0 || split.nonTrauma.length > 0;
       const traumaList = split.trauma.length ? split.trauma : getSafeFallbackByTab(summary, 't');
       const nonTraumaList = split.nonTrauma.length ? split.nonTrauma : getSafeFallbackByTab(summary, 'a');

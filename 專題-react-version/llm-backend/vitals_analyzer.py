@@ -26,14 +26,61 @@ VITAL_LABEL_TO_CANDIDATE_SYMPTOMS: Dict[str, List[str]] = {
 def match_vital_labels_to_symptom_candidates(
     vital_labels: List[str], symptom_candidates: List[str]
 ) -> List[str]:
-    """依生命徵象標籤，在候選症狀清單中各取第一個對得上之名稱（順序與 vital_labels 一致）。"""
+    """依生命徵象標籤，在候選症狀清單中各取第一個對得上之名稱（順序與 vital_labels 一致）。
+
+    流程（Phase 1）：
+    1. 先用 `VITAL_LABEL_TO_CANDIDATE_SYMPTOMS` 硬寫字典做快路徑，相容既有對應。
+    2. 字典未命中或字典回的別名都不在候選裡時，退回 RAG 語意檢索。
+       例：GCS=8 → vitals_analyzer 輸出「嚴重意識障礙」，字典裡沒對應，
+       但語意檢索能在候選清單中找到 TTAS 標準名「意識程度改變」。
+    這層保留是為了「之後 Phase 1 完全穩定後可以一口氣把字典刪掉」做緩衝。
+    """
     matched: List[str] = []
-    for vital_label in vital_labels:
+    candidate_set = set(symptom_candidates or [])
+    seen = set()
+
+    def _add(name: str) -> bool:
+        if not name or name in seen or name not in candidate_set:
+            return False
+        matched.append(name)
+        seen.add(name)
+        return True
+
+    # 延遲匯入避免 module circular import（rag_pipeline 也會 import vitals_analyzer）
+    _rag = None
+
+    def _semantic_lookup(query: str) -> str:
+        nonlocal _rag
+        if not candidate_set:
+            return ""
+        if _rag is None:
+            try:
+                from rag_pipeline import rag_pipeline as _imported  # noqa: WPS433
+                _rag = _imported
+            except Exception as e:
+                print(f"❌ vitals_analyzer 無法載入 rag_pipeline 做語意檢索：{e}")
+                _rag = False
+        if not _rag:
+            return ""
+        try:
+            top = _rag.find_similar_symptoms(query, list(candidate_set), top_k=1)
+            return top[0] if top else ""
+        except Exception as e:
+            print(f"❌ vitals_analyzer 語意檢索錯誤：{e}")
+            return ""
+
+    for vital_label in vital_labels or []:
+        if not vital_label:
+            continue
+        # 1. 字典快路徑
         options = VITAL_LABEL_TO_CANDIDATE_SYMPTOMS.get(vital_label, [vital_label])
-        for name in options:
-            if name in symptom_candidates:
-                matched.append(name)
-                break
+        if any(_add(name) for name in options):
+            continue
+        # 2. fallback：直接用 label 做語意檢索
+        semantic_hit = _semantic_lookup(vital_label)
+        if semantic_hit:
+            _add(semantic_hit)
+
     return matched
 
 

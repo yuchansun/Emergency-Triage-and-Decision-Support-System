@@ -131,5 +131,19 @@ class KnowledgeBase:
             )
         return rows
 
+    # ------------------------------------------------------------------
+    # 共用 embedding：給 rag_pipeline.find_similar_symptoms 等上層直接使用，
+    # 避免另外實例化 SentenceTransformer 重複載入模型。
+    # 注意：HuggingFaceEmbeddings 已將 normalize_embeddings=True 設好，
+    # 所以兩個向量做 dot product 就等於 cosine similarity。
+    # ------------------------------------------------------------------
+    def embed_query(self, text: str) -> List[float]:
+        return self._get_embeddings().embed_query(text)
+
+    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+        if not texts:
+            return []
+        return self._get_embeddings().embed_documents(list(texts))
+
 
 knowledge_base = KnowledgeBase()

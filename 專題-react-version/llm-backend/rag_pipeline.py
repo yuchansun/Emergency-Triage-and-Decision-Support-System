@@ -11,18 +11,28 @@ CHIEF_COMPLAINT_SYMPTOM_KEYWORDS_RULES = """
 - 只輸出一行症狀關鍵詞，以頓號（、）分隔；不要前綴、後綴、說明或「症狀關鍵詞：」等標籤。
 - 每個關鍵詞必須為台灣繁體中文；不得保留英文、拼音或中英混雜（例如不得出現 coughing、blood、fever）。
 - 用詞精準：長期咳嗽口述整理為「咳嗽」；痰中帶血、咯血、coughed up blood 等一律整理為「咳血」，勿寫成「血液出血」等冗贅或非慣用說法。
+- 不得輸出截斷或省略字尾的關鍵詞（例如「嚴重意識障」屬不完整，應為「嚴重意識障礙」；但若原文無此完整詞且系統未提供，請勿自行生成）。
 
 【忠實度】
 - 僅列出原始主訴字面或語意上明確提及的症狀；嚴禁臆測或補寫未提及的症狀。
 - 若原文未提到發燒，且所提供的生命徵象分析也未將體溫判為異常發燒，則不得輸出「發燒」「高燒」等。
 - 參考摘錄或醫學知識僅供對照用語，不得因而新增主訴未出現的症狀。
+
+【生命徵象數值處理（重要）】
+- 若原始主訴中夾雜了生命徵象數值或縮寫（例如「GCS 8」「E2V2M4」「血壓 240/200」「血糖 169」「SpO2 88%」「脈壓差大於40」等），**請忽略這些數字、勿自行套用嚴重度分類規則**，不可由原文中的數字推論出「嚴重意識障礙」「重度高血壓」「高血糖」「低血氧」等結論性嚴重度詞。
+- 生命徵象的嚴重度分類由系統的數值規則層另外計算並於後段合併，請勿在此步驟重複產生，以免出現「截斷詞 + 完整詞」並存。
+- 對於明顯的觀察性描述（例如「意識改變」「右側肢體無力」「呼吸喘」），照原文語意整理即可，不需替換為標準術語或加上 GCS、TTAS 級別等推論。
+- 對於「脈壓差大」「血糖偏高」這類沒有對應系統標準分類的觀察，可暫時保留為觀察性描述，但勿改為「重度高血壓」「高血糖」等結論詞。
 """
 
 class RAGPipeline:
     def __init__(self):
         # 這裡不自己建 DB，直接共用全域 knowledge_base 物件
         self.knowledge_base = knowledge_base
-    
+        # 症狀名稱 embedding 快取：第一次見到就計算，後續直接重用，避免每次推薦都重新 encode。
+        # 候選清單其實是 TTAS DB 裡固定的一群字串，所以快取命中率很高。
+        self._symptom_embedding_cache: Dict[str, List[float]] = {}
+
     def retrieve_relevant_knowledge(self, query: str, category: str = None, n_results: int = 3) -> List[Dict[str, Any]]:
         """檢索相關醫學知識"""
         # 單純代理到知識庫層，方便後續統一加 retry 或 logging
@@ -32,6 +42,65 @@ class RAGPipeline:
         except Exception as e:
             print(f"❌ 檢索失敗: {e}")
             return []
+
+    # ------------------------------------------------------------------
+    # 症狀名稱語意檢索（Phase 1 取代字面 substring 過濾）
+    # ------------------------------------------------------------------
+    def _ensure_candidate_embeddings(self, candidates: List[str]) -> Dict[str, List[float]]:
+        """確保所有候選都有 embedding。第一次見到的會一次性批次計算。"""
+        missing = [c for c in candidates if c and c not in self._symptom_embedding_cache]
+        if missing:
+            try:
+                vecs = self.knowledge_base.embed_texts(missing)
+                for name, vec in zip(missing, vecs):
+                    self._symptom_embedding_cache[name] = vec
+                print(f"[RAG] 為 {len(missing)} 個候選症狀建立 embedding（總快取 {len(self._symptom_embedding_cache)} 筆）")
+            except Exception as e:
+                print(f"❌ 計算候選症狀 embedding 失敗：{e}")
+        return self._symptom_embedding_cache
+
+    @staticmethod
+    def _dot_product(a: List[float], b: List[float]) -> float:
+        # embeddings 已 normalize，dot product == cosine similarity
+        if not a or not b or len(a) != len(b):
+            return 0.0
+        return float(sum(x * y for x, y in zip(a, b)))
+
+    def find_similar_symptoms(
+        self,
+        query: str,
+        candidates: List[str],
+        top_k: int = 20,
+        min_score: float = 0.0,
+    ) -> List[str]:
+        """從候選症狀清單中，依語意相似度回傳最相近的前 top_k 個。
+
+        - 用於取代前端的 substring 過濾。
+        - candidates 必須是「實際存在於系統的症狀名稱」清單，回傳結果不會超出此範圍。
+        - 若 query 為空、embedding 出錯或候選為空，會退回前 top_k 個候選（保持流程不中斷）。
+        """
+        clean_candidates = [c for c in (candidates or []) if isinstance(c, str) and c.strip()]
+        if not clean_candidates:
+            return []
+        if not (query or "").strip():
+            return clean_candidates[:top_k]
+        try:
+            cache = self._ensure_candidate_embeddings(clean_candidates)
+            query_vec = self.knowledge_base.embed_query(query)
+            scored: List[Tuple[float, str]] = []
+            for name in clean_candidates:
+                vec = cache.get(name)
+                if not vec:
+                    continue
+                score = self._dot_product(query_vec, vec)
+                if score < min_score:
+                    continue
+                scored.append((score, name))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            return [name for _, name in scored[:top_k]]
+        except Exception as e:
+            print(f"❌ 症狀語意檢索失敗，回退原順序：{e}")
+            return clean_candidates[:top_k]
     
     def format_context_for_llm(self, retrieved_docs: List[Dict[str, Any]]) -> str:
         """將檢索到的文檔格式化為 LLM 可用的上下文"""
@@ -99,30 +168,18 @@ class RAGPipeline:
                 text_section = "原始主訴：無明確主訴（僅生命徵象異常）"
             
             # 如果是純生命徵象輸入（沒有文字），使用簡化的 prompt
+            # 注意：所有數值門檻已由 vitals_analyzer 計算完畢，這裡 LLM 只需忠實列出上方分析結果。
             if not original_text and vitals_symptoms:
                 enhanced_prompt = f"""
 你是一位急診分級護理師助手。請根據以下生命徵象異常分析，整理出症狀關鍵詞：
 
 {text_section}{vitals_summary}
 
-請嚴格只根據上述生命徵象異常分析整理症狀，不要添加其他不相關的症狀。
-請特別注意：
-- 體溫 >= 38°C 要識別為「發燒」
-- 體溫 >= 39°C 要識別為「高燒」
-- 體溫 >= 40°C 要識別為「超高熱」
-- 血壓收縮壓 >= 140 mmHg 要識別為「高血壓」
-- 血壓收縮壓 >= 160 mmHg 要識別為「重度高血壓」
-- 血壓收縮壓 >= 180 mmHg 要識別為「嚴重高血壓」
-- 心跳 >= 120 次/分 要識別為「心跳過速」
-- 心跳 < 60 次/分 要識別為「心跳過緩」
-- 血氧 < 94% 要識別為「低血氧」
-- 其他生命徵象異常也要正確識別
-
+請忠實列出「生命徵象異常分析」裡已經列出的標籤，不要新增、刪改、或自行套用任何數值規則。
 請嚴格使用頓號（、）分隔症狀，不要使用其他符號。
 範例格式：發燒、高血壓
 
-請只回傳基於生命徵象的症狀關鍵詞，不要加任何解釋，不要添加不相關症狀。
-請確保回傳的症狀與生命徵象異常完全對應。
+請只回傳症狀關鍵詞，不要加任何解釋。
 """
             else:
                 # 有文字輸入時，使用完整的 RAG 增強，但優先考慮生命徵象
@@ -175,17 +232,7 @@ class RAGPipeline:
 {CHIEF_COMPLAINT_SYMPTOM_KEYWORDS_RULES}
 {priority_instruction}
 請從上述主訴與生命徵象分析中提取主要症狀關鍵詞（無則僅依主訴）。
-若下方有數值型生命徵象之判讀規則，僅在有對應測值時適用：
-- 體溫 >= 38°C 要識別為「發燒」
-- 體溫 >= 39°C 要識別為「高燒」
-- 體溫 >= 40°C 要識別為「超高熱」
-- 血壓收縮壓 >= 140 mmHg 要識別為「高血壓」
-- 血壓收縮壓 >= 160 mmHg 要識別為「重度高血壓」
-- 血壓收縮壓 >= 180 mmHg 要識別為「嚴重高血壓」
-- 心跳 >= 120 次/分 要識別為「心跳過速」
-- 心跳 < 60 次/分 要識別為「心跳過緩」
-- 血氧 < 94% 要識別為「低血氧」
-- 其他生命徵象異常也要正確識別
+生命徵象若有異常，已由系統數值規則層整理成「生命徵象異常分析」標籤；請直接使用該標籤，不要自行套用任何數值規則。
 
 請嚴格使用頓號（、）分隔症狀。
 範例格式：咳嗽、咳血
@@ -202,19 +249,9 @@ class RAGPipeline:
 
 {CHIEF_COMPLAINT_SYMPTOM_KEYWORDS_RULES}
 {priority_instruction}
-不要預設最嚴重情況；只能依主訴與下列生命徵象判讀（若有測值）整理，資訊不足時勿添加未提及之危急症狀。
+不要預設最嚴重情況；只能依主訴與「生命徵象異常分析」已列出的標籤整理，資訊不足時勿添加未提及之危急症狀。
 請參考上述摘錄僅作用詞對照，整理出主要症狀關鍵詞。
-若下方有數值型生命徵象之判讀規則，僅在有對應測值時適用：
-- 體溫 >= 38°C 要識別為「發燒」
-- 體溫 >= 39°C 要識別為「高燒」
-- 體溫 >= 40°C 要識別為「超高熱」
-- 血壓收縮壓 >= 140 mmHg 要識別為「高血壓」
-- 血壓收縮壓 >= 160 mmHg 要識別為「重度高血壓」
-- 血壓收縮壓 >= 180 mmHg 要識別為「嚴重高血壓」
-- 心跳 >= 120 次/分 要識別為「心跳過速」
-- 心跳 < 60 次/分 要識別為「心跳過緩」
-- 血氧 < 94% 要識別為「低血氧」
-- 其他生命徵象異常也要正確識別
+生命徵象若有異常，已由系統數值規則層整理成標籤；請直接使用該標籤，不要自行套用任何數值規則。
 
 請嚴格使用頓號（、）分隔症狀。
 範例格式：咳嗽、咳血
@@ -241,17 +278,7 @@ class RAGPipeline:
 {text_section}{vitals_summary}
 
 {CHIEF_COMPLAINT_SYMPTOM_KEYWORDS_RULES}
-請特別注意：
-- 體溫 >= 38°C 要識別為「發燒」
-- 體溫 >= 39°C 要識別為「高燒」
-- 體溫 >= 40°C 要識別為「超高熱」
-- 血壓收縮壓 >= 140 mmHg 要識別為「高血壓」
-- 血壓收縮壓 >= 160 mmHg 要識別為「重度高血壓」
-- 血壓收縮壓 >= 180 mmHg 要識別為「嚴重高血壓」
-- 心跳 >= 120 次/分 要識別為「心跳過速」
-- 心跳 < 60 次/分 要識別為「心跳過緩」
-- 血氧 < 94% 要識別為「低血氧」
-- 其他生命徵象異常也要正確識別
+生命徵象若有異常，已由系統數值規則層整理成「生命徵象異常分析」標籤；請直接使用該標籤，不要自行套用任何數值規則。
 
 請嚴格使用頓號（、）分隔症狀，不要使用其他符號。
 範例格式：咳嗽、咳血
@@ -323,11 +350,8 @@ class RAGPipeline:
 
 請參考上述醫學知識，從候選清單中選出 1 到 {max_results} 個最適合的症狀。
 請特別注意：
-- 如果生命徵象顯示異常（如發燒、高血壓等），請優先推薦相關症狀
-- 體溫 >= 38°C 應推薦「發燒」相關症狀
-- 血壓異常應推薦「高血壓」或「低血壓」相關症狀
-- 心跳異常應推薦「心跳過速」或「心跳過緩」相關症狀
-- 血氧異常應推薦「低血氧」相關症狀
+- 如果已提供「生命徵象異常」標籤，請優先參考該標籤推薦相關症狀。
+- 生命徵象數值門檻已由系統規則層判斷；不要根據主訴文字中的數字自行套用任何數值規則。
 
 如果候選清單裡沒有跟主訴或生命徵象明顯相關的症狀，請回傳空的 JSON 陣列 []。
 請嚴格只輸出 JSON 陣列格式，不要加任何解釋文字。
