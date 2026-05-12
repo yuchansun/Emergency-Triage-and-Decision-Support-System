@@ -19,6 +19,11 @@ from knowledge_base import knowledge_base
 from google import genai as genai_new
 from dotenv import load_dotenv
 
+try:
+    import opencc
+except ImportError:
+    opencc = None
+
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # Gemini 模型也可由環境變數切換，例如想升級 gemini-2.0-flash 時不用動程式碼
@@ -52,6 +57,30 @@ print(
 from vitals_analyzer import match_vital_labels_to_symptom_candidates, vitals_analyzer
 
 app = FastAPI()
+
+_TW_CONVERTER = None
+if opencc is not None:
+    try:
+        # s2twp: 簡中 -> 台灣繁中詞彙（例：头痛 -> 頭痛，软件 -> 軟體）
+        _TW_CONVERTER = opencc.OpenCC("s2twp")
+        print("✅ OpenCC 台灣繁中轉換器已啟用")
+    except Exception as e:
+        print(f"⚠️ OpenCC 初始化失敗，將只依賴 LLM prompt 控制繁中輸出：{e}")
+else:
+    print("⚠️ 找不到 opencc 套件，將只依賴 LLM prompt 控制繁中輸出")
+
+
+def to_taiwan_traditional(text: str) -> str:
+    """將 LLM 輸出正規化為台灣繁中，避免本地模型偶爾吐出簡體字。"""
+    if not isinstance(text, str) or not text:
+        return text or ""
+    if _TW_CONVERTER is None:
+        return text
+    try:
+        return _TW_CONVERTER.convert(text)
+    except Exception as e:
+        print(f"⚠️ OpenCC 轉換失敗，保留原文：{e}")
+        return text
 
 
 def _normalize_symptom_token(s: str) -> str:
@@ -138,7 +167,7 @@ def call_local_llm(prompt: str):
         elapsed = time.perf_counter() - start
         # 推理耗時 log，方便比較不同模型（llama3 vs qwen2.5:7b vs qwen2.5:14b）的速度差異
         print(f"[Ollama] model={OLLAMA_MODEL} elapsed={elapsed:.2f}s prompt_chars={len(prompt)}")
-        return result.get("response", "")
+        return to_taiwan_traditional(result.get("response", ""))
     except requests.exceptions.RequestException as e:
         elapsed = time.perf_counter() - start
         print(f"❌ 本地端LLM API 呼叫失敗（耗時 {elapsed:.2f}s）: {e}")
@@ -159,7 +188,7 @@ def call_gemini_llm(prompt: str) -> str:
             model=GEMINI_MODEL,
             contents=prompt,
         )
-        return response.text
+        return to_taiwan_traditional(response.text)
     except Exception as e:
         print(f"❌ Gemini API 呼叫失敗: {e}")
         return ""
@@ -214,7 +243,7 @@ async def summarize_cc(body: SummarizeRequest):
         
         # 如果沒有文字輸入但有生命徵象異常，直接使用生命徵象分析結果
         if not raw and vitals_symptoms:
-            summary = "、".join(vitals_symptoms)
+            summary = to_taiwan_traditional("、".join(vitals_symptoms))
             print(f"[LLM] 純生命徵象輸入，快速返回：{summary}")
             return SummarizeResponse(summary=summary)
         
@@ -270,19 +299,19 @@ async def summarize_cc(body: SummarizeRequest):
             # 例：LLM 截斷的「嚴重意識障」與規則層的「嚴重意識障礙」會合併為後者，不再並存。
             merged_symptoms = _merge_symptom_lists_preserve_order(existing_symptoms, vitals_symptoms)
 
-            summary = "、".join(merged_symptoms)
+            summary = to_taiwan_traditional("、".join(merged_symptoms))
             print(f"[LLM] 最終合併結果：{summary}")
             return SummarizeResponse(summary=summary)
         
         # 一般流程：走 RAG 增強 prompt 後再請 LLM 摘要
         print(f"[LLM] 使用 LLM 處理：'{raw}'（mode={llm_mode}）")
         enhanced_prompt = rag_pipeline.enhance_symptom_summary(raw, vitals=vitals)
-        summary = llm_fn(enhanced_prompt).strip() or raw
+        summary = to_taiwan_traditional(llm_fn(enhanced_prompt).strip() or raw)
 
         return SummarizeResponse(summary=summary)
     except Exception as e:
         print("Summarize error:", e)
-        return SummarizeResponse(summary=body.text)
+        return SummarizeResponse(summary=to_taiwan_traditional(body.text))
 # @app.post("/api/summarize-chief-complaint", response_model=SummarizeResponse)
 # async def summarize_cc(body: SummarizeRequest):
 #     raw = body.text or ""
