@@ -6,7 +6,6 @@ from typing import Dict, List, Optional, Tuple
 VITAL_LABEL_TO_CANDIDATE_SYMPTOMS: Dict[str, List[str]] = {
     "發燒": ["發燒", "體溫過高", "發熱"],
     "高燒": ["高燒", "體溫過高", "發熱", "發燒"],
-    "超高熱": ["超高熱", "體溫過高", "發熱", "高燒", "發燒"],
     "輕度高血壓": ["輕度高血壓", "高血壓", "血壓過高"],
     "重度高血壓": ["重度高血壓", "高血壓", "血壓過高", "嚴重高血壓"],
     "嚴重高血壓": ["嚴重高血壓", "高血壓", "血壓過高", "重度高血壓"],
@@ -112,10 +111,9 @@ class VitalsAnalyzer:
             return []
         
         symptoms = []
-        if temp >= 40.0:
-            symptoms.append("超高熱")
-        elif temp >= 38.0:
-            symptoms.append("發燒")  # 統一為"發燒"，不分"高燒"
+        # 數值層僅輸出「發燒」（≥38°C），不再另立「超高熱」標籤；與 TTAS 口述／條文習慣一致。
+        if temp >= 38.0:
+            symptoms.append("發燒")
         elif temp < 35.0:
             symptoms.append("體溫過低")
         
@@ -372,5 +370,42 @@ class VitalsAnalyzer:
         
         return unique_symptoms, abnormal_summary
 
+
 # 初始化分析器
 vitals_analyzer = VitalsAnalyzer()
+
+
+def filter_recommended_symptoms_by_vitals(
+    recommended: List[str],
+    vitals: Optional[Dict],
+    vitals_symptoms: List[str],
+) -> List[str]:
+    """
+    移除與已輸入生命徵象／規則層標籤明顯矛盾的 TTAS 症狀名。
+    例：語意檢索可能把「舒張期低血壓」誤拉近「低體溫症」（皆有「低」），但體溫已發燒時不應推薦低體溫症。
+    """
+    if not recommended:
+        return recommended
+    vitals = vitals or {}
+    temp = vitals_analyzer.parse_vital_value(vitals.get("temperature"))
+
+    fever_like = False
+    if temp is not None and temp >= 38.0:
+        fever_like = True
+    if "發燒" in vitals_symptoms:
+        fever_like = True
+
+    hypothermia_like = False
+    if temp is not None and temp < 35.0:
+        hypothermia_like = True
+    if any(x in vitals_symptoms for x in ("體溫過低",)):
+        hypothermia_like = True
+
+    out: List[str] = []
+    for name in recommended:
+        if fever_like and name in ("低體溫症", "體溫過低"):
+            continue
+        if hypothermia_like and name in ("發燒/畏寒",):
+            continue
+        out.append(name)
+    return out

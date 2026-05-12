@@ -54,7 +54,21 @@ print(
     f"num_predict={OLLAMA_NUM_PREDICT}, timeout={OLLAMA_TIMEOUT}s"
 )
 
-from vitals_analyzer import match_vital_labels_to_symptom_candidates, vitals_analyzer
+from vitals_analyzer import (
+    filter_recommended_symptoms_by_vitals,
+    match_vital_labels_to_symptom_candidates,
+    vitals_analyzer,
+)
+
+
+def _finalize_symptom_recommendations(
+    names: list,
+    vitals,
+    vitals_symptoms: list,
+    max_results: int,
+) -> list:
+    out = filter_recommended_symptoms_by_vitals(names, vitals, vitals_symptoms or [])
+    return out[:max_results]
 
 app = FastAPI()
 
@@ -377,7 +391,11 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
                 vitals_symptoms, candidates
             )
             print(f"[LLM] 純生命徵象推薦：{vitals_symptoms} → {matched_symptoms}")
-            return RecommendSymptomsResponse(recommended_symptoms=matched_symptoms[:max_results])
+            return RecommendSymptomsResponse(
+                recommended_symptoms=_finalize_symptom_recommendations(
+                    matched_symptoms, vitals, vitals_symptoms, max_results
+                )
+            )
 
         # 主訴有文字時，優先走 RAG 增強推薦
         if text:
@@ -449,7 +467,11 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
                         if symptom in candidates
                     ]
                     print(f"[LLM] RAG增強推薦結果：{filtered_recommendations}")
-                    return RecommendSymptomsResponse(recommended_symptoms=filtered_recommendations[:max_results])
+                    return RecommendSymptomsResponse(
+                        recommended_symptoms=_finalize_symptom_recommendations(
+                            filtered_recommendations, vitals, vitals_symptoms, max_results
+                        )
+                    )
             except json.JSONDecodeError:
                 print(f"[LLM] JSON解析失敗，回應：{raw}")
             
@@ -486,7 +508,11 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
                     if symptom in candidates
                 ]
                 print(f"[LLM] 傳統推薦結果：{filtered_recommendations}")
-                return RecommendSymptomsResponse(recommended_symptoms=filtered_recommendations[:max_results])
+                return RecommendSymptomsResponse(
+                    recommended_symptoms=_finalize_symptom_recommendations(
+                        filtered_recommendations, vitals, vitals_symptoms, max_results
+                    )
+                )
         except json.JSONDecodeError:
             print(f"[LLM] 傳統方法JSON解析失敗，回應：{raw}")
         
