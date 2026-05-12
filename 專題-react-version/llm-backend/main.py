@@ -676,7 +676,8 @@ async def recommend_rules(body: RecommendRulesRequest):
             """
             依生命徵象給規則評分；若明顯矛盾回傳極低分（過濾）。
             """
-            j = str(judge_name or "")
+            # TTAS 資料常見全形小於號「＜」，與程式比對用「<」不一致時會漏判 SpO2 門檻（例如漏掉第一級＜90%）
+            j = str(judge_name or "").replace("＜", "<")
             score = 0
 
             # SpO2 規則一致性
@@ -691,7 +692,7 @@ async def recommend_rules(body: RecommendRulesRequest):
                         score += 35
                     else:
                         return -999
-                if "92-94%" in j or "92-94" in j:
+                if "92-94%" in j or "92-94" in j or "92–94%" in j or "92～94%" in j:
                     if 92 <= spo2_val <= 94:
                         score += 25
                     else:
@@ -880,7 +881,7 @@ async def recommend_rules(body: RecommendRulesRequest):
 
 重要（避免過度升級 over-triage）：
 - 不要預設最嚴重情況；只能根據已選症狀、已填生命徵象與下方 TTAS 摘錄推論。
-- 若無明確危急徵象或數值不符，勿選第一級；資訊不足時選較低嚴重度之規則。
+- 若已填生命徵象數值明確符合某條第一級規則之門檻，必須列入推薦，勿略過。僅在「數值與門檻不符」或「資訊不足以對應任何門檻」時，勿臆測第一級；資訊不足時選較低嚴重度之規則。
 - 只能從候選規則中選擇，不得發明規則；同一 rule_code 勿重複輸出。
 
 主訴：{chief_complaint if chief_complaint else "無"}
