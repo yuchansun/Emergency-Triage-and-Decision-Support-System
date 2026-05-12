@@ -224,6 +224,19 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
   // LLM 事先為外傷 / 非外傷各自計算好的推薦症狀，切換 Tab 時直接使用
   const [llmTraumaSymptoms, setLlmTraumaSymptoms] = useState<string[] | null>(null);
   const [llmNonTraumaSymptoms, setLlmNonTraumaSymptoms] = useState<string[] | null>(null);
+
+  // 顯示推薦症狀前一律即時過濾掉「目前已選」的項目；
+  // 避免按完一鍵統整後選了一個症狀，又因為輸入框變動而把它再次秀出來。
+  // 已選 set 隨時會變，所以這層過濾不能在快照存入時做、必須在顯示時做。
+  const filterOutSelectedSymptoms = (list: string[] | null | undefined): string[] => {
+    if (!list || !list.length) return [];
+    const picked = new Set(
+      Array.from(selectedSymptoms).map(s =>
+        s.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '')
+      )
+    );
+    return list.filter(name => !picked.has(name));
+  };
   const [isLlmIntegrating, setIsLlmIntegrating] = useState<boolean>(false);
   const [lastLlmSummary, setLastLlmSummary] = useState<string>('');
   const [recommendationSource, setRecommendationSource] = useState<'llm' | 'fallback' | 'none'>('none');
@@ -322,16 +335,17 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     const isLlmResultForCurrentInput = trimmed === lastLlmSummary;
     if (isLlmResultForCurrentInput || hasAnyLlmResult) {
       if (activeTab === 't') {
-        setRecommendedSymptoms(llmTraumaSymptoms ?? []);
+        setRecommendedSymptoms(filterOutSelectedSymptoms(llmTraumaSymptoms));
         return;
       }
-      setRecommendedSymptoms(llmNonTraumaSymptoms ?? []);
+      setRecommendedSymptoms(filterOutSelectedSymptoms(llmNonTraumaSymptoms));
       return;
     }
 
     // 只要主訴被手動修改（不等於上次 LLM summary），就即時重跑關鍵字推薦
     searchSymptoms(trimmed);
-  }, [activeTab, inputText, llmTraumaSymptoms, llmNonTraumaSymptoms, isLlmIntegrating, lastLlmSummary, recommendationSource]);
+    // selectedSymptoms 加進依賴：選/取消選時自動 re-filter 推薦顯示
+  }, [activeTab, inputText, llmTraumaSymptoms, llmNonTraumaSymptoms, isLlmIntegrating, lastLlmSummary, recommendationSource, selectedSymptoms]);
 
   // 每個症狀出現過的類別（外傷/非外傷）
   const symptomCategoryIndex = useMemo(() => {
@@ -846,12 +860,13 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     const text = e.target.value;
     setInputText(text);
     // 不立即把 recommendationSource 清空，避免輸入中的排序抖動
-    // 若目前已有 LLM 結果，輸入中先維持 LLM 顯示，避免順序抖動
+    // 若目前已有 LLM 結果，輸入中先維持 LLM 顯示，避免順序抖動。
+    // 但必須依目前已選即時過濾，否則使用者選過的症狀又會跳回推薦欄。
     if (recommendationSource !== 'none') {
       if (activeTab === 't') {
-        setRecommendedSymptoms(llmTraumaSymptoms ?? []);
+        setRecommendedSymptoms(filterOutSelectedSymptoms(llmTraumaSymptoms));
       } else {
-        setRecommendedSymptoms(llmNonTraumaSymptoms ?? []);
+        setRecommendedSymptoms(filterOutSelectedSymptoms(llmNonTraumaSymptoms));
       }
       return;
     }
