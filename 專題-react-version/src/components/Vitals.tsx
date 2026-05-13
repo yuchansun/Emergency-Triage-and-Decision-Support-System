@@ -1,28 +1,30 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 
-type VitalsProps = {
+export type VitalsState = {
+  temperature: string;
+  heartRate: string;
+  spo2: string;
+  respRate: string;
+  weight: string;
+  systolicBP: string;
+  diastolicBP: string;
+  bloodSugar: string;
+  bloodSugarLevel: string | null;
+  gcsEye: string | null;
+  gcsVerbal: string | null;
+  gcsMotor: string | null;
+  obHistory: string | null;
+  pastHistory: string[];
+  drugAllergy: string | null;
+  painScore: number | null;
+  doNotTreat: string;
+  sentiment: number | null;
+};
+
+export type VitalsProps = {
   gender?: '男' | '女' | '不詳' | '';
-  vitals?: {
-    temperature: string;
-    heartRate: string;
-    spo2: string;
-    respRate: string;
-    weight: string;
-    systolicBP: string;
-    diastolicBP: string;
-    bloodSugar: string;
-    bloodSugarLevel: string | null;
-    gcsEye: string | null;
-    gcsVerbal: string | null;
-    gcsMotor: string | null;
-    obHistory: string | null;
-    pastHistory: string[];
-    drugAllergy: string | null;
-    painScore: number | null;
-    doNotTreat: string;
-    sentiment: number | null;
-  };
-  setVitals?: (v: any) => void;
+  vitals?: VitalsState;
+  setVitals?: React.Dispatch<React.SetStateAction<VitalsState>>;
 };
 
 const Vitals: React.FC<VitalsProps> = ({
@@ -98,7 +100,6 @@ const Vitals: React.FC<VitalsProps> = ({
   const setObHistory = (val: string | null) => setVitals({ ...vitals, obHistory: val });
 
   const pastHistory = vitals.pastHistory || [];
-  const setPastHistory = (val: string[]) => setVitals({ ...vitals, pastHistory: val });
 
   const drugAllergy = vitals.drugAllergy;
   const parseDrugAllergy = (raw: string | null): { status: string | null; detail: string } => {
@@ -131,10 +132,19 @@ const Vitals: React.FC<VitalsProps> = ({
 
   // === togglePastHistory 改成更新 props ===
   const togglePastHistory = (label: string) => {
-    const newPastHistory = pastHistory.includes(label)
-      ? pastHistory.filter((item) => item !== label)
-      : [...pastHistory, label];
-    setPastHistory(newPastHistory);
+    const removing = pastHistory.includes(label);
+    setVitals((prev) => {
+      const ph = prev.pastHistory || [];
+      const newPastHistory = removing ? ph.filter((item) => item !== label) : [...ph, label];
+      return {
+        ...prev,
+        pastHistory: newPastHistory,
+        ...(removing && label === '禁治療' ? { doNotTreat: '' } : {}),
+      };
+    });
+    if (removing && label === '其他') {
+      setOtherHistoryDetails('');
+    }
   };
 
   // === 其餘程式碼保持不變 ===
@@ -153,7 +163,6 @@ const Vitals: React.FC<VitalsProps> = ({
   const heartRateVal = toNumber(heartRate);
   const spo2Val = toNumber(spo2);
   const respRateVal = toNumber(respRate);
-  const weightVal = toNumber(weight);
   const sysVal = toNumber(systolicBP);
   const diaVal = toNumber(diastolicBP);
   const bsVal = toNumber(bloodSugar);
@@ -184,10 +193,14 @@ const Vitals: React.FC<VitalsProps> = ({
 
   // === 共用樣式 ===
   const baseInputClass =
-    "form-input w-full rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-12 px-4 focus:ring-primary focus:border-primary";
+    "form-input w-full rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-10 px-3 focus:ring-primary focus:border-primary";
 
-  const baseSmallInputClass =
-    "form-input w-20 rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-10 px-3 text-sm focus:ring-primary focus:border-primary";
+  /** GCS 數字欄（ring-inset：在 overflow-x-auto 內 focus 不會被裁切） */
+  const gcsInputClass =
+    "form-input w-[5.75rem] min-w-[5.75rem] shrink-0 rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary/50 focus:border-primary";
+
+  const weightInputClass =
+    "form-input w-full rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary";
 
   const errorInputClass =
     " border-red-500 ring-1 ring-red-400 bg-red-50 focus:ring-red-500 focus:border-red-500";
@@ -207,17 +220,16 @@ const Vitals: React.FC<VitalsProps> = ({
   const [edc, setEdc] = useState<string>('');
 
   return (
-    <div className="bg-content-light dark:bg-content-dark p-6 rounded-xl shadow-lg w-full">
-      <h3 className="text-xl font-bold mb-4 flex items-center gap-2">生命徵象</h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+    <div className="bg-content-light dark:bg-content-dark p-4 rounded-xl shadow-lg w-full">
+      <h3 className="text-xl font-bold mb-3 flex items-center gap-2">生命徵象</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3">
         {/* 體溫 / 脈搏 / SPO2 */}
-        <div className="grid grid-cols-3 gap-4 col-span-1 md:col-span-2">
+        <div className="grid grid-cols-3 gap-3 col-span-1 md:col-span-2">
           <div>
-            <label className="block text-sm font-medium pb-2" htmlFor="temperature">體溫 (°C)</label>
+            <label className="block text-sm font-medium pb-1" htmlFor="temperature">體溫 (°C)</label>
             <input
               id="temperature"
               type="number"
-              placeholder="例如 37.5"
               value={temperature}
               onChange={(e) => setTemperature(e.target.value)}
               className={baseInputClass + (isTempAbnormal ? errorInputClass : "")}
@@ -227,11 +239,10 @@ const Vitals: React.FC<VitalsProps> = ({
             )}
           </div>
           <div>
-            <label className="block text-sm font-medium pb-2" htmlFor="heart-rate">脈搏 (次/分)</label>
+            <label className="block text-sm font-medium pb-1" htmlFor="heart-rate">脈搏 (次/分)</label>
             <input
               id="heart-rate"
               type="number"
-              placeholder="例如 80"
               value={heartRate}
               onChange={(e) => setHeartRate(e.target.value)}
               className={baseInputClass + (isHeartRateAbnormal ? errorInputClass : "")}
@@ -241,11 +252,10 @@ const Vitals: React.FC<VitalsProps> = ({
             )}
           </div>
           <div>
-            <label className="block text-sm font-medium pb-2" htmlFor="spo2">SPO2 (%)</label>
+            <label className="block text-sm font-medium pb-1" htmlFor="spo2">SPO2 (%)</label>
             <input
               id="spo2"
               type="number"
-              placeholder="例如 98"
               value={spo2}
               onChange={(e) => setSpo2(e.target.value)}
               className={baseInputClass + (isSpo2Abnormal ? errorInputClass : "")}
@@ -256,14 +266,13 @@ const Vitals: React.FC<VitalsProps> = ({
           </div>
         </div>
 
-        {/* 呼吸 / 體重 */}
-        <div className="grid grid-cols-3 gap-4 col-span-1 md:col-span-2">
+        {/* 呼吸 / 血壓 / BS（血糖） */}
+        <div className="grid grid-cols-3 gap-3 col-span-1 md:col-span-2">
           <div>
-            <label className="block text-sm font-medium pb-2" htmlFor="respiratory-rate">呼吸 (次/分)</label>
+            <label className="block text-sm font-medium pb-1" htmlFor="respiratory-rate">呼吸 (次/分)</label>
             <input
               id="respiratory-rate"
               type="number"
-              placeholder="例如 18"
               value={respRate}
               onChange={(e) => setRespRate(e.target.value)}
               className={baseInputClass + (isRespAbnormal ? errorInputClass : "")}
@@ -273,41 +282,23 @@ const Vitals: React.FC<VitalsProps> = ({
             )}
           </div>
           <div>
-            <label className="block text-sm font-medium pb-2" htmlFor="weight">體重 (公斤)</label>
-            <input
-              id="weight"
-              type="number"
-              placeholder="例如 70"
-              value={weight}
-              onChange={(e) => setWeight(e.target.value)}
-              className={baseInputClass + (isWeightAbnormal ? errorInputClass : "")}
-            />
-            {/* 體重暫時不給警示文字，如需要可自行加上 */}
-          </div>
-        </div>
-
-        {/* 血壓 & 血糖 */}
-        <div className="grid grid-cols-2 gap-4 col-span-1 md:col-span-2">
-          <div>
-            <label className="block text-sm font-medium pb-2" htmlFor="systolic-bp">血壓 (mmHg)</label>
+            <label className="block text-sm font-medium pb-1" htmlFor="systolic-bp">血壓 (mmHg)</label>
             <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <input
                   id="systolic-bp"
                   type="number"
-                  placeholder="120"
                   value={systolicBP}
                   onChange={(e) => setSystolicBP(e.target.value)}
-                  className={baseInputClass + (isSysAbnormal ? errorInputClass : "")}
+                  className={`${baseInputClass} flex-1 min-w-0${isSysAbnormal ? errorInputClass : ""}`}
                 />
-                <span className="text-subtext-light dark:text-subtext-dark">/</span>
+                <span className="text-subtext-light dark:text-subtext-dark shrink-0">/</span>
                 <input
                   id="diastolic-bp"
                   type="number"
-                  placeholder="80"
                   value={diastolicBP}
                   onChange={(e) => setDiastolicBP(e.target.value)}
-                  className={baseInputClass + (isDiaAbnormal ? errorInputClass : "")}
+                  className={`${baseInputClass} flex-1 min-w-0${isDiaAbnormal ? errorInputClass : ""}`}
                 />
               </div>
               {(isSysAbnormal || isDiaAbnormal) && (
@@ -315,22 +306,20 @@ const Vitals: React.FC<VitalsProps> = ({
               )}
             </div>
           </div>
-
           <div>
-            <label className="block text-sm font-medium pb-2" htmlFor="blood-sugar">BS (血糖)</label>
+            <label className="block text-sm font-medium pb-1" htmlFor="blood-sugar">BS (血糖)</label>
             <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <input
                   id="blood-sugar"
                   type="number"
-                  placeholder="例如 90"
                   value={bloodSugar}
                   onChange={(e) => setBloodSugar(e.target.value)}
-                  className={baseInputClass + (isBloodSugarAbnormal ? errorInputClass : "")}
+                  className={`${baseInputClass} w-full max-w-[7rem] shrink-0${isBloodSugarAbnormal ? errorInputClass : ""}`}
                 />
                 <button
                   className={
-                    "flex items-center justify-center h-12 w-16 text-sm rounded-md bg-white dark:bg-background-dark border border-subtext-dark/30 hover:bg-primary/10 hover:border-primary transition-colors" +
+                    "flex items-center justify-center h-9 w-12 text-sm rounded-md bg-white dark:bg-background-dark border border-subtext-dark/30 hover:bg-primary/10 hover:border-primary transition-colors shrink-0" +
                     (bloodSugarLevel === 'Low' ? " bg-primary text-white border-primary hover:bg-primary/90" : "")
                   }
                   onClick={() => setBloodSugarLevel('Low')}
@@ -340,7 +329,7 @@ const Vitals: React.FC<VitalsProps> = ({
                 </button>
                 <button
                   className={
-                    "flex items-center justify-center h-12 w-16 text-sm rounded-md bg-white dark:bg-background-dark border border-subtext-dark/30 hover:bg-primary/10 hover:border-primary transition-colors" +
+                    "flex items-center justify-center h-9 w-12 text-sm rounded-md bg-white dark:bg-background-dark border border-subtext-dark/30 hover:bg-primary/10 hover:border-primary transition-colors shrink-0" +
                     (bloodSugarLevel === 'High' ? " bg-primary text-white border-primary hover:bg-primary/90" : "")
                   }
                   onClick={() => setBloodSugarLevel('High')}
@@ -356,91 +345,112 @@ const Vitals: React.FC<VitalsProps> = ({
           </div>
         </div>
 
-        {/* GCS */}
-        <div className="space-y-2 col-span-1 md:col-span-2">
-          <label className="text-sm font-medium whitespace-nowrap">GCS (E / V / M)</label>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">E</span>
-              <input
-                type="number"
-                min={1}
-                max={4}
-                value={gcsEye ?? ""}
-                onChange={(e) => setGcsEye(e.target.value === "" ? null : e.target.value)}
-                placeholder="1–4"
-                className={baseSmallInputClass}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">V</span>
-              <input
-                type="number"
-                min={1}
-                max={5}
-                value={gcsVerbal ?? ""}
-                onChange={(e) => setGcsVerbal(e.target.value === "" ? null : e.target.value)}
-                placeholder="1–5"
-                className={baseSmallInputClass}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">M</span>
-              <input
-                type="number"
-                min={1}
-                max={6}
-                value={gcsMotor ?? ""}
-                onChange={(e) => setGcsMotor(e.target.value === "" ? null : e.target.value)}
-                placeholder="1–6"
-                className={baseSmallInputClass}
-              />
+        {/* GCS + 體重：用 grid 固定左 GCS、右體重，避免小於 md 時 flex-col 變兩列全寬 */}
+        <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_13.5rem] gap-x-4 gap-y-2 items-start col-span-1 md:col-span-2 sm:grid-cols-[minmax(0,1fr)_16rem]">
+          <div className="min-w-0">
+            <label className="text-sm font-medium whitespace-nowrap">GCS (E / V / M)</label>
+            {/* py：避免 overflow-x-auto 裁切 focus ring；橫向捲動列仍維持單行 */}
+            <div className="mt-1.5 flex min-w-0 flex-nowrap items-center gap-x-2 overflow-x-auto overscroll-x-contain px-0.5 py-1 [-webkit-overflow-scrolling:touch] sm:gap-x-2.5">
+              <div className="flex shrink-0 items-center gap-1.5">
+                <span className="whitespace-nowrap text-sm font-medium leading-none">
+                  E<span className="text-xs font-normal text-subtext-light dark:text-subtext-dark">(1~4)</span>
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={4}
+                  title="E：1~4"
+                  value={gcsEye ?? ""}
+                  onChange={(e) => setGcsEye(e.target.value === "" ? null : e.target.value)}
+                  className={gcsInputClass}
+                />
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <span className="whitespace-nowrap text-sm font-medium leading-none">
+                  V<span className="text-xs font-normal text-subtext-light dark:text-subtext-dark">(1~5)</span>
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={5}
+                  title="V：1~5"
+                  value={gcsVerbal ?? ""}
+                  onChange={(e) => setGcsVerbal(e.target.value === "" ? null : e.target.value)}
+                  className={gcsInputClass}
+                />
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <span className="whitespace-nowrap text-sm font-medium leading-none">
+                  M<span className="text-xs font-normal text-subtext-light dark:text-subtext-dark">(1~6)</span>
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={6}
+                  title="M：1~6"
+                  value={gcsMotor ?? ""}
+                  onChange={(e) => setGcsMotor(e.target.value === "" ? null : e.target.value)}
+                  className={gcsInputClass}
+                />
+              </div>
             </div>
           </div>
-          <div className="text-sm text-subtext-light dark:text-subtext-dark">
-            <span>Eye: {gcsEye || "-"}　</span>
-            <span>Verbal: {gcsVerbal || "-"}　</span>
-            <span>Motor: {gcsMotor || "-"}</span>
+          <div className="flex min-w-0 w-full max-w-full flex-col gap-1.5 justify-self-stretch">
+            <label className="block text-sm font-medium pb-1" htmlFor="weight">體重 (公斤)</label>
+            <input
+              id="weight"
+              type="number"
+              value={weight}
+              onChange={(e) => setWeight(e.target.value)}
+              className={weightInputClass + (isWeightAbnormal ? errorInputClass : "")}
+            />
           </div>
         </div>
 
         {/* 產科史 */}
         {gender === '女' && (
-          <fieldset className="col-span-1 md:col-span-2">
-            <legend className="block text-sm font-medium pb-1">產科史</legend>
-            <div className="flex items-start gap-4">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {['無月經/停經', '有懷孕', '無懷孕', '不確定'].map(label => (
-                  <button
-                    key={label}
-                    type="button"
-                    className={
-                      "flex items-center justify-center h-10 text-sm rounded-md bg-white dark:bg-background-dark border border-subtext-dark/30 hover:bg-primary/10 hover:border-primary transition-colors px-2" +
-                      (obHistory === label ? " bg-primary text-white border-primary hover:bg-primary/90" : "")
-                    }
-                    onClick={() => setObHistory(label)}
-                  >
-                    {label}
-                  </button>
-                ))}
+          <fieldset className="col-span-1 md:col-span-2 border-0 p-0 m-0 min-w-0">
+            <legend className="sr-only">產科史</legend>
+            <div className="flex min-w-0 flex-nowrap items-end gap-x-1.5 gap-y-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch]">
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="text-sm font-medium leading-none">產科史</span>
+                <div className="flex flex-nowrap items-center gap-1.5">
+                  {['無月經/停經', '有懷孕', '無懷孕', '不確定'].map((label) => (
+                    <button
+                      key={label}
+                      type="button"
+                      className={
+                        "flex items-center justify-center h-9 min-h-[2.25rem] text-xs sm:text-sm rounded-md bg-white dark:bg-background-dark border border-subtext-dark/30 hover:bg-primary/10 hover:border-primary transition-colors px-2 whitespace-nowrap" +
+                        (obHistory === label ? " bg-primary text-white border-primary hover:bg-primary/90" : "")
+                      }
+                      onClick={() => setObHistory(obHistory === label ? null : label)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium pb-1" htmlFor="lmp">LMP (最後月經日期)</label>
+              <div className="ml-4 flex min-w-0 flex-nowrap items-end gap-x-2 pl-1">
+                <div className="w-[min(100%,9.75rem)] shrink-0">
+                  <label className="block text-xs font-medium pb-1 whitespace-nowrap" htmlFor="lmp">
+                    LMP (最後月經日期)
+                  </label>
                   <input
-                    value={lmp}  // ← 新增
-                    onChange={(e) => setLmp(e.target.value)}  // ← 新增
-                    className="form-input w-full rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-10 px-3 text-sm focus:ring-primary focus:border-primary"
+                    value={lmp}
+                    onChange={(e) => setLmp(e.target.value)}
+                    className="form-input w-full max-w-full rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-2 text-sm focus:ring-primary focus:border-primary"
                     id="lmp"
                     type="date"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-medium pb-1" htmlFor="edc">EDC (預產期)</label>
+                <div className="w-[min(100%,9.75rem)] shrink-0">
+                  <label className="block text-xs font-medium pb-1 whitespace-nowrap" htmlFor="edc">
+                    EDC (預產期)
+                  </label>
                   <input
-                    value={edc}  // ← 新增
-                    onChange={(e) => setEdc(e.target.value)}  // ← 新增
-                    className="form-input w-full rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-10 px-3 text-sm focus:ring-primary focus:border-primary"
+                    value={edc}
+                    onChange={(e) => setEdc(e.target.value)}
+                    className="form-input w-full max-w-full rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-2 text-sm focus:ring-primary focus:border-primary"
                     id="edc"
                     type="date"
                   />
@@ -452,7 +462,7 @@ const Vitals: React.FC<VitalsProps> = ({
 
         {/* 過去病史 */}
         <fieldset className="col-span-1 md:col-span-2">
-          <legend className="block text-sm font-medium pb-2">過去病史</legend>
+          <legend className="block text-sm font-medium pb-1">過去病史</legend>
           <div className="flex flex-wrap gap-2 z-10 relative">
             {['無', '高血壓', '糖尿病', '心臟病', '肺部疾病', '癌症', '禁治療', '其他'].map(label => {
               const isSelected = pastHistory.includes(label);
@@ -462,7 +472,7 @@ const Vitals: React.FC<VitalsProps> = ({
                   type="button"
                   onClick={() => togglePastHistory(label)}
                   className={
-                    "px-3 py-1.5 rounded-full text-sm transition-colors border " +
+                    "px-3 py-1 rounded-full text-sm transition-colors border " +
                     (isSelected
                       ? "bg-primary text-white border-primary"
                       : "bg-white dark:bg-background-dark text-primary border-primary/30 hover:bg-primary/10")
@@ -473,27 +483,33 @@ const Vitals: React.FC<VitalsProps> = ({
               );
             })}
           </div>
-          <div className="grid grid-cols-2 gap-4 mt-2">
-            <input
-              value={doNotTreat}
-              onChange={(e) => setDoNotTreat(e.target.value)}
-              placeholder="禁治療詳情（如：DNR、DNI 等）"
-              type="text"
-              className="form-input w-full rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-10 px-3 text-sm focus:ring-primary focus:border-primary"
-            />
-            <input
-              value={otherHistoryDetails}  // ← 新增
-              onChange={(e) => setOtherHistoryDetails(e.target.value)}  // ← 新增
-              placeholder="其他病史詳情"
-              type="text"
-              className="form-input w-full rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-10 px-3 text-sm focus:ring-primary focus:border-primary"
-            />
-          </div>
+          {(pastHistory.includes('禁治療') || pastHistory.includes('其他')) && (
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              {pastHistory.includes('禁治療') && (
+                <input
+                  value={doNotTreat}
+                  onChange={(e) => setDoNotTreat(e.target.value)}
+                  placeholder="禁治療詳情（如：DNR、DNI 等）"
+                  type="text"
+                  className="form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary"
+                />
+              )}
+              {pastHistory.includes('其他') && (
+                <input
+                  value={otherHistoryDetails}
+                  onChange={(e) => setOtherHistoryDetails(e.target.value)}
+                  placeholder="其他病史詳情"
+                  type="text"
+                  className="form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary"
+                />
+              )}
+            </div>
+          )}
         </fieldset>
 
         {/* 藥物過敏 */}
         <fieldset className="col-span-1 md:col-span-2">
-          <legend className="block text-sm font-medium pb-2">藥物過敏</legend>
+          <legend className="block text-sm font-medium pb-1">藥物過敏</legend>
           <div className="flex flex-wrap gap-2 z-10 relative">
             {['無', '不詳', '有'].map(label => {
               const isSelected = allergyParsed.status === label;
@@ -503,7 +519,7 @@ const Vitals: React.FC<VitalsProps> = ({
                   type="button"
                   onClick={() => setDrugAllergy(label)}
                   className={
-                    "px-3 py-1.5 rounded-full text-sm transition-colors border " +
+                    "px-3 py-1 rounded-full text-sm transition-colors border " +
                     (isSelected
                       ? "bg-primary text-white border-primary"
                       : "bg-white dark:bg-background-dark text-primary border-primary/30 hover:bg-primary/10")
@@ -520,14 +536,14 @@ const Vitals: React.FC<VitalsProps> = ({
               onChange={(e) => setAllergyDetails(e.target.value)}
               placeholder="藥物過敏詳情（如：盤尼西林、阿斯匹靈等）"
               type="text"
-              className="form-input w-full rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-10 px-3 text-sm focus:ring-primary focus:border-primary mt-2"
+              className="form-input w-full rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary mt-2"
             />
           )}
         </fieldset>
 
         {/* 疼痛指數 */}
         <div className="col-span-1 md:col-span-2">
-          <label className="block text-sm font-medium pb-2">疼痛指數 (0-10)</label>
+          <label className="block text-sm font-medium pb-1">疼痛指數 (0-10)</label>
           <div className="grid grid-cols-11 gap-1">
             {[
               { icon: 'sentiment_very_satisfied', value: 0 },
@@ -546,12 +562,12 @@ const Vitals: React.FC<VitalsProps> = ({
                 key={value}
                 type="button"
                 className={
-                  "flex items-center justify-center h-10 text-sm rounded-md bg-white dark:bg-background-dark border border-subtext-dark/30 hover:bg-primary/10 hover:border-primary transition-colors px-2" +
+                  "flex items-center justify-center h-9 text-sm rounded-md bg-white dark:bg-background-dark border border-subtext-dark/30 hover:bg-primary/10 hover:border-primary transition-colors px-1.5" +
                   (painScore === value ? " bg-primary text-white border-primary hover:bg-primary/90" : "")
                 }
                 onClick={() => setPainScore(value)}
               >
-                <span className="material-symbols-outlined text-lg">{icon}</span>
+                <span className="material-symbols-outlined text-base">{icon}</span>
                 <span className="ml-1 font-bold">{value}</span>
               </button>
             ))}
@@ -560,14 +576,14 @@ const Vitals: React.FC<VitalsProps> = ({
 
         {/* 新增：心理/情緒狀態 */}
         <div className="col-span-1 md:col-span-2">
-          <label className="block text-sm font-medium pb-2">心理/情緒狀態 (0-10)</label>
+          <label className="block text-sm font-medium pb-1">心理/情緒狀態 (0-10)</label>
           <div className="grid grid-cols-11 gap-1">
             {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(value => (
               <button
                 key={value}
                 type="button"
                 className={
-                  "flex items-center justify-center h-10 text-sm rounded-md bg-white dark:bg-background-dark border border-subtext-dark/30 hover:bg-primary/10 hover:border-primary transition-colors px-2" +
+                  "flex items-center justify-center h-9 text-sm rounded-md bg-white dark:bg-background-dark border border-subtext-dark/30 hover:bg-primary/10 hover:border-primary transition-colors px-1.5" +
                   (sentiment === value ? " bg-primary text-white border-primary hover:bg-primary/90" : "")
                 }
                 onClick={() => setSentiment(value)}

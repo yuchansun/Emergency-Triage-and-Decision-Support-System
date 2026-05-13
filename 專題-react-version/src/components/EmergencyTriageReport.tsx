@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Editor } from "@tinymce/tinymce-react";
 
 //這個檔案負責從後端抓檢傷報告資料，然後套用到 Word 模板的 HTML 結構，提供列印和下載功能。
@@ -111,7 +111,7 @@ td, th {
 `;
 
 // 針對 MS Word 友善調整的 HTML 結構 (拿掉 absolute, 100% height 等容易跑版的屬性)
-const getTemplateHTML = (color: string, data?: any) => `
+const getTemplateHTML = (_color: string, data?: any) => `
 <div class="page-wrapper">
   <div class="corner corner-tl"></div>
   <div class="corner corner-tr"></div>
@@ -269,55 +269,6 @@ const getTemplateHTML = (color: string, data?: any) => `
 </div>
 `;
 
-const getWordCSS = (color: string) => `
-  @page { size: A4 portrait; margin: 10mm; }
-  html, body { margin:0; padding:0; }
-  body { font-family:'PMingLiU','Microsoft JhengHei',serif; color:#111; }
-
-  /* Word 不穩定的排版先關掉 */
-  .corner { display:none !important; }
-  .page-wrapper {
-    width: 190mm !important;
-    min-height: auto !important;
-    margin: 0 auto !important;
-    padding: 0 !important;
-    position: static !important;
-  }
-  .inner { position: static !important; }
-
-  table {
-    width: 100% !important;
-    border-collapse: collapse !important;
-    table-layout: fixed !important;
-    mso-table-lspace: 0pt !important;
-    mso-table-rspace: 0pt !important;
-  }
-  td, th {
-    border: 1px solid #444 !important;
-    padding: 2px 4px !important;
-    vertical-align: top !important;
-    font-size: 12px !important;
-    line-height: 1.2 !important;
-  }
-  .no-b td, .no-b th { border: none !important; }
-
-  /* 原本模板有 float / flex，Word 會亂掉，改成可相容行為 */
-  table[style*="float:right"] {
-    float: none !important;
-    margin-left: auto !important;
-    margin-right: 0 !important;
-    margin-top: 8px !important;
-  }
-  div[style*="display:flex"] {
-    display: table !important;
-    width: 100% !important;
-  }
-  div[style*="display:flex"] > div {
-    display: table-cell !important;
-    width: 33% !important;
-  }
-`;
-
 const LEVEL_COLORS: Record<number, string> = {
   1: "#EF4444", // 紅
   2: "#F97316", // 橙
@@ -433,9 +384,6 @@ export default function EmergencyTriageReport({ patientData, onBack }: Props) {
     setShowSentModal(true);
     setTimeout(() => { setShowSentModal(false); onBack(); }, 2000);
   };
-
-  const levelCellStyle = (level: any, n: number, color: string) =>
-  Number(level) === n ? `background:${color};font-weight:700;` : "";
 
   //渲染的HTML內容
   return (

@@ -1,76 +1,61 @@
 import React, { useState } from 'react';
-import ChiefComplaint from './ChiefComplaint';
+import { ChiefComplaintMainPanel } from './ChiefComplaint';
 import SymptomSelection from './SymptomSelection';
+import Vitals, { type VitalsProps } from './Vitals';
+
+type VitalsForm = NonNullable<VitalsProps['vitals']>;
 
 interface LeftPanelProps {
   selectedSymptoms: Set<string>;
   setSelectedSymptoms: React.Dispatch<React.SetStateAction<Set<string>>>;
-  inputText: string;
-  setInputText: React.Dispatch<React.SetStateAction<string>>;
-  onWorstDegreeChange: (degree: number | null) => void;
-  onDirectToER: () => void;
-  directToERSelected: boolean;
+  activeTab: 't' | 'a';
+  gender?: VitalsProps['gender'];
   age?: number;
-  llmMode: 'cloud' | 'local'; //新加
-  voiceConsented: boolean;
-  vitals?: {
-    temperature: string;
-    heartRate: string;
-    spo2: string;
-    respRate: string;
-    weight: string;
-    systolicBP: string;
-    diastolicBP: string;
-    bloodSugar: string;
-    bloodSugarLevel: string | null;
-    gcsEye: string | null;
-    gcsVerbal: string | null;
-    gcsMotor: string | null;
-    obHistory: string | null;
-    pastHistory: string[];
-    drugAllergy: string | null;
-    painScore: number | null;
-    doNotTreat: string;
-    sentiment: number | null;
-  };
-  onChiefComplaintChange?: (data: {
-    selectedRules: Record<string, { 
-      degree: number; 
-      judge: string; 
-      rule_code: string;      // ← 加這個
-      symptom_name: string;   // ← 加這個
-    }>;
-    supplementText: string;
-  }) => void;
+  vitals: VitalsForm;
+  setVitals: React.Dispatch<React.SetStateAction<VitalsForm>>;
 }
 
-const LeftPanel: React.FC<LeftPanelProps> = ({ selectedSymptoms, setSelectedSymptoms, inputText, setInputText, onWorstDegreeChange, onDirectToER, directToERSelected, age, llmMode, voiceConsented, vitals, onChiefComplaintChange }) => {
-  const [activeTab, setActiveTab] = useState<'t' | 'a'>('t');
+const LeftPanel: React.FC<LeftPanelProps> = ({
+  selectedSymptoms,
+  setSelectedSymptoms,
+  activeTab,
+  gender,
+  age,
+  vitals,
+  setVitals,
+}) => {
+  const [symptomBodyOpen, setSymptomBodyOpen] = useState(false);
 
   return (
-    <div className="flex flex-col gap-8">
-      <ChiefComplaint
-        selectedSymptoms={selectedSymptoms}
-        setSelectedSymptoms={setSelectedSymptoms}
-        inputText={inputText}
-        setInputText={setInputText}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        onWorstDegreeChange={onWorstDegreeChange}
-        onDirectToER={onDirectToER}
-        directToERSelected={directToERSelected}
-        age={age}
-        vitals={vitals}
-        onChiefComplaintChange={onChiefComplaintChange}
-        llmMode={llmMode} //新加
-        voiceConsented={voiceConsented}
-      />
-      <SymptomSelection
-        selectedSymptoms={selectedSymptoms}
-        setSelectedSymptoms={setSelectedSymptoms}
-        activeTab={activeTab}
-        age={age}
-      />
+    <div className="flex flex-col gap-4">
+      <ChiefComplaintMainPanel />
+      <Vitals gender={gender} vitals={vitals} setVitals={setVitals} />
+      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/40 shadow-md overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setSymptomBodyOpen((o) => !o)}
+          className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left font-semibold text-text-light dark:text-text-dark hover:bg-gray-50 dark:hover:bg-gray-800/80 transition-colors"
+          aria-expanded={symptomBodyOpen}
+        >
+          <span className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary text-xl">body_system</span>
+            選擇症狀（人體圖）
+          </span>
+          <span className="material-symbols-outlined text-subtext-light dark:text-subtext-dark shrink-0">
+            {symptomBodyOpen ? 'expand_less' : 'expand_more'}
+          </span>
+        </button>
+        {symptomBodyOpen && (
+          <div className="border-t border-gray-100 dark:border-gray-800 p-2 sm:p-4">
+            <SymptomSelection
+              selectedSymptoms={selectedSymptoms}
+              setSelectedSymptoms={setSelectedSymptoms}
+              activeTab={activeTab}
+              age={age}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 };

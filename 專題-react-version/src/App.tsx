@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import './App.css';
 import PatientInfo from './components/PatientInfo';
 import LeftPanel from './components/LeftPanel';
-import Vitals from './components/Vitals';
+import { ChiefComplaintProvider, ChiefComplaintRecommendationsPanel } from './components/ChiefComplaint';
 import Login from "./components/Login";
 import AddPatient from "./components/AddPatient";
 import type { PatientData } from './components/AddPatient';
@@ -13,6 +13,9 @@ import NursesPage from './components/NursesPage';
 import StatsPage from './components/StatsPage';
 import StaffProfile from './components/StaffProfile';
 import { openVoiceConsentPopup } from './components/VoiceConsentModal';
+import type { VitalsProps } from './components/Vitals';
+
+type VitalsForm = NonNullable<VitalsProps['vitals']>;
 
 interface ToccState {
   travel: string;
@@ -66,6 +69,7 @@ function App() {
   );
 
   const [selectedSymptoms, setSelectedSymptoms] = useState<Set<string>>(new Set());
+  const [triageActiveTab, setTriageActiveTab] = useState<'t' | 'a'>('t');
   const [inputText, setInputText] = useState<string>('');
   const [worstSelectedDegree, setWorstSelectedDegree] = useState<number | null>(null);
   const [forceLevel1, setForceLevel1] = useState<boolean>(false);
@@ -78,7 +82,7 @@ function App() {
   const [majorIncident, setMajorIncident] = useState<string>('');
   const [visitTime, setVisitTime] = useState<string>(new Date().toISOString());
 
-  const getInitialVitals = () => ({
+  const getInitialVitals = (): VitalsForm => ({
     temperature: '', heartRate: '', spo2: '', respRate: '', weight: '',
     systolicBP: '', diastolicBP: '', bloodSugar: '', bloodSugarLevel: null,
     gcsEye: null, gcsVerbal: null, gcsMotor: null, obHistory: null,
@@ -90,7 +94,7 @@ function App() {
     contactItems: [], clusterItems: [], clusterOther: "", symptoms: [],
   });
 
-  const [vitals, setVitals] = useState(getInitialVitals());
+  const [vitals, setVitals] = useState<VitalsForm>(() => getInitialVitals());
   const [tocc, setTocc] = useState<ToccState>(getInitialTocc());
 
   const [chiefComplaintData, setChiefComplaintData] = useState({
@@ -119,6 +123,7 @@ function App() {
       selectedRules: {},
       supplementText: '',
     });
+    setTriageActiveTab('t');
   };
 
   const resetMainScreen = () => {
@@ -127,6 +132,7 @@ function App() {
     setWorstSelectedDegree(null);
     setForceLevel1(false);
     setDirectToERSelected(false);
+    setTriageActiveTab('t');
   };
 
   const handleLogout = () => {
@@ -497,48 +503,75 @@ function App() {
         )}
 
         {stage === "main" && (
-          <div className="px-6 py-8 mx-auto max-w-screen-2xl grid grid-cols-10 gap-8">
-            <div className="col-span-10">
-              <PatientInfo
-                patient={patientData}
-                bed={bed}
-                setBed={setBed}
-                patientSource={patientSource}
-                setPatientSource={setPatientSource}
-                majorIncident={majorIncident}
-                setMajorIncident={setMajorIncident}
-                onToccChange={setTocc}
-                requireTOCC={globalConfig.requireTOCC}
-              />
-            </div>
-            <div className="col-span-6">
-              <LeftPanel selectedSymptoms={selectedSymptoms} setSelectedSymptoms={setSelectedSymptoms} inputText={inputText} setInputText={setInputText} onWorstDegreeChange={setWorstSelectedDegree} onDirectToER={handleDirectToER} directToERSelected={directToERSelected} age={patientData?.age} voiceConsented={voiceConsented} vitals={vitals} onChiefComplaintChange={handleChiefComplaintChange} llmMode={llmMode} />
-            </div>
-            <div className="col-span-4 flex flex-col gap-6">
-              <SystemRecommendation
-                selectedSymptoms={selectedSymptoms}
-                inputText={inputText}
-                worstSelectedDegree={worstSelectedDegree}
-                forceLevel1={forceLevel1}
-                onSubmitLevel={resetMainScreen}
-                onOpenTriageReport={() => {
-                  if (isDemoMode) {
-                    alert("教學/模擬模式：不開啟檢傷報告頁");
-                    return;
-                  }
+          <div className="px-6 pt-2 pb-6 mx-auto max-w-screen-2xl grid grid-cols-10 gap-x-6 gap-y-4">
+            <ChiefComplaintProvider
+              selectedSymptoms={selectedSymptoms}
+              setSelectedSymptoms={setSelectedSymptoms}
+              inputText={inputText}
+              setInputText={setInputText}
+              activeTab={triageActiveTab}
+              setActiveTab={setTriageActiveTab}
+              onWorstDegreeChange={setWorstSelectedDegree}
+              onDirectToER={handleDirectToER}
+              directToERSelected={directToERSelected}
+              age={patientData?.age}
+              voiceConsented={voiceConsented}
+              vitals={vitals}
+              onChiefComplaintChange={handleChiefComplaintChange}
+              llmMode={llmMode}
+            >
+              <>
+                <div className="col-span-10">
+                  <PatientInfo
+                    patient={patientData}
+                    bed={bed}
+                    setBed={setBed}
+                    patientSource={patientSource}
+                    setPatientSource={setPatientSource}
+                    majorIncident={majorIncident}
+                    setMajorIncident={setMajorIncident}
+                    onToccChange={setTocc}
+                    requireTOCC={globalConfig.requireTOCC}
+                  />
+                </div>
+                <div className="col-span-5">
+                  <LeftPanel
+                    selectedSymptoms={selectedSymptoms}
+                    setSelectedSymptoms={setSelectedSymptoms}
+                    activeTab={triageActiveTab}
+                    gender={patientData?.gender}
+                    age={patientData?.age}
+                    vitals={vitals}
+                    setVitals={setVitals}
+                  />
+                </div>
+                <div className="col-span-5 flex flex-col gap-4">
+                  <ChiefComplaintRecommendationsPanel />
+                  <SystemRecommendation
+                    selectedSymptoms={selectedSymptoms}
+                    inputText={inputText}
+                    worstSelectedDegree={worstSelectedDegree}
+                    forceLevel1={forceLevel1}
+                    onSubmitLevel={resetMainScreen}
+                    onOpenTriageReport={() => {
+                      if (isDemoMode) {
+                        alert("教學/模擬模式：不開啟檢傷報告頁");
+                        return;
+                      }
 
-                  if (userSettings.confirmBeforeSave) {
-                    setStage("triageReport");
-                  } else {
-                    handleConfirmAndSaveTriage({
-                      selectedLevel: worstSelectedDegree,
-                    });
-                  }
-                }}
-                onConfirmAndSave={handleConfirmAndSaveTriage}
-              />
-              <Vitals gender={patientData?.gender} vitals={vitals} setVitals={setVitals} />
-            </div>
+                      if (userSettings.confirmBeforeSave) {
+                        setStage("triageReport");
+                      } else {
+                        handleConfirmAndSaveTriage({
+                          selectedLevel: worstSelectedDegree,
+                        });
+                      }
+                    }}
+                    onConfirmAndSave={handleConfirmAndSaveTriage}
+                  />
+                </div>
+              </>
+            </ChiefComplaintProvider>
           </div>
         )}
 

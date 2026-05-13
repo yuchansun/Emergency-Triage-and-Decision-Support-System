@@ -89,8 +89,8 @@ const SystemRecommendation: React.FC<SystemRecommendationProps> = ({
 
 
   return (
-    <div className="bg-content-light dark:bg-content-dark p-6 rounded-2xl shadow-lg">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-content-light dark:bg-content-dark p-4 rounded-2xl shadow-lg">
+      <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
           <h3 className="text-2xl font-bold flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">recommend</span>
@@ -115,18 +115,18 @@ const SystemRecommendation: React.FC<SystemRecommendationProps> = ({
         </div>
         <button
           onClick={handleConfirm}
-          className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-semibold text-sm flex items-center gap-2"
+          className="px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-semibold text-sm flex items-center gap-2"
         >
           <span className="material-symbols-outlined text-sm">check_circle</span>
           確定級數
         </button>
       </div>
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-5 gap-2">
         {/* 第一級 */}
         <button
           type="button"
           onClick={() => handleLevelSelect(1)}
-          className={`level-btn p-3 rounded-lg border-2 text-center transition-colors ${selectedLevel === 1
+          className={`level-btn p-2 rounded-lg border-2 text-center transition-colors ${selectedLevel === 1
             ? 'border-red-500 bg-red-500 text-white'
             : 'border-red-500 bg-red-500/5 hover:bg-red-500/10 dark:hover:bg-red-500/20'
             }`}
@@ -145,7 +145,7 @@ const SystemRecommendation: React.FC<SystemRecommendationProps> = ({
         <button
           type="button"
           onClick={() => handleLevelSelect(2)}
-          className={`level-btn p-3 rounded-lg border-2 text-center transition-colors ${selectedLevel === 2
+          className={`level-btn p-2 rounded-lg border-2 text-center transition-colors ${selectedLevel === 2
           ? 'border-orange-500 bg-orange-500 text-white'
           : 'border-orange-500 bg-orange-500/5 hover:bg-orange-500/10 dark:hover:bg-orange-500/20'
           }`}
@@ -164,7 +164,7 @@ const SystemRecommendation: React.FC<SystemRecommendationProps> = ({
         <button
           type="button"
           onClick={() => handleLevelSelect(3)}
-          className={`level-btn p-3 rounded-lg border-2 text-center transition-colors ${selectedLevel === 3
+          className={`level-btn p-2 rounded-lg border-2 text-center transition-colors ${selectedLevel === 3
           ? 'border-yellow-500 bg-yellow-500 text-white'
           : 'border-yellow-500 bg-yellow-500/5 hover:bg-yellow-500/10 dark:hover:bg-yellow-500/20'
           }`}
@@ -183,7 +183,7 @@ const SystemRecommendation: React.FC<SystemRecommendationProps> = ({
         <button
           type="button"
           onClick={() => handleLevelSelect(4)}
-          className={`level-btn p-3 rounded-lg border-2 text-center transition-colors ${selectedLevel === 4
+          className={`level-btn p-2 rounded-lg border-2 text-center transition-colors ${selectedLevel === 4
           ? 'border-green-500 bg-green-500 text-white'
           : 'border-green-500 bg-green-500/5 hover:bg-green-500/10 dark:hover:bg-green-500/20'
           }`}
@@ -202,7 +202,7 @@ const SystemRecommendation: React.FC<SystemRecommendationProps> = ({
         <button
           type="button"
           onClick={() => handleLevelSelect(5)}
-          className={`level-btn p-3 rounded-lg border-2 text-center transition-colors ${selectedLevel === 5
+          className={`level-btn p-2 rounded-lg border-2 text-center transition-colors ${selectedLevel === 5
           ? 'border-blue-500 bg-blue-500 text-white'
           : 'border-blue-500 bg-blue-500/5 hover:bg-blue-500/10 dark:hover:bg-blue-500/20'
           }`}
@@ -217,7 +217,7 @@ const SystemRecommendation: React.FC<SystemRecommendationProps> = ({
         </h5>
       </button>
     </div>
-    </div >
+    </div>
   );
 };
 

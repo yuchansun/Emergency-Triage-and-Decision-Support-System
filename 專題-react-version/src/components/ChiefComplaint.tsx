@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, createContext, useContext } from 'react';
 
 interface ChiefComplaintProps {
   selectedSymptoms: Set<string>;
@@ -44,8 +44,81 @@ interface ChiefComplaintProps {
   }) => void;
 }
 
+type SpeechLang = 'zh-TW' | 'en-US' | 'ja-JP' | 'vi-VN' | 'id-ID';
 
-const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
+interface ChiefComplaintSymptomTag {
+  display: string;
+  degrees: number | undefined;
+  criteria: { degree: number; judge: string; rule_code: string }[];
+}
+
+interface ChiefComplaintContextApi {
+  triageError: string | null;
+  activeTab: 't' | 'a';
+  setActiveTab: React.Dispatch<React.SetStateAction<'t' | 'a'>>;
+  age: number | undefined;
+  isSymptomSelectedByLabel: (label: string) => boolean;
+  setSelectedSymptoms: React.Dispatch<React.SetStateAction<Set<string>>>;
+  inputText: string;
+  handleInputChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  handleKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  isListening: boolean;
+  handleOneClickIntegrate: () => void;
+  isLlmIntegrating: boolean;
+  handleVoiceInputClick: () => void;
+  voiceConsented: boolean;
+  isSupplementOpen: boolean;
+  setIsSupplementOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  supplementText: string;
+  setSupplementText: React.Dispatch<React.SetStateAction<string>>;
+  speechLang: SpeechLang;
+  setSpeechLang: React.Dispatch<React.SetStateAction<SpeechLang>>;
+  speechLangRef: React.MutableRefObject<SpeechLang>;
+  recognitionRef: React.MutableRefObject<any | null>;
+  langSwitchRef: React.MutableRefObject<boolean>;
+  recommendedSymptoms: string[];
+  addRecommendedSymptom: (symptom: string) => void;
+  symptomTags: ChiefComplaintSymptomTag[];
+  removeSymptom: (symptomDisplay: string) => void;
+  isRecommendRulesLoading: boolean;
+  recommendedRules: Array<{
+    rule_code: string;
+    symptom_name: string;
+    judge_name: string;
+    ttas_degree: number;
+  }>;
+  recommendedRulesBySymptom: ReadonlyArray<readonly [string, Array<{
+    rule_code: string;
+    symptom_name: string;
+    judge_name: string;
+    ttas_degree: number;
+  }>]>;
+  selectedRules: Record<string, {
+    degree: number;
+    judge: string;
+    rule_code: string;
+    symptom_name: string;
+  }>;
+  setSelectedRules: React.Dispatch<React.SetStateAction<Record<string, {
+    degree: number;
+    judge: string;
+    rule_code: string;
+    symptom_name: string;
+  }>>>;
+  getRuleColors: (degree: number) => { border: string; bg: string; text: string };
+  worstSelectedDegree: number | null;
+}
+
+const ChiefComplaintContext = createContext<ChiefComplaintContextApi | null>(null);
+
+function useChiefComplaintApi(): ChiefComplaintContextApi {
+  const ctx = useContext(ChiefComplaintContext);
+  if (!ctx) throw new Error('ChiefComplaint 元件須包在 ChiefComplaintProvider 內');
+  return ctx;
+}
+
+export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: React.ReactNode }> = ({
+  children,
 
   selectedSymptoms,
   setSelectedSymptoms,
@@ -88,7 +161,6 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
   const voiceBufferRef = useRef<string>('');
   const fullVoiceRef = useRef<string>('');
   const langSwitchRef = useRef(false);
-  type SpeechLang = 'zh-TW' | 'en-US' | 'ja-JP' | 'vi-VN' | 'id-ID';
 
   const speechLangRef = useRef<SpeechLang>('zh-TW');
   const [speechLang, setSpeechLang] = useState<SpeechLang>('zh-TW');
@@ -408,87 +480,8 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
       .filter((token, index, arr) => arr.indexOf(token) === index);
   };
 
-  const expandClinicalTerms = (terms: string[]): string[] => {
-    const synonymMap: Record<string, string[]> = {
-      '胃痛': ['胃痛', '腹痛', '上腹痛', '腹部痛', '腹部不適'],
-      '胸悶': ['胸悶', '胸痛', '胸痛/胸悶'],
-      '發燒': ['發燒', '發燒/畏寒', '高燒'],
-    };
-    const expanded = new Set<string>();
-    for (const term of terms) {
-      expanded.add(term);
-      const mapped = synonymMap[term];
-      if (mapped) mapped.forEach(item => expanded.add(item));
-    }
-    return Array.from(expanded);
-  };
-
   const normalizeForRecommend = (text: string): string => {
     return text.replace(/[、，,\s]+$/g, '').trim();
-  };
-
-  const getVitalDrivenTerms = (): string[] => {
-    if (!vitals) return [];
-    const terms: string[] = [];
-    const temp = parseFloat(vitals.temperature || '');
-    const sugar = parseFloat(vitals.bloodSugar || '');
-    if (!Number.isNaN(temp) && temp >= 38) terms.push('發燒', '發燒/畏寒');
-    if (!Number.isNaN(sugar) && sugar > 0 && sugar < 70) terms.push('低血糖');
-    return Array.from(new Set(terms));
-  };
-
-  // ⚠️ DEPRECATED（Phase 2 起不再由一鍵統整流程呼叫）：
-  // 這層 substring 過濾會誤殺像「意識改變 vs 意識程度改變」這種語意相近但字面不互含的情況。
-  // 目前仍保留為「手動輸入時 keyword 推薦 / LLM 完全失敗時的 fallback」的內部使用。
-  // 若 Phase 1+2 穩定後不需要 fallback，可整段刪除。
-  const isSymptomRelevantToTerms = (symptom: string, terms: string[]): boolean => {
-    if (!terms.length) return true;
-    return terms.some(term => {
-      if (symptom.includes(term) || term.includes(symptom)) return true;
-      // 兼容「發燒」與「發燒/畏寒」這種字串不完全相等的情況
-      const parts = symptom.split(/[\/、，,]/).map(s => s.trim()).filter(Boolean);
-      return parts.some(part => part.includes(term) || term.includes(part));
-    });
-  };
-
-  // ⚠️ DEPRECATED（Phase 2 起不再由一鍵統整流程呼叫）：
-  // 用 substring 強行注入推薦會錯過語意相近但字面不重疊的標準症狀名。
-  // 一鍵統整改成信任後端 RAG/LLM 結果；此函式保留供未來必要時參考或清理。
-  const buildMustIncludeSymptoms = (summary: string): string[] => {
-    if (!triageRows) return [];
-    const isAdult = age !== undefined ? age >= 18 : true;
-    const terms = expandClinicalTerms(Array.from(new Set([...extractMeaningfulTokens(summary), ...getVitalDrivenTerms()])));
-    if (!terms.length) return [];
-
-    const pool = new Set<string>();
-    for (const row of triageRows) {
-      const code = row.system_code || '';
-      if (!code.startsWith('A') && !code.startsWith('P') && !code.startsWith('T') && !code.startsWith('E')) continue;
-      if (code.startsWith('A') && !isAdult) continue;
-      if (code.startsWith('P') && isAdult) continue;
-      pool.add(row.symptom_name);
-    }
-
-    const mustInclude: string[] = [];
-    for (const term of terms) {
-      const exact = Array.from(pool).find(symptom => symptom === term);
-      if (exact) {
-        mustInclude.push(exact);
-        continue;
-      }
-      const partial = Array.from(pool).find(symptom => isSymptomRelevantToTerms(symptom, [term]));
-      if (partial) mustInclude.push(partial);
-    }
-    return Array.from(new Set(mustInclude));
-  };
-
-  // ⚠️ DEPRECATED（Phase 2 起不再由一鍵統整流程呼叫）。
-  const filterSymptomsByComplaintRelevance = (symptoms: string[], complaint: string): string[] => {
-    const tokens = expandClinicalTerms(extractMeaningfulTokens(complaint));
-    if (!tokens.length) return symptoms;
-    return symptoms.filter(symptom =>
-      tokens.some(token => symptom.includes(token) || token.includes(symptom))
-    );
   };
 
   const getSafeFallbackByTab = (summary: string, tab: 't' | 'a'): string[] => {
@@ -1281,38 +1274,62 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
     return () => clearTimeout(timer);
   }, [selectedRules, supplementText, onChiefComplaintChange]);
 
+  const chiefComplaintApi: ChiefComplaintContextApi = {
+    triageError,
+    activeTab,
+    setActiveTab,
+    age,
+    isSymptomSelectedByLabel,
+    setSelectedSymptoms,
+    inputText,
+    handleInputChange,
+    handleKeyDown,
+    isListening,
+    handleOneClickIntegrate,
+    isLlmIntegrating,
+    handleVoiceInputClick,
+    voiceConsented,
+    isSupplementOpen,
+    setIsSupplementOpen,
+    supplementText,
+    setSupplementText,
+    speechLang,
+    setSpeechLang,
+    speechLangRef,
+    recognitionRef,
+    langSwitchRef,
+    recommendedSymptoms,
+    addRecommendedSymptom,
+    symptomTags,
+    removeSymptom,
+    isRecommendRulesLoading,
+    recommendedRules,
+    recommendedRulesBySymptom,
+    selectedRules,
+    setSelectedRules,
+    getRuleColors,
+    worstSelectedDegree,
+  };
+
   return (
-    <div className="bg-content-light dark:bg-content-dark p-6 rounded-2xl shadow-lg flex flex-col">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-4">
+    <ChiefComplaintContext.Provider value={chiefComplaintApi}>
+      {children}
+    </ChiefComplaintContext.Provider>
+  );
+};
+
+export const ChiefComplaintMainPanel: React.FC = () => {
+  const c = useChiefComplaintApi();
+  return (
+    <div className="bg-content-light dark:bg-content-dark p-4 rounded-2xl shadow-lg flex flex-col">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-3">
           <h3 className="text-2xl font-bold flex items-center gap-2">主訴</h3>
-          <div className="inline-flex gap-3 bg-background-light dark:bg-background-dark/60 px-2 py-2 rounded-2xl border border-primary/30">
-            <button
-              type="button"
-              onClick={() => setActiveTab('t')}
-              className={`px-6 py-2.5 rounded-xl text-base font-semibold transition-colors ${activeTab === 't'
-                ? 'bg-primary text-white'
-                : 'bg-transparent text-primary hover:bg-primary/10'
-                }`}
-            >
-              T 外傷
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('a')}
-              className={`px-6 py-2.5 rounded-xl text-base font-semibold transition-colors ${activeTab === 'a'
-                ? 'bg-primary text-white'
-                : 'bg-transparent text-primary hover:bg-primary/10'
-                }`}
-            >
-              {(age !== undefined ? (age >= 18 ? 'A' : 'P') : 'A')} 非外傷
-            </button>
-          </div>
         </div>
         <div className="flex gap-2">
           <button
             onClick={() =>
-              setSelectedSymptoms(prev => {
+              c.setSelectedSymptoms(prev => {
                 const label = '心跳停止';
                 const alreadyHas = Array.from(prev).some(selected => {
                   const cleanSelected = selected.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '');
@@ -1322,7 +1339,7 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
                 return new Set([...prev, `manual:${label}`]);
               })
             }
-            className={`symptom-option-btn flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors ${isSymptomSelectedByLabel('心跳停止') ? 'selected' : ''
+            className={`symptom-option-btn flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors ${c.isSymptomSelectedByLabel('心跳停止') ? 'selected' : ''
               }`}
           >
             <span className="material-symbols-outlined text-sm">cardiology</span>
@@ -1330,65 +1347,63 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
           </button>
         </div>
       </div>
-      {triageError && (
+      {c.triageError && (
         <div className="mb-2 text-xs text-red-500">
-          {triageError}
+          {c.triageError}
         </div>
       )}
 
-      {/* 輸入區域 */}
-      <div className="relative mb-4">
+      <div className="relative mb-3">
         <div className="flex gap-2">
           <textarea
-            className="form-textarea flex-1 min-h-[80px] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark p-4 pr-28 focus:ring-primary focus:border-primary resize-none"
+            className="form-textarea flex-1 min-h-[72px] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark p-3 pr-32 focus:ring-primary focus:border-primary resize-none"
             id="symptoms-detail"
             placeholder="請輸入患者主訴症狀，系統會根據所有關鍵字持續推薦相關症狀（如：患者主訴頭痛，昨天開始胸悶...）"
-            value={inputText}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            disabled={isListening}
+            value={c.inputText}
+            onChange={c.handleInputChange}
+            onKeyDown={c.handleKeyDown}
+            disabled={c.isListening}
           />
           <button
-            onClick={handleOneClickIntegrate}
-            disabled={isLlmIntegrating}
-            className={`px-4 py-2 rounded-lg focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors text-sm font-medium whitespace-nowrap inline-flex items-center gap-1.5 ${isLlmIntegrating
+            onClick={c.handleOneClickIntegrate}
+            disabled={c.isLlmIntegrating}
+            className={`px-4 py-2 rounded-lg focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors text-sm font-medium whitespace-nowrap inline-flex items-center gap-1.5 ${c.isLlmIntegrating
                 ? 'bg-primary/70 text-white cursor-wait'
                 : 'bg-primary text-white hover:bg-primary-dark'
               }`}
             title="統整主訴與生命徵象"
           >
-            {isLlmIntegrating && (
+            {c.isLlmIntegrating && (
               <span className="material-symbols-outlined text-base animate-spin">sync</span>
             )}
-            {isLlmIntegrating ? '統整中...' : '一鍵統整'}
+            {c.isLlmIntegrating ? '統整中...' : '一鍵統整'}
           </button>
         </div>
         <button
           type="button"
-          onClick={handleVoiceInputClick}
-          disabled={!voiceConsented}
-          className={`absolute bottom-3 right-28 flex items-center justify-center size-10 rounded-full text-white transition-all duration-200 shadow-md ${!voiceConsented
+          onClick={c.handleVoiceInputClick}
+          disabled={!c.voiceConsented}
+          className={`absolute bottom-2 right-[calc(9rem-5px)] flex items-center justify-center size-9 rounded-full text-white transition-all duration-200 shadow-md ${!c.voiceConsented
             ? 'bg-gray-400 cursor-not-allowed opacity-50'
-            : isListening
+            : c.isListening
               ? 'bg-red-500 hover:bg-red-600 scale-110 shadow-red-500/50 animate-pulse'
               : 'bg-primary hover:bg-primary/90'
             }`}
-          title={!voiceConsented ? "請先同意語音同意書才能使用語音功能" : ""}
+          title={!c.voiceConsented ? "請先同意語音同意書才能使用語音功能" : ""}
         >
-          <span className="material-symbols-outlined">{isListening ? 'stop_circle' : 'mic'}</span>
+          <span className="material-symbols-outlined">{c.isListening ? 'stop_circle' : 'mic'}</span>
         </button>
       </div>
 
-      {/* 補充資料（可折疊） */}
-      <div className="mb-4">
+      <div className="mb-3">
         <div className="flex items-center justify-between">
           <button
             type="button"
-            onClick={() => setIsSupplementOpen(prev => !prev)}
+            onClick={() => c.setIsSupplementOpen(prev => !prev)}
             className="flex items-center gap-2 text-sm font-semibold text-primary hover:text-primary/80"
           >
             <span className="material-symbols-outlined text-sm">
-              {isSupplementOpen ? 'expand_less' : 'expand_more'}
+              {c.isSupplementOpen ? 'expand_less' : 'expand_more'}
             </span>
             <span>補充資料</span>
           </button>
@@ -1397,22 +1412,22 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
             <button
               type="button"
               onClick={() => {
-                if (speechLangRef.current === 'zh-TW') {
-                  setSpeechLang('zh-TW');
+                if (c.speechLangRef.current === 'zh-TW') {
+                  c.setSpeechLang('zh-TW');
                   return;
                 }
-                speechLangRef.current = 'zh-TW';
-                setSpeechLang('zh-TW');
-                if (isListening && recognitionRef.current) {
+                c.speechLangRef.current = 'zh-TW';
+                c.setSpeechLang('zh-TW');
+                if (c.isListening && c.recognitionRef.current) {
                   try {
-                    langSwitchRef.current = true;
-                    recognitionRef.current.stop();
+                    c.langSwitchRef.current = true;
+                    c.recognitionRef.current.stop();
                   } catch {
                     // ignore
                   }
                 }
               }}
-              className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-colors ${speechLang === 'zh-TW'
+              className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-colors ${c.speechLang === 'zh-TW'
                 ? 'bg-primary text-white border-primary'
                 : 'bg-transparent text-primary border-primary/40 hover:bg-primary/10'
                 }`}
@@ -1422,22 +1437,22 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
             <button
               type="button"
               onClick={() => {
-                if (speechLangRef.current === 'en-US') {
-                  setSpeechLang('en-US');
+                if (c.speechLangRef.current === 'en-US') {
+                  c.setSpeechLang('en-US');
                   return;
                 }
-                speechLangRef.current = 'en-US';
-                setSpeechLang('en-US');
-                if (isListening && recognitionRef.current) {
+                c.speechLangRef.current = 'en-US';
+                c.setSpeechLang('en-US');
+                if (c.isListening && c.recognitionRef.current) {
                   try {
-                    langSwitchRef.current = true;
-                    recognitionRef.current.stop();
+                    c.langSwitchRef.current = true;
+                    c.recognitionRef.current.stop();
                   } catch {
                     // ignore
                   }
                 }
               }}
-              className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-colors ${speechLang === 'en-US'
+              className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-colors ${c.speechLang === 'en-US'
                 ? 'bg-primary text-white border-primary'
                 : 'bg-transparent text-primary border-primary/40 hover:bg-primary/10'
                 }`}
@@ -1447,21 +1462,21 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
             <button
               type="button"
               onClick={() => {
-                if (speechLangRef.current === 'ja-JP') {
-                  setSpeechLang('ja-JP');
+                if (c.speechLangRef.current === 'ja-JP') {
+                  c.setSpeechLang('ja-JP');
                   return;
                 }
-                speechLangRef.current = 'ja-JP';
-                setSpeechLang('ja-JP');
+                c.speechLangRef.current = 'ja-JP';
+                c.setSpeechLang('ja-JP');
 
-                if (isListening && recognitionRef.current) {
+                if (c.isListening && c.recognitionRef.current) {
                   try {
-                    langSwitchRef.current = true;
-                    recognitionRef.current.stop();
+                    c.langSwitchRef.current = true;
+                    c.recognitionRef.current.stop();
                   } catch { }
                 }
               }}
-              className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-colors ${speechLang === 'ja-JP'
+              className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-colors ${c.speechLang === 'ja-JP'
                 ? 'bg-primary text-white border-primary'
                 : 'bg-transparent text-primary border-primary/40 hover:bg-primary/10'
                 }`}
@@ -1472,21 +1487,21 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
             <button
               type="button"
               onClick={() => {
-                if (speechLangRef.current === 'vi-VN') {
-                  setSpeechLang('vi-VN');
+                if (c.speechLangRef.current === 'vi-VN') {
+                  c.setSpeechLang('vi-VN');
                   return;
                 }
-                speechLangRef.current = 'vi-VN';
-                setSpeechLang('vi-VN');
+                c.speechLangRef.current = 'vi-VN';
+                c.setSpeechLang('vi-VN');
 
-                if (isListening && recognitionRef.current) {
+                if (c.isListening && c.recognitionRef.current) {
                   try {
-                    langSwitchRef.current = true;
-                    recognitionRef.current.stop();
+                    c.langSwitchRef.current = true;
+                    c.recognitionRef.current.stop();
                   } catch { }
                 }
               }}
-              className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-colors ${speechLang === 'vi-VN'
+              className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-colors ${c.speechLang === 'vi-VN'
                 ? 'bg-primary text-white border-primary'
                 : 'bg-transparent text-primary border-primary/40 hover:bg-primary/10'
                 }`}
@@ -1496,20 +1511,20 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
             <button
               type="button"
               onClick={() => {
-                if (speechLangRef.current === 'id-ID') {
-                  setSpeechLang('id-ID');
+                if (c.speechLangRef.current === 'id-ID') {
+                  c.setSpeechLang('id-ID');
                   return;
                 }
-                speechLangRef.current = 'id-ID';
-                setSpeechLang('id-ID');
-                if (isListening && recognitionRef.current) {
+                c.speechLangRef.current = 'id-ID';
+                c.setSpeechLang('id-ID');
+                if (c.isListening && c.recognitionRef.current) {
                   try {
-                    langSwitchRef.current = true;
-                    recognitionRef.current.stop();
+                    c.langSwitchRef.current = true;
+                    c.recognitionRef.current.stop();
                   } catch { }
                 }
               }}
-              className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-colors ${speechLang === 'id-ID'
+              className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-colors ${c.speechLang === 'id-ID'
                 ? 'bg-primary text-white border-primary'
                 : 'bg-transparent text-primary border-primary/40 hover:bg-primary/10'
                 }`}
@@ -1518,58 +1533,91 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
             </button>
           </div>
         </div>
-        {isSupplementOpen && (
+        {c.isSupplementOpen && (
           <div className="mt-2">
             <textarea
-              className="form-textarea w-full min-h-[80px] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark p-3 focus:ring-primary focus:border-primary resize-none text-sm"
+              className="form-textarea w-full min-h-[64px] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark p-2.5 focus:ring-primary focus:border-primary resize-none text-sm"
               placeholder="可輸入補充說明（例如：既往病史、用藥、家屬提供的額外資訊等）"
-              value={supplementText}
-              onChange={(e) => setSupplementText(e.target.value)}
+              value={c.supplementText}
+              onChange={(e) => c.setSupplementText(e.target.value)}
               rows={3}
             />
           </div>
         )}
       </div>
+    </div>
+  );
+};
 
-      {/* 推薦症狀 */}
-      {(isLlmIntegrating || recommendedSymptoms.length > 0) && (
-        <div className="mb-4 p-3 bg-primary/5 rounded-lg border border-primary/20">
-          <h4 className="text-sm font-semibold text-primary mb-2 flex items-center gap-2">
-            <span>推薦症狀</span>
-            {isLlmIntegrating && (
-              <>
-                <span className="material-symbols-outlined text-base animate-spin">sync</span>
-                <span className="text-[10px] text-subtext-light dark:text-subtext-dark">分析中...</span>
-              </>
-            )}
-          </h4>
+export const ChiefComplaintRecommendationsPanel: React.FC = () => {
+  const c = useChiefComplaintApi();
+  return (
+    <div className="bg-content-light dark:bg-content-dark p-4 rounded-2xl shadow-lg flex flex-col shrink-0 min-h-[600px]">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="inline-flex gap-1.5 bg-background-light dark:bg-background-dark/60 px-2 py-1.5 rounded-2xl border border-primary/30">
+          <button
+            type="button"
+            onClick={() => c.setActiveTab('t')}
+            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-colors sm:px-5 sm:py-2 sm:text-base ${c.activeTab === 't'
+              ? 'bg-primary text-white'
+              : 'bg-transparent text-primary hover:bg-primary/10'
+              }`}
+          >
+            T 外傷
+          </button>
+          <button
+            type="button"
+            onClick={() => c.setActiveTab('a')}
+            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-colors sm:px-5 sm:py-2 sm:text-base ${c.activeTab === 'a'
+              ? 'bg-primary text-white'
+              : 'bg-transparent text-primary hover:bg-primary/10'
+              }`}
+          >
+            {(c.age !== undefined ? (c.age >= 18 ? 'A' : 'P') : 'A')} 非外傷
+          </button>
+        </div>
+      </div>
+      <div className="mb-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
+        <h4 className="text-sm font-semibold text-primary mb-2 flex items-center gap-2">
+          <span>推薦症狀</span>
+          {c.isLlmIntegrating && (
+            <>
+              <span className="material-symbols-outlined text-base animate-spin">sync</span>
+              <span className="text-[10px] text-subtext-light dark:text-subtext-dark">分析中...</span>
+            </>
+          )}
+        </h4>
+        {c.isLlmIntegrating || c.recommendedSymptoms.length > 0 ? (
           <div className="flex flex-wrap gap-2">
-            {recommendedSymptoms.map(symptom => (
+            {c.recommendedSymptoms.map(symptom => (
               <button
                 key={symptom}
-                onClick={() => addRecommendedSymptom(symptom)}
+                onClick={() => c.addRecommendedSymptom(symptom)}
                 className="px-3 py-1 text-sm bg-white border border-primary/30 text-primary rounded-full hover:bg-primary/10 transition-colors"
               >
                 + {symptom}
               </button>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="text-xs text-subtext-light dark:text-subtext-dark py-2 text-center rounded-md border border-dashed border-primary/20">
+            尚無推薦症狀；輸入主訴或點「一鍵統整」後將顯示於此。
+          </p>
+        )}
+      </div>
 
-      {/* 已選症狀標籤 */}
-      {symptomTags.length > 0 && (
-        <div className="mb-4">
+      {c.symptomTags.length > 0 && (
+        <div className="mb-3">
           <h4 className="text-base font-semibold mb-2">已選症狀</h4>
           <div className="flex flex-wrap gap-2">
-            {symptomTags.map(({ display }) => (
+            {c.symptomTags.map(({ display }) => (
               <div
                 key={display}
                 className="inline-flex items-center gap-1 px-3 py-1 bg-primary text-white text-sm rounded-full max-w-full"
               >
                 <span className="truncate max-w-[10rem]" title={display}>{display}</span>
                 <button
-                  onClick={() => removeSymptom(display)}
+                  onClick={() => c.removeSymptom(display)}
                   className="ml-1 hover:bg-white/20 rounded-full p-0.5 transition-colors"
                   title="移除症狀"
                 >
@@ -1581,144 +1629,146 @@ const ChiefComplaint: React.FC<ChiefComplaintProps> = ({
         </div>
       )}
 
-      {/* 判斷規則：列出各症狀所有 TTAS 判斷依據並可點選 */}
-      {symptomTags.length > 0 && (
-        <div className="mb-4">
-          <h4 className="text-base font-semibold mb-2">判斷規則</h4>
-          {(isRecommendRulesLoading || recommendedRules.length > 0) && (
-            <div className="mb-3 pb-3 border-b border-dashed border-primary/40">
-              <div className="text-xs font-semibold text-primary mb-2 flex items-center gap-2">
-                <span>AI 推薦判斷規則</span>
-                {isRecommendRulesLoading && (
-                  <>
-                    <span className="material-symbols-outlined text-base animate-spin">sync</span>
-                    <span className="text-[10px] text-subtext-light dark:text-subtext-dark">分析中...</span>
-                  </>
-                )}
-              </div>
-              {recommendedRules.length > 0 && (
-                <div className="space-y-2 min-w-0">
-                  {recommendedRulesBySymptom.map(([symptom, rules]) => (
-                    <div key={`symptom-${symptom}`} className="flex flex-wrap items-center gap-2 min-w-0">
-                      <span className="text-xs font-semibold text-subtext-light dark:text-subtext-dark shrink-0">
-                        {symptom}：
-                      </span>
-                      {rules.map(rule => {
-                        const colors = getRuleColors(rule.ttas_degree);
-                        const isSelected = !!selectedRules[rule.rule_code];
-                        return (
-                          <button
-                            key={`${rule.symptom_name}__${rule.rule_code}`}
-                            type="button"
-                            onClick={() =>
-                              setSelectedRules(prev => {
-                                const next = { ...prev };
-                                Object.keys(next).forEach(ruleCode => {
-                                  if (next[ruleCode].symptom_name === rule.symptom_name) {
-                                    delete next[ruleCode];
-                                  }
-                                });
-                                if (prev[rule.rule_code]) return next;
-                                next[rule.rule_code] = {
-                                  degree: rule.ttas_degree,
-                                  judge: rule.judge_name,
-                                  rule_code: rule.rule_code,
-                                  symptom_name: rule.symptom_name,
-                                };
-                                return next;
-                              })
-                            }
-                            className={`px-3 py-1.5 rounded-full border text-xs leading-snug text-left max-w-full ${colors.border} ${isSelected ? `${colors.bg.replace('20', '90')} text-white ring-2 ring-offset-1 ring-primary` : `${colors.bg} text-black`}`}
-                            title={`${rule.symptom_name}｜第${rule.ttas_degree}級：${rule.judge_name}`}
-                          >
-                            第{rule.ttas_degree}級：{rule.judge_name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))}
+      <div className="mb-3">
+        <h4 className="text-base font-semibold mb-2">判斷規則</h4>
+        {c.symptomTags.length === 0 ? (
+          <p className="text-xs text-subtext-light dark:text-subtext-dark py-2 px-2 rounded-md border border-dashed border-gray-200 dark:border-gray-700">
+            選擇症狀後將顯示 TTAS 判斷規則與 AI 推薦判斷規則。
+          </p>
+        ) : (
+          <>
+            {(c.isRecommendRulesLoading || c.recommendedRules.length > 0) && (
+              <div className="mb-3 pb-3 border-b border-dashed border-primary/40">
+                <div className="text-xs font-semibold text-primary mb-2 flex items-center gap-2">
+                  <span>AI 推薦判斷規則</span>
+                  {c.isRecommendRulesLoading && (
+                    <>
+                      <span className="material-symbols-outlined text-base animate-spin">sync</span>
+                      <span className="text-[10px] text-subtext-light dark:text-subtext-dark">分析中...</span>
+                    </>
+                  )}
                 </div>
-              )}
-            </div>
-          )}
-          <div className="space-y-2">
-            {symptomTags.map(({ display, criteria }) => (
-              criteria.length > 0 && (
-                <div key={display} className="space-y-1">
-                  <div className="text-sm font-semibold text-subtext-light dark:text-subtext-dark">
-                    {display}
-                  </div>
-                  {Array.from(
-                    criteria.reduce((acc, item) => {
-                      const list = acc.get(item.degree) ?? [];
-                      list.push(item);
-                      acc.set(item.degree, list);
-                      return acc;
-                    }, new Map<number, typeof criteria>())
-                  )
-                    .sort((a, b) => a[0] - b[0])
-                    .map(([degree, items]) => (
-                      <div key={`${display}-degree-${degree}`} className="flex flex-wrap gap-2 min-w-0">
-                        {items.map(item => {
-                          const colors = getRuleColors(item.degree);
-                          const isSelected = !!selectedRules[item.rule_code];
+                {c.recommendedRules.length > 0 && (
+                  <div className="space-y-2 min-w-0">
+                    {c.recommendedRulesBySymptom.map(([symptom, rules]) => (
+                      <div key={`symptom-${symptom}`} className="flex flex-wrap items-center gap-2 min-w-0">
+                        <span className="text-xs font-semibold text-subtext-light dark:text-subtext-dark shrink-0">
+                          {symptom}：
+                        </span>
+                        {rules.map(rule => {
+                          const colors = c.getRuleColors(rule.ttas_degree);
+                          const isSelected = !!c.selectedRules[rule.rule_code];
                           return (
                             <button
-                              key={item.rule_code}
+                              key={`${rule.symptom_name}__${rule.rule_code}`}
                               type="button"
                               onClick={() =>
-                                setSelectedRules(prev => {
+                                c.setSelectedRules(prev => {
                                   const next = { ...prev };
-                                  const existing = prev[item.rule_code];
-
-                                  // 先移除同一症狀已選的其他規則
                                   Object.keys(next).forEach(ruleCode => {
-                                    if (next[ruleCode].symptom_name === display) {
+                                    if (next[ruleCode].symptom_name === rule.symptom_name) {
                                       delete next[ruleCode];
                                     }
                                   });
-
-                                  // 如果原本點的這顆就是已選狀態，代表取消，不重加
-                                  if (existing) {
-                                    return next;
-                                  }
-
-                                  // 否則改成這個症狀目前唯一選中的規則
-                                  next[item.rule_code] = {
-                                    degree: item.degree,
-                                    judge: item.judge,
-                                    rule_code: item.rule_code,
-                                    symptom_name: display,
+                                  if (prev[rule.rule_code]) return next;
+                                  next[rule.rule_code] = {
+                                    degree: rule.ttas_degree,
+                                    judge: rule.judge_name,
+                                    rule_code: rule.rule_code,
+                                    symptom_name: rule.symptom_name,
                                   };
-
                                   return next;
                                 })
                               }
                               className={`px-3 py-1.5 rounded-full border text-xs leading-snug text-left max-w-full ${colors.border} ${isSelected ? `${colors.bg.replace('20', '90')} text-white ring-2 ring-offset-1 ring-primary` : `${colors.bg} text-black`}`}
-                              title={`第${item.degree}級：${item.judge}`}
+                              title={`${rule.symptom_name}｜第${rule.ttas_degree}級：${rule.judge_name}`}
                             >
-                              第{item.degree}級：{item.judge}
+                              第{rule.ttas_degree}級：{rule.judge_name}
                             </button>
                           );
                         })}
                       </div>
                     ))}
-                </div>
-              )
-            ))}
-          </div>
-          {worstSelectedDegree !== null && (
-            <div className="mt-2 text-xs text-subtext-light dark:text-subtext-dark">
-              所有已選判斷依據中最嚴重的級數：
-              <span className="font-semibold">第{worstSelectedDegree}級</span>
-            </div>
-          )}
-        </div>
-      )}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="space-y-2">
+              {c.symptomTags.map(({ display, criteria }) => (
+                criteria.length > 0 && (
+                  <div key={display} className="space-y-1">
+                    <div className="text-sm font-semibold text-subtext-light dark:text-subtext-dark">
+                      {display}
+                    </div>
+                    {Array.from(
+                      criteria.reduce((acc, item) => {
+                        const list = acc.get(item.degree) ?? [];
+                        list.push(item);
+                        acc.set(item.degree, list);
+                        return acc;
+                      }, new Map<number, typeof criteria>())
+                    )
+                      .sort((a, b) => a[0] - b[0])
+                      .map(([degree, items]) => (
+                        <div key={`${display}-degree-${degree}`} className="flex flex-wrap gap-2 min-w-0">
+                          {items.map(item => {
+                            const colors = c.getRuleColors(item.degree);
+                            const isSelected = !!c.selectedRules[item.rule_code];
+                            return (
+                              <button
+                                key={item.rule_code}
+                                type="button"
+                                onClick={() =>
+                                  c.setSelectedRules(prev => {
+                                    const next = { ...prev };
+                                    const existing = prev[item.rule_code];
 
-      <p className="text-sm text-subtext-light dark:text-subtext-dark">💡 系統會自動分析主訴中的所有關鍵字並持續推薦相關症狀，無論游標位置在哪裡。點擊症狀標籤的 ✕ 可移除。包含所有外傷、非外傷、環境症狀。</p>
+                                    Object.keys(next).forEach(ruleCode => {
+                                      if (next[ruleCode].symptom_name === display) {
+                                        delete next[ruleCode];
+                                      }
+                                    });
+
+                                    if (existing) {
+                                      return next;
+                                    }
+
+                                    next[item.rule_code] = {
+                                      degree: item.degree,
+                                      judge: item.judge,
+                                      rule_code: item.rule_code,
+                                      symptom_name: display,
+                                    };
+
+                                    return next;
+                                  })
+                                }
+                                className={`px-3 py-1.5 rounded-full border text-xs leading-snug text-left max-w-full ${colors.border} ${isSelected ? `${colors.bg.replace('20', '90')} text-white ring-2 ring-offset-1 ring-primary` : `${colors.bg} text-black`}`}
+                                title={`第${item.degree}級：${item.judge}`}
+                              >
+                                第{item.degree}級：{item.judge}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ))}
+                  </div>
+                )
+              ))}
+            </div>
+            {c.worstSelectedDegree !== null && (
+              <div className="mt-2 text-xs text-subtext-light dark:text-subtext-dark">
+                所有已選判斷依據中最嚴重的級數：
+                <span className="font-semibold">第{c.worstSelectedDegree}級</span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <p className="text-sm text-subtext-light dark:text-subtext-dark mt-auto pt-2 border-t border-gray-100 dark:border-gray-800">
+        💡 系統會自動分析主訴中的所有關鍵字並持續推薦相關症狀，無論游標位置在哪裡。點擊症狀標籤的 ✕ 可移除。包含所有外傷、非外傷、環境症狀。
+      </p>
     </div>
   );
 };
-
-export default ChiefComplaint;

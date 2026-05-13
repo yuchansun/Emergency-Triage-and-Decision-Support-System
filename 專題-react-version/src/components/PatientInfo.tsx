@@ -144,21 +144,21 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
   if (!patient) return <div>尚無病患資料</div>;
 
   return (
-    <header className="sticky top-0 z-10 flex items-center justify-between whitespace-nowrap border-b border-content-light dark:border-content-dark bg-background-light/80 dark:bg-background-dark/80 px-10 py-3 backdrop-blur-sm">
-      <div className="flex items-center gap-4">
-        <div className="text-primary w-8 h-8">
+    <header className="sticky top-0 z-10 flex items-center justify-between whitespace-nowrap border-b border-content-light dark:border-content-dark bg-background-light/80 dark:bg-background-dark/80 px-6 pt-3.5 pb-2.5 backdrop-blur-sm">
+      <div className="flex items-center gap-3">
+        <div className="text-primary w-8 h-8 shrink-0">
           <svg fill="none" viewBox="0 0 48 48">
             <path d="M24 4C12.95 4 4 12.95 4 24C4 35.05 12.95 44 24 44C35.05 44 44 35.05 44 24C44 12.95 35.05 4 24 4ZM24 28H16V20H24V14L32 22L24 30V28Z" fill="currentColor"></path>
           </svg>
         </div>
-        <h2 className="text-xl font-bold">急診檢傷系統</h2>
+        <h2 className="text-xl font-bold leading-tight">急診檢傷系統</h2>
       </div>
 
       {/* 右邊病患資訊 */}
-      <div className="flex flex-col items-end gap-1 text-sm text-subtext-light dark:text-subtext-dark">
+      <div className="flex flex-col items-end gap-0.5 text-sm sm:text-base text-subtext-light dark:text-subtext-dark">
 
         {/* 基礎資料 */}
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-0.5">
           <span className="font-medium text-text-light dark:text-text-dark">
             {patient.name || "【未接收病患姓名】"}
           </span>
@@ -186,10 +186,10 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
         </div>
 
         {/* 註記與輸入區 */}
-        <div className="flex items-center gap-2 mt-1">
+        <div className="flex flex-wrap items-center justify-end gap-1.5 mt-0.5">
           <span
             style={{ userSelect: "none" }}
-            className={`px-2 py-0.5 rounded text-xs font-medium cursor-pointer ${tags.fever ? "bg-green-200 text-green-800" : "bg-gray-200 text-gray-800"
+            className={`px-2 py-0.5 rounded text-sm font-medium cursor-pointer ${tags.fever ? "bg-green-200 text-green-800" : "bg-gray-200 text-gray-800"
               }`}
             onClick={() => toggleTag("fever")}
           >
@@ -198,7 +198,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
 
           <span
             style={{ userSelect: "none" }}
-            className={`px-2 py-0.5 rounded text-xs font-medium cursor-pointer ${tags.isolation ? "bg-yellow-200 text-yellow-800" : "bg-gray-200 text-gray-800"
+            className={`px-2 py-0.5 rounded text-sm font-medium cursor-pointer ${tags.isolation ? "bg-yellow-200 text-yellow-800" : "bg-gray-200 text-gray-800"
               }`}
             onClick={() => toggleTag("isolation")}
           >
@@ -210,7 +210,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
             <span
               ref={toccButtonRef}
               style={{ userSelect: "none" }}
-              className={`px-2 py-0.5 rounded text-xs font-medium cursor-pointer ${tags.tocc ? "bg-blue-400 text-white" : "bg-slate-200 text-slate-800"}`}
+              className={`px-2 py-0.5 rounded text-sm font-medium cursor-pointer ${tags.tocc ? "bg-blue-400 text-white" : "bg-slate-200 text-slate-800"}`}
               onClick={toggleTOCC}
             >
               TOCC
@@ -467,7 +467,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
                 setPatientSource(v);
               }
             }}
-            className={`px-2 py-0.5 rounded-lg text-xs font-medium transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-0 ${patientSource && patientSource !== '其他'
+            className={`px-2 py-0.5 rounded-lg text-sm font-medium transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-0 ${patientSource && patientSource !== '其他'
               ? 'bg-blue-500 text-white border border-transparent focus:ring-blue-400'
               : 'bg-slate-100 text-slate-700 border border-slate-200 focus:ring-blue-300'
               }`}
@@ -491,7 +491,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
                 setPatientSource(v);
               }}
               placeholder="請輸入其他來源"
-              className="px-2 py-0.5 rounded border text-xs ml-2"
+              className="px-2 py-0.5 rounded border text-sm ml-2"
             />
           )}
           {patientSource === '救護車' && (
@@ -500,7 +500,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
               value={ambulanceNumber}
               onChange={(e) => setAmbulanceNumber(e.target.value)}
               placeholder="請輸入救護車車號"
-              className="px-2 py-0.5 rounded border text-xs ml-2"
+              className="px-2 py-0.5 rounded border text-sm ml-2"
             />
           )}
 
@@ -516,7 +516,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
                 setMajorIncident(v);
               }
             }}
-            className={`px-2 py-0.5 rounded-lg text-xs font-medium transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-0 ${majorIncident && majorIncident !== '其他'
+            className={`px-2 py-0.5 rounded-lg text-sm font-medium transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-0 ${majorIncident && majorIncident !== '其他'
               ? 'bg-red-500 text-white border border-transparent focus:ring-red-400'
               : 'bg-slate-100 text-slate-700 border border-slate-200 focus:ring-red-300'
               }`}
@@ -539,7 +539,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
                 setMajorIncident(v);
               }}
               placeholder="請輸入其他大傷描述"
-              className="px-2 py-0.5 rounded border text-xs ml-2"
+              className="px-2 py-0.5 rounded border text-sm ml-2"
             />
           )}
 
@@ -550,10 +550,10 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
             placeholder="輸入床位"
             value={bed}
             onChange={(e) => setBed(e.target.value)}
-            className="px-2 py-0.5 rounded bg-blue-100 text-slate-800 text-xs font-medium border border-blue-300 w-20"
+            className="px-2 py-0.5 rounded bg-blue-100 text-slate-800 text-sm font-medium border border-blue-300 w-20"
           />
           {/* 看診時間 */}
-          <span className="px-2 py-0.5 rounded bg-blue-100 text-slate-800 text-xs font-medium">
+          <span className="px-2 py-0.5 rounded bg-blue-100 text-slate-800 text-sm font-medium">
             看診時間: {new Date().toLocaleString()}
           </span>
         </div>

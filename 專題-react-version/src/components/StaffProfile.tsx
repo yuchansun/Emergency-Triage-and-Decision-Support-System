@@ -1,6 +1,4 @@
-import React, { useState } from "react";
-
-export default function StaffProfile({ 
+export default function StaffProfile({
   nurseInfo, 
   userSettings, 
   setUserSettings,
