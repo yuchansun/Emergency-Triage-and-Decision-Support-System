@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, createContext, useContext } from 'react';
+import { toTaiwanTraditional } from '../utils/toTaiwanTraditional';
 
 interface ChiefComplaintProps {
   selectedSymptoms: Set<string>;
@@ -998,8 +999,11 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     recognition.onresult = (event: any) => {
       // 只取最新一個 result，避免每次都從 results[0] 取而造成整句重複累積
       const lastIndex = event.results.length - 1;
-      const transcript = (event.results[lastIndex][0].transcript as string) || '';
-      if (!transcript) return;
+      const raw = (event.results[lastIndex][0].transcript as string) || '';
+      if (!raw) return;
+      // Web Speech API 即使用 zh-TW 也常回簡體；僅在中文語系時做 cn→台灣繁體（與後端 s2twp 一致）
+      const transcript =
+        speechLangRef.current === 'zh-TW' ? toTaiwanTraditional(raw) : raw;
 
       const base = voiceBufferRef.current || '';
       voiceBufferRef.current = base ? base + (base.endsWith('\n') ? '' : '\n') + transcript : transcript;
