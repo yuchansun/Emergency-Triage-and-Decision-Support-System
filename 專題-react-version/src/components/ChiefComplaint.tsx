@@ -108,7 +108,14 @@ interface ChiefComplaintContextApi {
   }>>>;
   getRuleColors: (degree: number) => { border: string; bg: string; text: string };
   worstSelectedDegree: number | null;
+  chiefComplaintAiHighlight: boolean;
+  recommendSymptomsAiHighlight: boolean;
+  aiRulesAiHighlight: boolean;
 }
+
+type AiHighlightKey = 'chief' | 'symptoms' | 'rules';
+
+const AI_HIGHLIGHT_MS = 1150;
 
 const ChiefComplaintContext = createContext<ChiefComplaintContextApi | null>(null);
 
@@ -317,6 +324,34 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
   const [rulesRefreshNonce, setRulesRefreshNonce] = useState(0);
   const [isSupplementOpen, setIsSupplementOpen] = useState<boolean>(false);
   const [supplementText, setSupplementText] = useState<string>('');
+  const [aiHighlights, setAiHighlights] = useState<Record<AiHighlightKey, boolean>>({
+    chief: false,
+    symptoms: false,
+    rules: false,
+  });
+  const aiHighlightTimersRef = useRef<Partial<Record<AiHighlightKey, ReturnType<typeof setTimeout>>>>({});
+  const symptomsFlashDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flashAiHighlight = (key: AiHighlightKey) => {
+    const prev = aiHighlightTimersRef.current[key];
+    if (prev) clearTimeout(prev);
+    setAiHighlights(h => ({ ...h, [key]: false }));
+    requestAnimationFrame(() => {
+      setAiHighlights(h => ({ ...h, [key]: true }));
+      aiHighlightTimersRef.current[key] = setTimeout(() => {
+        setAiHighlights(h => ({ ...h, [key]: false }));
+        delete aiHighlightTimersRef.current[key];
+      }, AI_HIGHLIGHT_MS);
+    });
+  };
+
+  useEffect(() => {
+    const timers = aiHighlightTimersRef.current;
+    return () => {
+      Object.values(timers).forEach(t => t && clearTimeout(t));
+      if (symptomsFlashDelayRef.current) clearTimeout(symptomsFlashDelayRef.current);
+    };
+  }, []);
 
   const summarizeChiefComplaint = async (raw: string): Promise<string> => {
     try {
@@ -776,6 +811,11 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
 
     console.log('[CC] runLlmSummarizeAndRecommend activeTab =', activeTab, 'source =', source, 'hasAbnormalVitals =', hasAbnormalVitals);
 
+    if (symptomsFlashDelayRef.current) {
+      clearTimeout(symptomsFlashDelayRef.current);
+      symptomsFlashDelayRef.current = null;
+    }
+
     setIsLlmIntegrating(true);
     try {
       const integrateSignature = `${normalizeForRecommend(source)}::${llmMode}::${JSON.stringify(vitals || {})}`;
@@ -793,6 +833,10 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
         setInputText(summary);
         lastIntegrateSignatureRef.current = integrateSignature;
       }
+
+      // 主訴整理完成後先閃 2 下，再進行推薦症狀 API
+      flashAiHighlight('chief');
+      const chiefFlashEndsAt = Date.now() + AI_HIGHLIGHT_MS;
 
       // 真正 unified RAG：一次檢索 + 一次推薦，再前端分類
       // Phase 2：信任後端 RAG/LLM 已挑好的結果，前端不再做 substring 性質的相關性過濾或強制注入。
@@ -832,6 +876,17 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       }
       // 一鍵統整後，無論症狀是否剛好一樣，都強制重跑一次推薦判斷規則
       setRulesRefreshNonce(prev => prev + 1);
+
+      // 推薦症狀完成後再閃 2 下（等主訴高亮結束，避免兩區同時閃）
+      const shouldFlashSymptoms =
+        llmHasResult && (filteredTrauma.length > 0 || filteredNonTrauma.length > 0);
+      if (shouldFlashSymptoms) {
+        const delayMs = Math.max(0, chiefFlashEndsAt - Date.now());
+        symptomsFlashDelayRef.current = setTimeout(() => {
+          symptomsFlashDelayRef.current = null;
+          flashAiHighlight('symptoms');
+        }, delayMs);
+      }
     } finally {
       setIsLlmIntegrating(false);
     }
@@ -1192,6 +1247,15 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     };
   }, [symptomTags, vitals, llmMode, LLM_BASE_URL, rulesRefreshNonce]);
 
+  const wasRecommendRulesLoadingRef = useRef(false);
+  useEffect(() => {
+    const wasLoading = wasRecommendRulesLoadingRef.current;
+    wasRecommendRulesLoadingRef.current = isRecommendRulesLoading;
+    if (wasLoading && !isRecommendRulesLoading && recommendedRules.length > 0) {
+      flashAiHighlight('rules');
+    }
+  }, [isRecommendRulesLoading, recommendedRules.length]);
+
   useEffect(() => {
     // 根據當前已選症狀，自動處理部分規則：
     // 1) 移除已不在 symptomTags 中的規則
@@ -1313,6 +1377,9 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     setSelectedRules,
     getRuleColors,
     worstSelectedDegree,
+    chiefComplaintAiHighlight: aiHighlights.chief,
+    recommendSymptomsAiHighlight: aiHighlights.symptoms,
+    aiRulesAiHighlight: aiHighlights.rules,
   };
 
   return (
@@ -1358,20 +1425,24 @@ export const ChiefComplaintMainPanel: React.FC = () => {
       )}
 
       <div className="relative mb-3">
-        <div className="flex gap-2">
-          <textarea
-            className="form-textarea flex-1 min-h-[72px] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark p-3 pr-32 focus:ring-primary focus:border-primary resize-none"
-            id="symptoms-detail"
-            placeholder="請輸入患者主訴症狀，系統會根據所有關鍵字持續推薦相關症狀（如：患者主訴頭痛，昨天開始胸悶...）"
-            value={c.inputText}
-            onChange={c.handleInputChange}
-            onKeyDown={c.handleKeyDown}
-            disabled={c.isListening}
-          />
+        <div className="flex gap-2 items-stretch">
+          <div
+            className={`flex-1 min-w-0 rounded-lg border border-content-light dark:border-subtext-dark overflow-hidden ${c.chiefComplaintAiHighlight ? 'ai-result-highlight' : ''}`}
+          >
+            <textarea
+              className="form-textarea w-full min-h-[72px] rounded-lg border-0 bg-white dark:bg-background-dark p-3 pr-32 focus:ring-primary focus:border-primary resize-none"
+              id="symptoms-detail"
+              placeholder="請輸入患者主訴症狀，系統會根據所有關鍵字持續推薦相關症狀（如：患者主訴頭痛，昨天開始胸悶...）"
+              value={c.inputText}
+              onChange={c.handleInputChange}
+              onKeyDown={c.handleKeyDown}
+              disabled={c.isListening}
+            />
+          </div>
           <button
             onClick={c.handleOneClickIntegrate}
             disabled={c.isLlmIntegrating}
-            className={`px-4 py-2 rounded-lg focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors text-sm font-medium whitespace-nowrap inline-flex items-center gap-1.5 ${c.isLlmIntegrating
+            className={`shrink-0 self-stretch px-4 py-2 rounded-lg focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors text-sm font-medium whitespace-nowrap flex items-center justify-center gap-1.5 ${c.isLlmIntegrating
                 ? 'bg-primary/70 text-white cursor-wait'
                 : 'bg-primary text-white hover:bg-primary-dark'
               }`}
@@ -1581,7 +1652,9 @@ export const ChiefComplaintRecommendationsPanel: React.FC = () => {
           </button>
         </div>
       </div>
-      <div className="mb-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
+      <div
+        className={`mb-3 p-3 bg-primary/5 rounded-lg border border-primary/20 ${c.recommendSymptomsAiHighlight ? 'ai-result-highlight' : ''}`}
+      >
         <h4 className="text-sm font-semibold text-primary mb-2 flex items-center gap-2">
           <span>推薦症狀</span>
           {c.isLlmIntegrating && (
@@ -1642,19 +1715,23 @@ export const ChiefComplaintRecommendationsPanel: React.FC = () => {
         ) : (
           <>
             {(c.isRecommendRulesLoading || c.recommendedRules.length > 0) && (
-              <div className="mb-3 pb-3 border-b border-dashed border-primary/40">
-                <div className="text-xs font-semibold text-primary mb-2 flex items-center gap-2">
-                  <span>AI 推薦判斷規則</span>
-                  {c.isRecommendRulesLoading && (
-                    <>
-                      <span className="material-symbols-outlined text-base animate-spin">sync</span>
-                      <span className="text-[10px] text-subtext-light dark:text-subtext-dark">分析中...</span>
-                    </>
-                  )}
-                </div>
-                {c.recommendedRules.length > 0 && (
-                  <div className="space-y-2 min-w-0">
-                    {c.recommendedRulesBySymptom.map(([symptom, rules]) => (
+              <div className="mb-3 pb-3 border-b border-dashed border-primary/40 relative overflow-visible">
+                {c.aiRulesAiHighlight && (
+                  <div className="ai-result-highlight-ring" aria-hidden />
+                )}
+                <div className="relative z-[1]">
+                  <div className="text-xs font-semibold text-primary mb-2 flex items-center gap-2">
+                    <span>AI 推薦判斷規則</span>
+                    {c.isRecommendRulesLoading && (
+                      <>
+                        <span className="material-symbols-outlined text-base animate-spin">sync</span>
+                        <span className="text-[10px] text-subtext-light dark:text-subtext-dark">分析中...</span>
+                      </>
+                    )}
+                  </div>
+                  {c.recommendedRules.length > 0 && (
+                    <div className="space-y-2 min-w-0">
+                      {c.recommendedRulesBySymptom.map(([symptom, rules]) => (
                       <div key={`symptom-${symptom}`} className="flex flex-wrap items-center gap-2 min-w-0">
                         <span className="text-xs font-semibold text-subtext-light dark:text-subtext-dark shrink-0">
                           {symptom}：
@@ -1692,9 +1769,10 @@ export const ChiefComplaintRecommendationsPanel: React.FC = () => {
                           );
                         })}
                       </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
             <div className="space-y-2">

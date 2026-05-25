@@ -2,3 +2,50 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* AI 產生結果後：外框光暈閃爍 2 下 */
+@keyframes ai-result-glow-flash {
+  0%,
+  100% {
+    box-shadow: none;
+    border-color: inherit;
+  }
+  12%,
+  38% {
+    box-shadow:
+      0 0 0 2px rgba(19, 182, 236, 0.7),
+      0 0 16px 4px rgba(19, 182, 236, 0.4);
+    border-color: #13b6ec;
+  }
+  25%,
+  50%,
+  75% {
+    box-shadow: none;
+    border-color: inherit;
+  }
+  62%,
+  88% {
+    box-shadow:
+      0 0 0 2px rgba(19, 182, 236, 0.7),
+      0 0 16px 4px rgba(19, 182, 236, 0.4);
+    border-color: #13b6ec;
+  }
+}
+
+.ai-result-highlight {
+  animation: ai-result-glow-flash 1.15s ease-in-out forwards;
+}
+
+/* 疊加光暈，不改變區塊 padding / border 版面（避免 AI 規則區位移） */
+.ai-result-highlight-ring {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  bottom: -6px;
+  left: -10px;
+  border-radius: 0.625rem;
+  pointer-events: none;
+  z-index: 0;
+  border: 2px solid transparent;
+  animation: ai-result-glow-flash 1.15s ease-in-out forwards;
+}
