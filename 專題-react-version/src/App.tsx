@@ -216,7 +216,7 @@ function App() {
       result: {
         rule_code: options?.overrideRuleCode ?? Object.keys(chiefComplaintData.selectedRules).join(';'),
         chief_complaint: options?.overrideChiefComplaint ?? (inputText?.trim() || null),
-        notes: chiefComplaintData.supplementText
+        original_transcript: chiefComplaintData.supplementText?.trim() || null,
       },
       vitals: {
         temperature: parseFloat(vitals.temperature), heart_rate: parseInt(vitals.heartRate),

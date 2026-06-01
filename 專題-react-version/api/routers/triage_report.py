@@ -1,8 +1,38 @@
+import json
 from fastapi import APIRouter, HTTPException
 from datetime import date, datetime
 from db import get_conn
 
 router = APIRouter(prefix="/triage-report", tags=["triage-report"])
+
+
+def row_to_dict(row, cur=None):
+    if isinstance(row, dict):
+        return row
+    if row is None:
+        return {}
+    if cur is not None and getattr(cur, "description", None):
+        columns = [desc[0] for desc in cur.description]
+        return dict(zip(columns, row))
+    return {}
+
+
+def parse_json_field(value):
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        value = value.decode("utf-8", errors="ignore")
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return text
+    return value
 
 def calc_age(birth_date):
     if not birth_date:
@@ -138,6 +168,7 @@ async def get_triage_report(triage_id: str):
             cur.execute(
                 """
                 SELECT rule_code, chief_complaint
+                     , original_transcript
                 FROM triage_result
                 WHERE triage_id = %s
                 ORDER BY rule_code
@@ -195,9 +226,7 @@ async def get_triage_report(triage_id: str):
             symptom_rule_rows = cur.fetchall() or []
             symptom_rule_pairs = []
             for row in symptom_rule_rows:
-                if not isinstance(row, dict):
-                    cols = [desc[0] for desc in cur.description]
-                    row = dict(zip(cols, row))
+                row = row_to_dict(row, cur)
                 symptom_name = (row.get("symptom_name") or "").strip()
                 judge_name = (row.get("judge_name") or "").strip() #
                 if symptom_name and judge_name:
@@ -207,6 +236,46 @@ async def get_triage_report(triage_id: str):
                             "judge_name": judge_name,
                         }
                     )
+
+            cur.execute(
+                """
+                SELECT
+                    ml.log_id,
+                    ml.staff_id,
+                    s.name AS staff_name,
+                    s.role AS staff_role,
+                    ml.action_type,
+                    ml.target_table,
+                    ml.target_record_id,
+                    ml.old_data,
+                    ml.new_data,
+                    ml.modified_at
+                FROM modification_logs ml
+                LEFT JOIN staff s ON s.nurse_id = ml.staff_id
+                WHERE ml.target_table = 'triage_record'
+                  AND ml.target_record_id = %s
+                ORDER BY ml.modified_at DESC, ml.log_id DESC
+                """,
+                (triage_id,)
+            )
+            modification_logs = []
+            for row in cur.fetchall() or []:
+                d = row_to_dict(row, cur)
+                modification_logs.append(
+                    {
+                        "log_id": d.get("log_id"),
+                        "staff_id": d.get("staff_id"),
+                        "staff_name": d.get("staff_name") or "",
+                        "staff_role": d.get("staff_role") or "",
+                        "action_type": d.get("action_type") or "",
+                        "target_table": d.get("target_table") or "",
+                        "target_record_id": d.get("target_record_id") or "",
+                        "old_data": parse_json_field(d.get("old_data")),
+                        "new_data": parse_json_field(d.get("new_data")),
+                        "modified_at": d.get("modified_at"),
+                    }
+                )
+
             # 在組裝 data 字典之前（約第 140 行）加入這段邏輯：
 
             # 1. 取得兩個來源的級數
@@ -278,6 +347,7 @@ async def get_triage_report(triage_id: str):
                 "rule_code": ";".join(rule_codes),
                 "chief_complaint": "\n".join(dict.fromkeys(chief_complaints)),
                 "symptom_rule_pairs": symptom_rule_pairs,
+                "modification_logs": modification_logs,
                 "nurse_name": base_row.get("nurse_name"),
             }
 

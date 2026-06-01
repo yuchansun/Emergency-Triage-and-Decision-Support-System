@@ -248,7 +248,6 @@ const getTemplateHTML = (_color: string, data?: any) => `
           <div>
             病人主訴：${safe(data?.chief_complaint)}
             <br>判斷規則：${safe(data?.rule_code)}
-            <br>備註：${safe(data?.notes)}
           </div>
         </td>
       </tr>

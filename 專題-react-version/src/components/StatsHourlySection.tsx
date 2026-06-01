@@ -148,16 +148,16 @@ const StatsHourlySection: React.FC = () => {
         ) : null}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <div className="grid grid-cols-5 gap-2 sm:gap-3">
         {([1, 2, 3, 4, 5] as const).map((lv) => (
           <div
             key={lv}
-            className="rounded-2xl shadow-lg p-4 text-center text-white min-w-0"
+            className="rounded-xl sm:rounded-2xl shadow-lg px-2 py-2 sm:p-4 text-center text-white min-w-0"
             style={{ backgroundColor: LEVEL_COLORS[lv] }}
           >
-            <div className="text-sm font-medium opacity-90">第{lv}級</div>
-            <div className="mt-2 text-3xl sm:text-4xl font-bold tabular-nums">{todayTotals[levelKey(lv)] ?? 0}</div>
-            <div className="mt-1 text-xs opacity-90">今日累計</div>
+            <div className="text-[11px] sm:text-sm font-medium opacity-90">第{lv}級</div>
+            <div className="mt-1 sm:mt-2 text-xl sm:text-4xl font-bold tabular-nums">{todayTotals[levelKey(lv)] ?? 0}</div>
+            <div className="mt-0.5 sm:mt-1 text-[10px] sm:text-xs opacity-90">今日累計</div>
           </div>
         ))}
       </div>

@@ -54,6 +54,76 @@ type TriageRecord = {
   };
 };
 
+type ModificationLog = {
+  log_id: number | string;
+  staff_id: number | string;
+  staff_name: string;
+  staff_role: string;
+  action_type: string;
+  target_table: string;
+  target_record_id: string;
+  old_data: any;
+  new_data: any;
+  modified_at: string;
+};
+
+type ChangeLine = {
+  path: string;
+  oldValue: any;
+  newValue: any;
+};
+
+type TriageHierarchyRow = {
+  symptom_name: string;
+  rule_code: string;
+  judge_name: string;
+  ttas_degree: number | null;
+  nhi_degree?: number | null;
+};
+
+const ZERO_LIKE_VALUES = new Set([0, 0.0, 0.00, "0", "0.0", "0.00"]);
+
+const CHANGE_LABELS: Record<string, string> = {
+  triage_record: "檢傷資料",
+  vital_signs: "生命徵象",
+  encounter_extra: "就診補充",
+  triage_result: "檢傷結果",
+  patient_id: "病患編號",
+  nurse_id: "護理師編號",
+  final_level: "檢傷級數",
+  created_at: "建立時間",
+  temperature: "體溫",
+  heart_rate: "心跳",
+  spo2: "血氧",
+  respiratory_rate: "呼吸速率",
+  weight: "體重",
+  blood_pressure_sys: "收縮壓",
+  blood_pressure_dia: "舒張壓",
+  blood_sugar: "血糖",
+  gcs_eye: "GCS 眼睛反應",
+  gcs_verbal: "GCS 語言反應",
+  gcs_motor: "GCS 運動反應",
+  past_medical_history: "既往病史",
+  do_not_treat: "不治療",
+  allergy: "過敏史",
+  pain_score: "疼痛分數",
+  sentiment: "情緒分數",
+  bed: "床號",
+  patient_source: "病患來源",
+  major_incident: "重大事件",
+  visit_time: "到院時間",
+  tocc_travel: "旅遊史",
+  tocc_travel_start: "旅遊開始",
+  tocc_travel_end: "旅遊結束",
+  tocc_cluster_items: "群聚項目",
+  tocc_cluster_other: "群聚其他",
+  tocc_symptoms: "症狀",
+  tocc_occupation: "職業",
+  tocc_occupation_other: "職業其他",
+  rule_code: "規則代碼",
+  chief_complaint: "主訴",
+};
+
 type FilterForm = {
   keyword: string;
   visitDate: string;
@@ -107,6 +177,11 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, in
   const [selected, setSelected] = useState<TriageRecord | null>(null);
   const [selectedRaw, setSelectedRaw] = useState<any>(null);
   const [editDraft, setEditDraft] = useState<TriageRecord | null>(null);
+  const [hierarchyRows, setHierarchyRows] = useState<TriageHierarchyRow[]>([]);
+  const [ruleCodeSearch, setRuleCodeSearch] = useState("");
+  const [ruleCodeLevelFilter, setRuleCodeLevelFilter] = useState<"" | "1" | "2" | "3" | "4" | "5">("");
+  const [editRuleCode, setEditRuleCode] = useState("");
+  const [editSelectedLevel, setEditSelectedLevel] = useState<1 | 2 | 3 | 4 | 5 | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -134,6 +209,99 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, in
     return status;
   };
 
+  const flattenChanges = (oldValue: any, newValue: any, prefix = ""): ChangeLine[] => {
+    if (oldValue === newValue) return [];
+
+    if (Array.isArray(oldValue) && Array.isArray(newValue)) {
+      const maxLength = Math.max(oldValue.length, newValue.length);
+      const isObjectArray = [...oldValue, ...newValue].some((item) => item && typeof item === "object" && !Array.isArray(item));
+
+      if (isObjectArray) {
+        return Array.from({ length: maxLength }, (_, index) => {
+          const childPrefix = `${prefix}[${index}]`;
+          return flattenChanges(oldValue[index], newValue[index], childPrefix);
+        }).flat();
+      }
+
+      return Array.from({ length: maxLength }, (_, index) => {
+        const childPrefix = `${prefix}[${index}]`;
+        return flattenChanges(oldValue[index], newValue[index], childPrefix);
+      }).flat();
+    }
+
+    const oldIsObject = oldValue && typeof oldValue === "object" && !Array.isArray(oldValue);
+    const newIsObject = newValue && typeof newValue === "object" && !Array.isArray(newValue);
+
+    if (oldIsObject && newIsObject) {
+      const keys = Array.from(new Set([...Object.keys(oldValue), ...Object.keys(newValue)])).sort();
+      return keys.flatMap((key) => {
+        const nextPrefix = prefix ? `${prefix}.${key}` : key;
+        return flattenChanges(oldValue[key], newValue[key], nextPrefix);
+      });
+    }
+
+    return [{ path: prefix || "資料", oldValue, newValue }];
+  };
+
+  const formatChangePath = (path: string) => {
+    if (!path) return "資料";
+    return path
+      .split(".")
+      .map((segment) => {
+        const match = segment.match(/^(.+?)\[(\d+)\]$/);
+        if (match) {
+          const key = CHANGE_LABELS[match[1]] || match[1];
+          return `${key} 第${Number(match[2]) + 1}筆`;
+        }
+        return CHANGE_LABELS[segment] || segment;
+      })
+      .join("／");
+  };
+
+  const formatChangeValue = (value: any, path = ""): string => {
+    if (value === null || value === undefined || value === "") return "無";
+    if (Array.isArray(value)) {
+      if (!value.length) return "無";
+      return value.map((item, index) => formatChangeValue(item, `${path}[${index}]`)).join("；");
+    }
+    if (typeof value === "object") {
+      const entries: string[] = Object.entries(value)
+        .filter(([, item]) => item !== null && item !== undefined && item !== "")
+        .map(([key, item]) => `${CHANGE_LABELS[key] || key}：${formatChangeValue(item, key)}`);
+      return entries.length ? entries.join("、") : "無";
+    }
+    return String(value);
+  };
+
+  const isEmptyAuditValue = (value: any): boolean => {
+    if (value === null || value === undefined) return true;
+    if (value === "") return true;
+    if (typeof value === "string") return value.trim() === "" || value.trim() === "無";
+    return false;
+  };
+
+  const isZeroLikeValue = (value: any): boolean => {
+    if (typeof value === "number") return value === 0;
+    if (typeof value === "string") return ZERO_LIKE_VALUES.has(value.trim());
+    return false;
+  };
+
+  const shouldHideAuditChange = (change: ChangeLine): boolean => {
+    const oldDisplay = formatChangeValue(change.oldValue, change.path);
+    const newDisplay = formatChangeValue(change.newValue, change.path);
+    if (oldDisplay === newDisplay) return true;
+
+    const oldEmpty = isEmptyAuditValue(change.oldValue);
+    const newZeroLike = isZeroLikeValue(change.newValue) || isEmptyAuditValue(change.newValue);
+    return oldEmpty && newZeroLike;
+  };
+
+  const getVisibleModificationLogs = () => {
+    const logs = modificationLogs.filter((log) => log.action_type !== "INSERT");
+    if (logs.length <= 1) return [];
+    return logs.slice(0, -1);
+  };
+
   const setField = <K extends keyof FilterForm>(key: K, value: FilterForm[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
@@ -150,6 +318,40 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, in
     if (!initialSelectedTriageId) return;
     void openDetail(initialSelectedTriageId);
   }, [initialSelectedTriageId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadHierarchy = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/triage_hierarchy`);
+        const data = await res.json();
+        if (!res.ok || !Array.isArray(data)) return;
+
+        const nextRows = data
+          .map((row: any) => ({
+            symptom_name: String(row?.symptom_name || "").trim(),
+            rule_code: String(row?.rule_code || "").trim(),
+            judge_name: String(row?.judge_name || "").trim(),
+            ttas_degree: Number.isFinite(Number(row?.ttas_degree)) ? Number(row.ttas_degree) : null,
+            nhi_degree: Number.isFinite(Number(row?.nhi_degree)) ? Number(row.nhi_degree) : null,
+          }))
+          .filter((row: TriageHierarchyRow) => row.symptom_name || row.rule_code || row.judge_name);
+
+        if (!cancelled) {
+          setHierarchyRows(nextRows);
+        }
+      } catch {
+        // 忽略規則清單載入失敗，編輯仍可手動輸入編號
+      }
+    };
+
+    void loadHierarchy();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [API_BASE_URL]);
 
   const fetchRecords = async (targetPage: number, targetFilter: FilterForm) => {
     setLoading(true);
@@ -273,6 +475,10 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, in
       };
       setSelected(mapped);
       setEditDraft(mapped);
+      setEditRuleCode(String(d.rule_code || "").trim());
+      setEditSelectedLevel(normalizeTriageLevel(d.triage_level));
+      setRuleCodeSearch("");
+      setRuleCodeLevelFilter("");
       setIsEditing(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : "讀取詳情失敗";
@@ -527,7 +733,6 @@ td, th {
           <div>
             病人主訴：${safe(data?.chief_complaint)}
             <br>判斷規則：${safe(data?.rule_code)}
-            <br>備註：${safe(data?.notes)}
           </div>
         </td>
       </tr>
@@ -605,13 +810,45 @@ td, th {
   const handleStartEdit = () => {
     if (!selected) return;
     setEditDraft({ ...selected });
+    setEditRuleCode(String(selectedRaw?.rule_code || "").trim());
+    setEditSelectedLevel(selected.triageLevel ?? normalizeTriageLevel(selectedRaw?.triage_level));
+    setRuleCodeSearch("");
+    setRuleCodeLevelFilter("");
     setIsEditing(true);
   };
 
   const handleCancelEdit = () => {
     setEditDraft(selected ? { ...selected } : null);
+    setEditRuleCode(String(selectedRaw?.rule_code || "").trim());
+    setEditSelectedLevel(selected?.triageLevel ?? normalizeTriageLevel(selectedRaw?.triage_level));
+    setRuleCodeSearch("");
+    setRuleCodeLevelFilter("");
     setIsEditing(false);
   };
+
+  const applyRuleCodeSuggestion = (row: TriageHierarchyRow) => {
+    setEditRuleCode(row.rule_code);
+    const degree = normalizeTriageLevel(row.ttas_degree);
+    if (degree !== null) {
+      setEditSelectedLevel(degree);
+    }
+  };
+
+  const normalizedRuleCodeSearch = ruleCodeSearch.trim().toLowerCase();
+  const ruleCodeSuggestions = hierarchyRows
+    .filter((row) => {
+      if (ruleCodeLevelFilter && String(row.ttas_degree ?? "") !== ruleCodeLevelFilter) {
+        return false;
+      }
+
+      const query = normalizedRuleCodeSearch || editDraft?.finalSymptoms.join(" ").trim().toLowerCase() || "";
+      if (!query) return !!ruleCodeLevelFilter;
+
+      return [row.symptom_name, row.rule_code, row.judge_name]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query));
+    })
+    .slice(0, 12);
 
   const handleSaveEdit = async () => {
     if (!selected || !editDraft) return;
@@ -636,10 +873,11 @@ td, th {
         tocc_cluster_items: editDraft.tocc.clusterItems.join(", "),
         tocc_cluster_other: editDraft.tocc.clusterOther || "",
         tocc_symptoms: editDraft.tocc.symptoms.join(", "),
+        selectedLevel: editSelectedLevel ?? selected.triageLevel ?? normalizeTriageLevel(selectedRaw?.triage_level),
         result: {
-          rule_code: selectedRaw?.rule_code || "",
+          rule_code: editRuleCode.trim() || selectedRaw?.rule_code || "",
           chief_complaint: editDraft.chiefComplaintNote || "",
-          notes: selectedRaw?.notes || "",
+          original_transcript: selectedRaw?.original_transcript || "",
         },
         vitals: {
           temperature: Number(editDraft.vitals.temperature || 0),
@@ -682,6 +920,10 @@ td, th {
       setSaving(false);
     }
   };
+
+  const modificationLogs: ModificationLog[] = Array.isArray(selectedRaw?.modification_logs)
+    ? selectedRaw.modification_logs
+    : [];
 
   return (
     <div className="p-6 md:p-8 min-h-full bg-[#F8FAFC]">
@@ -944,22 +1186,98 @@ td, th {
               )}
               <div className="text-gray-500 text-sm mt-3">最後症狀</div>
               {isEditing ? (
-                <input
-                  value={editDraft.finalSymptoms.join(", ")}
-                  onChange={(e) =>
-                    setDraftField(
-                      "finalSymptoms",
-                      e.target.value
-                        .split(",")
-                        .map((v) => v.trim())
-                        .filter(Boolean)
-                    )
-                  }
-                  className="mt-1 w-full rounded-xl bg-white border border-gray-300 p-3"
-                />
+                <div className="mt-1 space-y-3">
+                  <input
+                    value={editDraft.finalSymptoms.join(", ")}
+                    onChange={(e) =>
+                      setDraftField(
+                        "finalSymptoms",
+                        e.target.value
+                          .split(",")
+                          .map((v) => v.trim())
+                          .filter(Boolean)
+                      )
+                    }
+                    className="w-full rounded-xl bg-white border border-gray-300 p-3"
+                    placeholder="可輸入多個最後症狀，以逗號分隔"
+                  />
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-2">
+                    <div className="text-gray-500 text-sm">檢傷規格編號</div>
+                    <input
+                      value={editRuleCode}
+                      onChange={(e) => {
+                        const nextRuleCode = e.target.value;
+                        setEditRuleCode(nextRuleCode);
+                        const matchedRow = hierarchyRows.find((row) => row.rule_code === nextRuleCode.trim());
+                        if (matchedRow?.ttas_degree !== null && matchedRow?.ttas_degree !== undefined) {
+                          const normalizedLevel = normalizeTriageLevel(matchedRow.ttas_degree);
+                          if (normalizedLevel !== null) {
+                            setEditSelectedLevel(normalizedLevel);
+                          }
+                        }
+                      }}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2"
+                      placeholder="輸入或搜尋規格編號，例如 T030313"
+                    />
+                    <input
+                      value={ruleCodeSearch}
+                      onChange={(e) => setRuleCodeSearch(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2"
+                      placeholder="可輸入症狀名稱、判斷規則或編號來搜尋"
+                    />
+                    <select
+                      value={ruleCodeLevelFilter}
+                      onChange={(e) => setRuleCodeLevelFilter(e.target.value as "" | "1" | "2" | "3" | "4" | "5")}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                    >
+                      <option value="">全部級數</option>
+                      <option value="1">第一級</option>
+                      <option value="2">第二級</option>
+                      <option value="3">第三級</option>
+                      <option value="4">第四級</option>
+                      <option value="5">第五級</option>
+                    </select>
+                    <div className="text-xs text-gray-500">
+                      搜尋結果點一下就會帶入規格編號與級數。
+                      {ruleCodeLevelFilter ? ` 目前只顯示第 ${ruleCodeLevelFilter} 級。` : ""}
+                    </div>
+                    {ruleCodeSuggestions.length > 0 ? (
+                      <div className="max-h-44 overflow-auto rounded-lg border border-gray-200 bg-white">
+                        {ruleCodeSuggestions.map((row) => (
+                          <button
+                            key={`${row.rule_code}-${row.symptom_name}`}
+                            type="button"
+                            onClick={() => applyRuleCodeSuggestion(row)}
+                            className="flex w-full items-start justify-between gap-3 border-b border-gray-100 px-3 py-2 text-left text-xs hover:bg-blue-50 last:border-b-0"
+                          >
+                            <span className="text-gray-700">
+                              {row.symptom_name || "未命名症狀"} / {row.judge_name || "未命名規則"}
+                            </span>
+                            <span className={`shrink-0 rounded-full border px-2 py-0.5 font-semibold ${levelColor(row.ttas_degree)}`}>
+                              {row.rule_code || "無編號"}{row.ttas_degree !== null && row.ttas_degree !== undefined ? ` ・ 第${row.ttas_degree}級` : ""}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (ruleCodeSearch.trim() || ruleCodeLevelFilter) ? (
+                      <div className="rounded-lg border border-dashed border-gray-200 bg-white px-3 py-2 text-xs text-gray-400">
+                        查無符合條件的規格編號
+                        {ruleCodeLevelFilter ? `（第 ${ruleCodeLevelFilter} 級）` : ""}
+                      </div>
+                    ) : null}
+                    <div className="text-xs text-gray-500">
+                      目前級數：{editSelectedLevel !== null && editSelectedLevel !== undefined ? `第 ${editSelectedLevel} 級` : "無"}
+                    </div>
+                  </div>
+                </div>
               ) : (
-                <div className="mt-1 rounded-xl bg-gray-50 border border-gray-200 p-3">
-                  {editDraft.finalSymptoms.join("、")}
+                <div className="mt-1 space-y-2">
+                  <div className="rounded-xl bg-gray-50 border border-gray-200 p-3">
+                    {editDraft.finalSymptoms.join("、")}
+                  </div>
+                  <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 text-sm text-gray-600">
+                    檢傷規格編號：{String(selectedRaw?.rule_code || "無")}
+                  </div>
                 </div>
               )}
             </div>
@@ -1179,6 +1497,45 @@ td, th {
                   )}
                 </div>
               </div>
+            </div>
+
+            <div className="mt-6">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <div className="text-gray-500 text-sm">修改歷史</div>
+                <div className="text-xs text-gray-400">只顯示歷史頁儲存後產生的異動紀錄</div>
+              </div>
+
+              {getVisibleModificationLogs().length > 0 ? (
+                <div className="space-y-3">
+                  {getVisibleModificationLogs()
+                    .map((log) => (
+                    <details key={log.log_id} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                      <summary className="cursor-pointer list-none flex flex-wrap items-center gap-2 text-sm text-gray-700">
+                        <span className="font-semibold text-gray-800">修改</span>
+                        <span className="text-gray-500">{log.staff_name ? `${log.staff_name}` : `人員 ${log.staff_id}`}</span>
+                        <span className="text-gray-400">{log.modified_at ? String(log.modified_at).replace("T", " ") : ""}</span>
+                      </summary>
+
+                      <div className="mt-3 space-y-2 text-xs text-gray-700">
+                        {flattenChanges(log.old_data, log.new_data)
+                          .filter((change) => !shouldHideAuditChange(change))
+                          .map((change, index) => {
+                          return (
+                            <div key={`${log.log_id}-${index}`} className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                              <span className="font-semibold text-gray-800">{formatChangePath(change.path)}</span>
+                              <span className="ml-2">由 {formatChangeValue(change.oldValue, change.path)} 變更為 {formatChangeValue(change.newValue, change.path)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-400">
+                  目前沒有修改紀錄
+                </div>
+              )}
             </div>
           </div>
         </div>
