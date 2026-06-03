@@ -153,6 +153,13 @@ def generate_medical_number(patient_id: Optional[str]) -> str:
     rand_part = secrets.token_hex(2).upper()
     return f"MRN-{date_part}-{pid_part}-{rand_part}"
 
+
+def generate_demo_triage_id() -> str:
+    date_part = datetime.now().strftime("%Y%m%d")
+    rand_part = secrets.token_hex(2).upper()
+    return f"DEMO-{date_part}-{rand_part}"
+
+
 @router.post("/triagesave")
 async def create_triagesave(triagesave_data: dict):
     conn = None
@@ -170,6 +177,22 @@ async def create_triagesave(triagesave_data: dict):
                 raise HTTPException(status_code=400, detail="patient_id 不可為空")
 
             # ✅ 若前端沒帶 triage_id 才新產生
+            demo_mode = bool(
+                triagesave_data.get("demoMode")
+                or triagesave_data.get("isDemo")
+                or triagesave_data.get("demo_mode")
+            )
+
+            if not triage_id and demo_mode:
+                for _ in range(10):
+                    candidate = generate_demo_triage_id()
+                    cur.execute("SELECT triage_id FROM triage_record WHERE triage_id = %s", (candidate,))
+                    if not cur.fetchone():
+                        triage_id = candidate
+                        break
+                if not triage_id:
+                    raise HTTPException(status_code=500, detail="教學 triage_id 產生失敗")
+
             if not triage_id:
                 for _ in range(10):
                     candidate = generate_medical_number(patient_id)
@@ -365,6 +388,17 @@ async def create_triagesave(triagesave_data: dict):
                         )
                     )
 
+            # 更新病患過敏史，前端可能送 allergy 或 drugAllergy
+            allergy = vitals.get("drugAllergy") or vitals.get("allergy")
+            if allergy is not None:
+                cur.execute(
+                    """
+                    UPDATE patients
+                    SET drug_allergy = %s
+                    WHERE patient_id = %s
+                    """,
+                    (allergy, patient_id)
+                )
             conn.commit()
 
         return {"success": True, "message": "檢傷資料已儲存", "triageId": triage_id}
@@ -377,6 +411,34 @@ async def create_triagesave(triagesave_data: dict):
     finally:
         if conn:
             conn.close()
+
+
+@router.delete("/triagesave/{triage_id}")
+async def delete_triagesave(triage_id: str):
+    if not triage_id.startswith("DEMO-"):
+        raise HTTPException(status_code=403, detail="僅可刪除教學示範資料")
+
+    conn = None
+    try:
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute("START TRANSACTION")
+            cur.execute("DELETE FROM triage_result WHERE triage_id = %s", (triage_id,))
+            cur.execute("DELETE FROM vital_signs WHERE triage_id = %s", (triage_id,))
+            cur.execute("DELETE FROM encounter_extra WHERE triage_id = %s", (triage_id,))
+            cur.execute("DELETE FROM triage_record WHERE triage_id = %s", (triage_id,))
+            conn.commit()
+
+        return {"success": True, "message": "已刪除教學檢傷紀錄"}
+    except pymysql.MySQLError as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"刪除教學檢傷失敗: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"刪除失敗: {str(e)}")
+    finally:
+        if conn:
+            conn.close()
+
 
 @router.get("/triagesave/{triage_id}")
 async def get_triagesave(triage_id: str):

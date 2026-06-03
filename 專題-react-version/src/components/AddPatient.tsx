@@ -19,6 +19,7 @@ export interface PatientData {
   age?: number;
   medicalId?: string;
   visitNumber?: string;
+  drugAllergy?: string | null;
 }
 
 //病人資料輸入與掛號流程
@@ -28,15 +29,51 @@ export default function AddPatient({
   nurseId, 
 }: {
   onNext: (data: PatientData) => void;
-  onDemo: () => void;
+  onDemo: (data: PatientData) => void;
   nurseId?: string | null; 
 }) {
   const [name, setName] = useState("");
+
+  const handleDemo = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/patients/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "教學測試病患",
+          id_number: `DEMO-${Date.now()}`,
+          birth_date: "1900-01-01",
+          gender: "U",
+          drug_allergy: null,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success || !result.patient_id) {
+        throw new Error(result.detail || "建立教學病患失敗");
+      }
+
+      onDemo({
+        name: "教學測試病患",
+        idNumber: "(教學)",
+        birthDate: "1900-01-01",
+        triage_id: "",
+        gender: "",
+        icCard: false,
+        patient_id: result.patient_id,
+        age: 11,
+        drugAllergy: null,
+      });
+    } catch (error) {
+      console.error(error);
+      alert("建立教學病患失敗，請稍後再試");
+    }
+  };
   const [idNumber, setIdNumber] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [gender, setGender] = useState<"男" | "女" | "不詳" | "">("");
   const [icCard, setIcCard] = useState(false);
   const [existingPatientId, setExistingPatientId] = useState<string | null>(null);
+  const [drugAllergy, setDrugAllergy] = useState<string | null>(null);
   const [directErModal, setDirectErModal] = useState<{
     patientId: string;
     wristbandSuffix: string;
@@ -45,6 +82,7 @@ export default function AddPatient({
   // 1. 自動搜尋現有病人 (手打身分證後觸發)
   const checkPatient = async (id: string) => {
     const lookupId = id.trim().toUpperCase();
+    setIdNumber(lookupId);
     if (!lookupId || lookupId.length < 4) return;
     try {
       const res = await fetch(`${API_BASE}/patients/search/${lookupId}`);
@@ -55,8 +93,10 @@ export default function AddPatient({
         setBirthDate(p.birth_date || "");
         setGender(p.gender === "M" ? "男" : p.gender === "F" ? "女" : "不詳");
         setExistingPatientId(p.patient_id);
+        setDrugAllergy(p.drug_allergy ?? null);
       } else {
         setExistingPatientId(null);
+        setDrugAllergy(null);
       }
     } catch (e) {
       setExistingPatientId(null);
@@ -99,10 +139,12 @@ export default function AddPatient({
     setGender("");
     setIcCard(false);
     setExistingPatientId(null);
+    setDrugAllergy(null);
   };
 
   const registerPatient = async (directToER: boolean) => {
     try {
+      const normalizedIdNumber = idNumber.trim().toUpperCase();
       // Step A: 儲存病人
       const pResponse = await fetch(`${API_BASE}/patients/save`, {
         method: "POST",
@@ -110,9 +152,10 @@ export default function AddPatient({
         body: JSON.stringify({ 
           patient_id: existingPatientId, 
           name: name || "不詳", 
-          id_number: idNumber, 
+          id_number: normalizedIdNumber || null, 
           birth_date: birthDate || null, 
-          gender: gender === "男" ? "M" : gender === "女" ? "F" : "U" 
+          gender: gender === "男" ? "M" : gender === "女" ? "F" : "U",
+          drug_allergy: drugAllergy,
         }),
       });
       const pResult = await pResponse.json();
@@ -176,6 +219,7 @@ export default function AddPatient({
           gender,
           icCard,
           patient_id: pResult.patient_id,
+          drugAllergy,
         });
       } else {
         alert("掛號失敗：" + tResult.detail);
@@ -292,10 +336,10 @@ export default function AddPatient({
 
       <button
         type="button"
-        onClick={onDemo}
+        onClick={handleDemo}
         className="fixed right-6 bottom-6 px-5 py-3 rounded-2xl bg-amber-500 text-white font-bold shadow-lg hover:bg-amber-600 active:scale-95"
       >
-        教學/模擬檢傷（不存檔）
+        教學/模擬檢傷
       </button>
     </div>
   );

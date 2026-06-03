@@ -179,10 +179,6 @@ function App() {
       overrideChiefComplaint?: string;
     }
   ) => {
-    if (isDemoMode) {
-      alert("教學/模擬模式：不會送出或儲存檢傷資料");
-      return;
-    }
     if (globalConfig.requireTOCC) {
   const isToccEmpty =
     !tocc.travel &&
@@ -200,12 +196,13 @@ function App() {
 }
 
     const fullPayload = {
-      triage_id: patientData?.triage_id ?? null,
-      triageId: patientData?.triage_id ?? null,
+      triage_id: patientData?.triage_id ? patientData.triage_id : null,
+      triageId: patientData?.triage_id ? patientData.triage_id : null,
       patientId: patientData?.patient_id ?? null,
       patient_id: patientData?.patient_id ?? null,
       nurseId: currentUser?.nurseId ?? null,
       nurse_id: currentUser?.nurseId ?? null,
+      demoMode: isDemoMode,
 
       bed, patientSource, majorIncident, visitTime,
       tocc_travel: tocc.travel, tocc_travel_start: tocc.travelStart, tocc_travel_end: tocc.travelEnd,
@@ -360,8 +357,14 @@ function App() {
             age: p.age ?? prev.age,
             medicalId: p.medical_id ?? prev.medicalId,
             visitNumber: p.visit_number ?? prev.visitNumber,
+            drugAllergy: p.drug_allergy ?? prev.drugAllergy,
           };
         });
+
+        setVitals(prev => ({
+          ...prev,
+          drugAllergy: p.drug_allergy ?? prev.drugAllergy,
+        }));
       } catch (error) {
         console.error("抓病患詳細資料失敗:", error);
       }
@@ -369,6 +372,14 @@ function App() {
 
     fetchPatientDetail();
   }, [patientData?.patient_id, isDemoMode]);
+
+  useEffect(() => {
+    if (patientData?.drugAllergy === undefined) return;
+    setVitals(prev => ({
+      ...prev,
+      drugAllergy: patientData.drugAllergy ?? null,
+    }));
+  }, [patientData?.drugAllergy]);
 
   const goToAddPatientClean = () => {
     resetAllTriageState();
@@ -484,18 +495,9 @@ function App() {
               setIsDemoMode(false);
               void runVoiceConsentFlow();
             }}
-            onDemo={() => {
+            onDemo={(data) => {
               resetAllTriageState();
-              setPatientData({
-                name: "教學測試病患",
-                idNumber: "(測試帶入)",
-                birthDate: "1900-1-1",
-                triage_id: "DEMO-001",
-                gender: "",
-                icCard: false,
-                visitNumber: "DEMO-PATIENT",
-                age: 11,
-              });
+              setPatientData(data);
               setIsDemoMode(true);
               void runVoiceConsentFlow();
             }}
@@ -543,6 +545,7 @@ function App() {
                     age={patientData?.age}
                     vitals={vitals}
                     setVitals={setVitals}
+                    highlightDrugAllergy={Boolean(patientData?.drugAllergy)}
                   />
                 </div>
                 <div className="col-span-5 flex flex-col gap-4">

@@ -49,7 +49,7 @@ const Vitals: React.FC<VitalsProps> = ({
     doNotTreat: '',
     sentiment: null,
   },
-  setVitals = () => {}
+  setVitals = () => { }
 }) => {
   // === 移除所有 local useState，改成從 props 讀取 ===
   // 例如：原本 const [temperature, setTemperature] = useState<string>('');
@@ -119,8 +119,10 @@ const Vitals: React.FC<VitalsProps> = ({
   };
   const allergyParsed = parseDrugAllergy(drugAllergy);
   const setDrugAllergy = (status: string | null, detail: string = allergyParsed.detail) =>
-    setVitals({ ...vitals, drugAllergy: formatDrugAllergy(status, detail) });
-
+    setVitals(prev => ({
+      ...prev,
+      drugAllergy: formatDrugAllergy(status, detail)
+    }));
   const painScore = vitals.painScore;
   const setPainScore = (val: number | null) => setVitals({ ...vitals, painScore: val });
 
