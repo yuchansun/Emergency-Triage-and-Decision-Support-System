@@ -176,7 +176,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
 
           {patient.idNumber
             ? <span>身分證號: {patient.idNumber}</span>
-            : <span className="text-gray-400">身分證號:(測試帶入)</span>
+            : <span>身分證號: 不詳</span>
           }
 
           {patient.visitNumber
