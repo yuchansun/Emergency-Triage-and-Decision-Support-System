@@ -1,7 +1,7 @@
 import google.generativeai as genai
 
 # 將你的 API Key 直接貼在這裡取代這串文字
-TEST_API_KEY = "AIzaSyBNoSghMPuTNXXyO7BijakAnbEGZyFsAS4"
+TEST_API_KEY = "你的 API Key 在這裡"
 
 print("🔧 正在設定金鑰...")
 genai.configure(api_key=TEST_API_KEY)
