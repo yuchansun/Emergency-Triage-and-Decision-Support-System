@@ -16,6 +16,7 @@ type NurseRecord = {
   department: string;
   shift: string;
   status: string;
+  isActive?: boolean;
   phone: string;
   email: string;
   hireDate: string;
@@ -65,6 +66,11 @@ const toRoleValue = (role: string) => {
   if (r === "admin" || role === "管理員") return "admin";
   if (r === "user" || role === "護理師") return "user";
   return role.trim();
+};
+
+const isNurseDisabled = (nurse: Pick<NurseRecord, "status" | "isActive">) => {
+  if (typeof nurse.isActive === "boolean") return !nurse.isActive;
+  return (nurse.status || "").trim() === "停用";
 };
 
 type NursesPageProps = {
@@ -138,6 +144,7 @@ const NursesPage: React.FC<NursesPageProps> = ({ onOpenHistoryRecord, initialSel
       total: nurses.length,
       active: nurses.filter((n) => n.status === "在職").length,
       support: nurses.filter((n) => n.status === "支援中").length,
+      disabled: nurses.filter((n) => isNurseDisabled(n)).length,
     };
   }, [nurses]);
 
@@ -198,27 +205,33 @@ useEffect(() => {
     }
   };
 
-  const handleDelete = async (nurseId: string) => {
+  const handleToggleActive = async (nurseId: string, active: boolean) => {
     const target = nurses.find((n) => n.nurseId === nurseId);
     if (!target) return;
-    if (!window.confirm(`確定刪除帳號：${target.name}（${target.nurseId}）？`)) return;
+    const actionLabel = active ? "啟用" : "停用";
+    if (!window.confirm(`確定${actionLabel}帳號：${target.name}（${target.nurseId}）？`)) return;
 
     try {
       const res = await fetch(
-        `${API_BASE_URL}/nurses/${encodeURIComponent(nurseId)}`,
+        `${API_BASE_URL}/nurses/${encodeURIComponent(nurseId)}/active`,
         {
-          method: "DELETE",
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ active }),
         }
       );
       const result = await res.json();
       if (!res.ok || !result.success) {
-        throw new Error(result.detail || "刪除失敗");
+        throw new Error(result.detail || `${actionLabel}失敗`);
       }
 
-      setNurses((prev) => prev.filter((n) => n.nurseId !== nurseId));
-      if (selectedId === nurseId) setSelectedId(null);
+      setNurses((prev) =>
+        prev.map((n) =>
+          n.nurseId === nurseId ? { ...n, ...result.data } : n
+        )
+      );
     } catch (err) {
-      const message = err instanceof Error ? err.message : "刪除失敗";
+      const message = err instanceof Error ? err.message : `${actionLabel}失敗`;
       window.alert(message);
     }
   };
@@ -388,6 +401,10 @@ useEffect(() => {
                 <div className="text-blue-600">支援中</div>
                 <div className="font-semibold text-blue-700">{nurseSummary.support}</div>
               </div>
+              <div className="px-3 py-2 rounded-xl bg-gray-100 border border-gray-300">
+                <div className="text-gray-600">停用</div>
+                <div className="font-semibold text-gray-700">{nurseSummary.disabled}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -427,18 +444,27 @@ useEffect(() => {
             </thead>
             <tbody>
               {filteredNurses.map((nurse) => (
+                (() => {
+                  const disabled = isNurseDisabled(nurse);
+                  const rowClass = disabled
+                    ? "border-t border-gray-200 bg-gray-100 text-gray-400 cursor-pointer"
+                    : "border-t border-gray-200 hover:bg-gray-50 cursor-pointer";
+                  const statusClass = disabled
+                    ? "inline-flex px-3 py-1 rounded-full bg-gray-200 text-gray-600 border border-gray-300"
+                    : "inline-flex px-3 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-200";
+                  return (
                 <tr
                   key={nurse.nurseId}
                   onClick={() => openNurseDetail(nurse.nurseId)}
-                  className="border-t border-gray-200 hover:bg-gray-50 cursor-pointer"
+                  className={rowClass}
                 >
-                  <td className="px-4 py-3 font-medium text-gray-800">{nurse.nurseId}</td>
+                  <td className={`px-4 py-3 font-medium ${disabled ? "text-gray-500" : "text-gray-800"}`}>{nurse.nurseId}</td>
                   <td className="px-4 py-3">{nurse.name}</td>
                   <td className="px-4 py-3">{toRoleLabel(nurse.role)}</td>
                   <td className="px-4 py-3">{nurse.department}</td>
                   <td className="px-4 py-3">{nurse.shift}</td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex px-3 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-200">
+                    <span className={statusClass}>
                       {nurse.status}
                     </span>
                   </td>
@@ -446,19 +472,11 @@ useEffect(() => {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <span className="text-blue-600 font-medium">查看詳情</span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleDelete(nurse.nurseId);
-                        }}
-                        className="text-red-600 font-medium hover:text-red-700"
-                      >
-                        刪除帳號
-                      </button>
                     </div>
                   </td>
                 </tr>
+                  );
+                })()
               ))}
 
               {filteredNurses.length === 0 && !loading && (
@@ -490,29 +508,37 @@ useEffect(() => {
             {!isEditOpen && !isPasswordOpen && (
               <>
                 <div className="mt-4 flex gap-2">
+                  {!isNurseDisabled(selected) && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleStartEdit}
+                        className="px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-600 text-sm font-medium hover:bg-blue-100"
+                      >
+                        修改資料
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPasswordForm({ newPassword: "", confirmPassword: "", currentPassword: "" });
+                          setIsPasswordOpen(true);
+                        }}
+                        className="px-4 py-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-600 text-sm font-medium hover:bg-amber-100"
+                      >
+                        修改密碼
+                      </button>
+                    </>
+                  )}
                   <button
                     type="button"
-                    onClick={handleStartEdit}
-                    className="px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-600 text-sm font-medium hover:bg-blue-100"
+                    onClick={() => void handleToggleActive(selected.nurseId, isNurseDisabled(selected))}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium ${
+                      isNurseDisabled(selected)
+                        ? "border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                        : "border border-gray-300 bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
                   >
-                    修改資料
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPasswordForm({ newPassword: "", confirmPassword: "", currentPassword: "" });
-                      setIsPasswordOpen(true);
-                    }}
-                    className="px-4 py-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-600 text-sm font-medium hover:bg-amber-100"
-                  >
-                    修改密碼
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleDelete(selected.nurseId)}
-                    className="px-4 py-2 rounded-xl border border-red-200 bg-red-50 text-red-600 text-sm font-medium hover:bg-red-100"
-                  >
-                    刪除帳號
+                    {isNurseDisabled(selected) ? "啟用帳號" : "停用帳號"}
                   </button>
                 </div>
 

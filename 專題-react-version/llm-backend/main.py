@@ -25,9 +25,9 @@ except ImportError:
     opencc = None
 
 load_dotenv()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-# Gemini 模型也可由環境變數切換，例如想升級 gemini-2.0-flash 時不用動程式碼
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "models/gemini-1.5-flash")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+# Gemini 模型也可由環境變數切換，例如想改成 gemini-2.5-flash 時不用動程式碼
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 if GEMINI_API_KEY:
     client = genai_new.Client(api_key=GEMINI_API_KEY)
     print(f"✅ Gemini API Key 載入成功（model={GEMINI_MODEL}）")
@@ -69,6 +69,78 @@ def _finalize_symptom_recommendations(
 ) -> list:
     out = filter_recommended_symptoms_by_vitals(names, vitals, vitals_symptoms or [])
     return out[:max_results]
+
+
+def _get_llm_fn(llm_mode: str):
+    return call_gemini_llm if str(llm_mode).lower() == "cloud" else call_local_llm
+
+
+def _needs_summary_retry(raw_text: str, summary_text: str) -> bool:
+    raw = (raw_text or "").strip()
+    summary = (summary_text or "").strip()
+    if not raw or not summary:
+        return True
+    if summary == raw:
+        return True
+    if len(summary) >= len(raw) * 0.9 and "、" not in summary and "，" not in summary:
+        return True
+    return False
+
+
+def _summarize_chief_complaint(llm_fn, raw_text: str, prompt: str) -> str:
+    summary = to_taiwan_traditional(llm_fn(prompt).strip())
+    if not _needs_summary_retry(raw_text, summary):
+        return summary
+
+    retry_prompt = f"""
+你是一位急診分級護理師助手。
+請把以下主訴改寫成 2 到 5 個「症狀關鍵詞」，只保留名詞或症狀片語，不要回傳完整句子。
+
+規則：
+- 必須刪除時間詞、原因詞、語氣詞、重複描述與口語贅詞。
+- 不能照抄原文。
+- 如果原文有多個症狀，請拆開列出。
+- 僅輸出頓號分隔的關鍵詞，不要加任何說明。
+
+原始主訴：{raw_text}
+
+輸出範例：頭痛、全身不適、失眠
+"""
+    retry_summary = to_taiwan_traditional(llm_fn(retry_prompt).strip())
+    return retry_summary if retry_summary else summary
+
+
+def _extract_json_array(raw_text: str):
+    """容忍 LLM 回傳 markdown code fence 或前後雜訊，盡量抽出第一個 JSON 陣列。"""
+    if not isinstance(raw_text, str):
+        return None
+    text = raw_text.strip()
+    if not text:
+        return None
+
+    # 先處理 ```json ... ``` 這種包裝
+    fenced = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, flags=re.IGNORECASE)
+    if fenced:
+        text = fenced.group(1).strip()
+
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, list) else None
+    except Exception:
+        pass
+
+    # 再嘗試從任意文字中擷取第一段 [ ... ]
+    start = text.find("[")
+    end = text.rfind("]")
+    if start == -1 or end == -1 or end <= start:
+        return None
+
+    candidate = text[start : end + 1]
+    try:
+        parsed = json.loads(candidate)
+        return parsed if isinstance(parsed, list) else None
+    except Exception:
+        return None
 
 app = FastAPI()
 
@@ -193,19 +265,27 @@ def call_local_llm(prompt: str):
 
 # 雲端模式：打 Gemini（品質通常較穩，但要有 API Key）
 def call_gemini_llm(prompt: str) -> str:
-    try:
-        if client is None:
-            print("❌ Gemini client 未初始化")
-            return ""
-        
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-        )
-        return to_taiwan_traditional(response.text)
-    except Exception as e:
-        print(f"❌ Gemini API 呼叫失敗: {e}")
+    if client is None:
+        print("❌ Gemini client 未初始化")
         return ""
+
+    # 僅對雲端暫時性壅塞（503）做一次短暫重試，避免尖峰流量直接掉空。
+    for attempt in range(2):
+        try:
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+            )
+            return to_taiwan_traditional(response.text)
+        except Exception as e:
+            message = str(e)
+            if attempt == 0 and "503" in message and "UNAVAILABLE" in message.upper():
+                print("⚠️ Gemini 目前高流量，1 秒後重試一次")
+                time.sleep(1)
+                continue
+            print(f"❌ Gemini API 呼叫失敗: {e}")
+            return ""
+    return ""
     
 
 app.add_middleware(
@@ -248,7 +328,7 @@ async def summarize_cc(body: SummarizeRequest):
         raw = body.text.strip()
         vitals = body.vitals
         llm_mode = getattr(body, 'llm_mode', 'local')
-        llm_fn = call_gemini_llm if llm_mode == "cloud" else call_local_llm
+        llm_fn = _get_llm_fn(llm_mode)
 
         # 先把生命徵象轉成症狀標籤（例如：發燒、低血氧）
         vitals_symptoms = []
@@ -280,7 +360,7 @@ async def summarize_cc(body: SummarizeRequest):
             
             voice_summary = ""
             try:
-                voice_summary = llm_fn(voice_prompt).strip()
+                voice_summary = _summarize_chief_complaint(llm_fn, raw, voice_prompt)
                 print(f"[LLM] 語音統整原始結果：'{voice_summary}'")
                 
                 # 檢查LLM結果是否有效
@@ -320,7 +400,9 @@ async def summarize_cc(body: SummarizeRequest):
         # 一般流程：走 RAG 增強 prompt 後再請 LLM 摘要
         print(f"[LLM] 使用 LLM 處理：'{raw}'（mode={llm_mode}）")
         enhanced_prompt = rag_pipeline.enhance_symptom_summary(raw, vitals=vitals)
-        summary = to_taiwan_traditional(llm_fn(enhanced_prompt).strip() or raw)
+        summary = _summarize_chief_complaint(llm_fn, raw, enhanced_prompt)
+        if not summary:
+            summary = to_taiwan_traditional(raw)
 
         return SummarizeResponse(summary=summary)
     except Exception as e:
@@ -452,28 +534,26 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
                 "[\"頭痛\", \"胸痛\"]"
             )
             
-            llm_fn = call_gemini_llm if body.llm_mode == "cloud" else call_local_llm
+            llm_fn = _get_llm_fn(body.llm_mode)
             raw = llm_fn(prompt).strip()
             
             print(f"[LLM] RAG增強推薦原始回應：{raw}")
             
             # 模型必須回 JSON 陣列，這裡做解析與白名單過濾
-            try:
-                recommended = json.loads(raw)
-                if isinstance(recommended, list):
-                    # 過濾確保都在候選清單中
-                    filtered_recommendations = [
-                        symptom for symptom in recommended 
-                        if symptom in candidates
-                    ]
-                    print(f"[LLM] RAG增強推薦結果：{filtered_recommendations}")
-                    return RecommendSymptomsResponse(
-                        recommended_symptoms=_finalize_symptom_recommendations(
-                            filtered_recommendations, vitals, vitals_symptoms, max_results
-                        )
+            recommended = _extract_json_array(raw)
+            if isinstance(recommended, list):
+                # 過濾確保都在候選清單中
+                filtered_recommendations = [
+                    symptom for symptom in recommended 
+                    if symptom in candidates
+                ]
+                print(f"[LLM] RAG增強推薦結果：{filtered_recommendations}")
+                return RecommendSymptomsResponse(
+                    recommended_symptoms=_finalize_symptom_recommendations(
+                        filtered_recommendations, vitals, vitals_symptoms, max_results
                     )
-            except json.JSONDecodeError:
-                print(f"[LLM] JSON解析失敗，回應：{raw}")
+                )
+            print(f"[LLM] JSON解析失敗，回應：{raw}")
             
             # JSON 不合法或輸出怪異時，回退到較簡單的 prompt
             print("[LLM] RAG增強失敗，使用傳統推薦方法")
@@ -494,27 +574,25 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
             "[\"頭痛\", \"胸痛\"]"
         )
         
-        llm_fn = call_gemini_llm if body.llm_mode == "cloud" else call_local_llm
+        llm_fn = _get_llm_fn(body.llm_mode)
         raw = llm_fn(prompt).strip()
         
         print(f"[LLM] 傳統推薦原始回應：{raw}")
         
         # 解析傳統方法的回應
-        try:
-            recommended = json.loads(raw)
-            if isinstance(recommended, list):
-                filtered_recommendations = [
-                    symptom for symptom in recommended 
-                    if symptom in candidates
-                ]
-                print(f"[LLM] 傳統推薦結果：{filtered_recommendations}")
-                return RecommendSymptomsResponse(
-                    recommended_symptoms=_finalize_symptom_recommendations(
-                        filtered_recommendations, vitals, vitals_symptoms, max_results
-                    )
+        recommended = _extract_json_array(raw)
+        if isinstance(recommended, list):
+            filtered_recommendations = [
+                symptom for symptom in recommended 
+                if symptom in candidates
+            ]
+            print(f"[LLM] 傳統推薦結果：{filtered_recommendations}")
+            return RecommendSymptomsResponse(
+                recommended_symptoms=_finalize_symptom_recommendations(
+                    filtered_recommendations, vitals, vitals_symptoms, max_results
                 )
-        except json.JSONDecodeError:
-            print(f"[LLM] 傳統方法JSON解析失敗，回應：{raw}")
+            )
+        print(f"[LLM] 傳統方法JSON解析失敗，回應：{raw}")
         
         # 如果所有方法都失敗，返回空陣列
         print("[LLM] 所有推薦方法都失敗，返回空陣列")
@@ -566,6 +644,7 @@ async def rag_search(body: RAGSearchRequest):
 class TriageAdviceRequest(BaseModel):
     symptoms: list[str]
     vitals: dict = None
+    llm_mode: str = "local"
 
 class TriageAdviceResponse(BaseModel):
     advice: str
@@ -594,7 +673,7 @@ async def triage_advice(body: TriageAdviceRequest):
             n_docs=8,
             pre_retrieved=retrieved,
         )
-        llm_text = call_local_llm(enhanced_prompt).strip()
+        llm_text = _get_llm_fn(body.llm_mode)(enhanced_prompt).strip()
         final_deg, rationale = compute_final_ttas_degree(
             body.symptoms,
             body.vitals,
@@ -922,34 +1001,31 @@ async def recommend_rules(body: RecommendRulesRequest):
 只輸出 JSON 陣列，格式：
 [{{"rule_code":"...","symptom_name":"...","judge_name":"...","ttas_degree":2}}, ...]
 """
-        llm_fn = call_gemini_llm if llm_mode == "cloud" else call_local_llm
+        llm_fn = _get_llm_fn(llm_mode)
         raw = llm_fn(prompt).strip()
 
         allowed_codes = {r["rule_code"] for r in narrow_flat}
         by_sym_llm = defaultdict(list)
         llm_fp_seen = defaultdict(set)
-        try:
-            parsed = json.loads(raw)
-            for row in parsed if isinstance(parsed, list) else []:
-                if not isinstance(row, dict):
-                    continue
-                code = row.get("rule_code")
-                if code not in allowed_codes:
-                    continue
-                base_rule = code_to_rule.get(code)
-                if not base_rule:
-                    continue
-                vscore = vitals_rule_score(base_rule["judge_name"])
-                if vscore <= -900:
-                    continue
-                sym = base_rule["symptom_name"]
-                fp = _rule_display_fingerprint(base_rule)
-                if fp in llm_fp_seen[sym]:
-                    continue
-                llm_fp_seen[sym].add(fp)
-                by_sym_llm[sym].append((vscore, dict(base_rule)))
-        except Exception:
-            pass
+        parsed = _extract_json_array(raw)
+        for row in parsed if isinstance(parsed, list) else []:
+            if not isinstance(row, dict):
+                continue
+            code = row.get("rule_code")
+            if code not in allowed_codes:
+                continue
+            base_rule = code_to_rule.get(code)
+            if not base_rule:
+                continue
+            vscore = vitals_rule_score(base_rule["judge_name"])
+            if vscore <= -900:
+                continue
+            sym = base_rule["symptom_name"]
+            fp = _rule_display_fingerprint(base_rule)
+            if fp in llm_fp_seen[sym]:
+                continue
+            llm_fp_seen[sym].add(fp)
+            by_sym_llm[sym].append((vscore, dict(base_rule)))
 
         for sym in by_sym_llm:
             by_sym_llm[sym].sort(

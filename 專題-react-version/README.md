@@ -51,7 +51,7 @@ DB_PASS=
 DB_NAME=triage  (因為我的資料庫名稱是triage)
  
 ＃啟動後端伺服器
-(python -m)uvicorn main:app --reload --port 8000  (視情況如果開不了可以加入前面括號的python -m)
+python -m uvicorn main:app --reload --port 8000
 （成功後會看到： Uvicorn running on http://127.0.0.1:8000）
 （API測試網址： http://localhost:8000/docs）
 -----------------------------------------------------------------------------
@@ -65,9 +65,25 @@ npm install
 
 ＃建立前端 .env （這跟剛剛那個後端.env不一樣喔） （以下是檔案內容）
 VITE_API_BASE_URL=http://localhost:8000
+VITE_LLM_BASE_URL=http://localhost:8001
 
 ＃啟動前端
 npm run dev
+-----------------------------------------------------------------------------
+# LLM 後端（Ollama / Gemini）設定
+
+請到 [llm-backend/.env.example](llm-backend/.env.example) 複製一份成 `.env`，再填入你的 Gemini API Key。
+
+常用欄位如下：
+GEMINI_API_KEY=請填入你的 Gemini API Key
+GEMINI_MODEL=gemini-2.5-flash
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen2.5:7b-instruct
+
+＃啟動 LLM 後端
+cd llm-backend
+uvicorn main:app --reload --port 8001
+(python -m uvicorn main:app --reload --port 8001)
 -----------------------------------------------------------------------------
 #一個小建議
 在 .gitignore 裡加：
@@ -79,6 +95,7 @@ npm run dev
 ＃後端
 cd api
 uvicorn main:app --reload --port 8000
+(曲:或是python -m uvicorn main:app --reload --port 8000)
 
 ＃前端
 cd 專題資料夾

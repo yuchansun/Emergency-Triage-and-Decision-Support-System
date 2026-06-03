@@ -35,6 +35,10 @@ class NurseCreateRequest(BaseModel):
     password: Optional[str] = None
 
 
+class NurseActivationRequest(BaseModel):
+    active: bool
+
+
 @router.get("")
 async def get_nurses():
     conn = None
@@ -68,13 +72,15 @@ async def get_nurses():
             data = []
             for r in rows:
                 row = r if isinstance(r, dict) else {}
+                status = (row.get("status") or "").strip()
                 data.append({
                     "nurseId": str(row.get("nurse_id") or ""),
                     "name": row.get("name") or "",
                     "role": row.get("role") or "",
                     "department": row.get("department") or "",
                     "shift": row.get("shift_type") or "",
-                    "status": row.get("status") or "",
+                    "status": status,
+                    "isActive": status != "停用",
                     "phone": row.get("phone") or "",
                     "email": row.get("email") or "",
                     "hireDate": str(row.get("hire_date") or ""),
@@ -227,6 +233,7 @@ async def create_nurse(payload: NurseCreateRequest):
             return {
                 "success": True,
                 "data": {
+                    "isActive": ((d.get("status") or "").strip() != "停用"),
                     "nurseId": str(d.get("nurse_id") or ""),
                     "name": d.get("name") or "",
                     "role": d.get("role") or "",
@@ -250,18 +257,53 @@ async def create_nurse(payload: NurseCreateRequest):
 
 @router.delete("/{nurse_id}")
 async def delete_nurse(nurse_id: str):
+    raise HTTPException(status_code=405, detail="刪除帳號已停用，請改用停用/啟用功能")
+
+
+@router.put("/{nurse_id}/active")
+async def set_nurse_active(nurse_id: str, payload: NurseActivationRequest):
     conn = None
     try:
         conn = get_conn()
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM staff WHERE nurse_id = %s", (nurse_id,))
+            next_status = "在職" if payload.active else "停用"
+            cur.execute(
+                "UPDATE staff SET status = %s WHERE nurse_id = %s",
+                (next_status, nurse_id)
+            )
             if cur.rowcount == 0:
                 raise HTTPException(status_code=404, detail="找不到護理師帳號")
-        return {"success": True}
+
+            cur.execute(
+                "SELECT nurse_id, name, role, department, shift_type, status, phone, email, hire_date, license_number FROM staff WHERE nurse_id = %s",
+                (nurse_id,)
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=500, detail="更新後讀取資料失敗")
+
+            d = row if isinstance(row, dict) else {}
+            status = (d.get("status") or "").strip()
+            return {
+                "success": True,
+                "data": {
+                    "nurseId": str(d.get("nurse_id") or ""),
+                    "name": d.get("name") or "",
+                    "role": d.get("role") or "",
+                    "department": d.get("department") or "",
+                    "shift": d.get("shift_type") or "",
+                    "status": status,
+                    "isActive": status != "停用",
+                    "phone": d.get("phone") or "",
+                    "email": d.get("email") or "",
+                    "hireDate": str(d.get("hire_date") or ""),
+                    "licenseNo": d.get("license_number") or "",
+                }
+            }
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"刪除護理師失敗: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"更新護理師狀態失敗: {str(e)}")
     finally:
         if conn:
             conn.close()
@@ -325,6 +367,7 @@ async def update_nurse(nurse_id: str, payload: dict):
                 raise HTTPException(status_code=500, detail="更新後讀取資料失敗")
             
             d = row if isinstance(row, dict) else {}
+            status = (d.get("status") or "").strip()
             return {
                 "success": True,
                 "data": {
@@ -333,7 +376,8 @@ async def update_nurse(nurse_id: str, payload: dict):
                     "role": d.get("role") or "",
                     "department": d.get("department") or "",
                     "shift": d.get("shift_type") or "",
-                    "status": d.get("status") or "",
+                    "status": status,
+                    "isActive": status != "停用",
                     "phone": d.get("phone") or "",
                     "email": d.get("email") or "",
                     "hireDate": str(d.get("hire_date") or ""),

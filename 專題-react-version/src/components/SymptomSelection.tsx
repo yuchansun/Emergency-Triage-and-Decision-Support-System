@@ -870,7 +870,7 @@ const filteredSearchResults = useMemo(() => {
                         <span>骨骼系統</span>
                       </h5>
                       <div className="flex min-w-0 flex-wrap gap-2 mt-2">
-                        {getSymptoms('非外傷', '骨骼系統').filter(name => name.includes('上肢') || name.includes('背') || name.includes('關節')).map(label => (
+                        {getSymptoms('非外傷', '骨骼系統').filter(name => name.includes('上肢') || name.includes('背') || name.includes('關節') || name.includes('肢體')).map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`a:bone:${label}`)}
@@ -923,7 +923,7 @@ const filteredSearchResults = useMemo(() => {
                         <span>骨骼系統</span>
                       </h5>
                       <div className="flex min-w-0 flex-wrap gap-2 mt-2">
-                        {getSymptoms('非外傷', '骨骼系統').filter(name => name.includes('下肢') || name.includes('關節')).map(label => (
+                        {getSymptoms('非外傷', '骨骼系統').filter(name => name.includes('下肢') || name.includes('關節') || name.includes('肢體')).map(label => (
                           <button
                             key={label}
                             onClick={() => toggleSelect(`a:bone:${label}`)}
