@@ -500,7 +500,7 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
             narrowed_candidates = rag_pipeline.find_similar_symptoms(
                 query=semantic_query,
                 candidates=candidates,
-                top_k=40,
+                top_k=20,
             )
             if narrowed_candidates:
                 print(f"[LLM] 語意縮減候選 {len(candidates)} → {len(narrowed_candidates)}，前 10：{narrowed_candidates[:10]}")
@@ -867,7 +867,7 @@ async def recommend_rules(body: RecommendRulesRequest):
 
         # 每個症狀各推薦 2～3 條（預設 K=3），醫學情境下提高命中機率
         RULES_TOP_K_PER_SYMPTOM = 3
-        RULES_POOL_PER_SYMPTOM = 12
+        RULES_POOL_PER_SYMPTOM = 8
 
         def rule_row(symptom: str, item: dict) -> dict:
             return {
@@ -968,21 +968,23 @@ async def recommend_rules(body: RecommendRulesRequest):
         candidate_lines = "\n\n".join(narrow_blocks)
         max_total = RULES_TOP_K_PER_SYMPTOM * len(candidate_symptoms)
 
-        rag_chunks = []
+        rag_context = ""
         try:
-            for s in candidate_symptoms:
-                rag_docs = rag_pipeline.retrieve_relevant_knowledge(
-                    query=f"主訴：{chief_complaint}；症狀：{s}；生命徵象：{json.dumps(filled_vitals, ensure_ascii=False)}",
-                    category=None,
-                    n_results=RULES_TOP_K_PER_SYMPTOM,
-                )
-                if rag_docs:
-                    rag_chunks.append(
-                        f"【{s}】\n{rag_pipeline.format_context_for_llm(rag_docs)}"
-                    )
+            rag_query = (
+                f"主訴：{chief_complaint or '無'}；"
+                f"已選症狀：{', '.join(candidate_symptoms)}；"
+                f"生命徵象：{json.dumps(filled_vitals, ensure_ascii=False) if filled_vitals else '無'}"
+            )
+            rag_n_results = min(6, RULES_TOP_K_PER_SYMPTOM * len(candidate_symptoms))
+            rag_docs = rag_pipeline.retrieve_relevant_knowledge(
+                query=rag_query,
+                category=None,
+                n_results=rag_n_results,
+            )
+            if rag_docs:
+                rag_context = rag_pipeline.format_context_for_llm(rag_docs)
         except Exception as e:
             print("[RULES] RAG 檢索失敗:", e)
-        rag_context = "\n\n---\n\n".join(rag_chunks) if rag_chunks else ""
 
         prompt = f"""你是急診檢傷專家。請依「主訴 + 已選症狀 + 已填生命徵象」推薦判斷規則。
 
@@ -997,7 +999,7 @@ async def recommend_rules(body: RecommendRulesRequest):
 主訴：{chief_complaint if chief_complaint else "無"}
 已選症狀：{", ".join(selected_symptoms)}
 已填生命徵象：{json.dumps(filled_vitals, ensure_ascii=False) if filled_vitals else "無"}
-相關知識（僅供參考，依症狀分段）：
+相關知識（僅供參考）：
 {rag_context if rag_context else "無"}
 
 候選規則（只能從以下選，已依症狀分段）：
