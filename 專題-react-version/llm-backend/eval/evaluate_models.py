@@ -302,9 +302,10 @@ def evaluate_case(base_url: str, api_base_url: str, rec: dict, llm_mode: str, ti
     selected = recommended or extracted
 
     # Step 3：症狀 + 主訴 + 徵象 → 判斷規則
+    # 與前端一致：chief_complaint 送統整後的 summary（inputText），不是原始主訴
     data, t, err = _post(
         base_url, "/api/recommend-rules",
-        {"selected_symptoms": selected, "chief_complaint": chief,
+        {"selected_symptoms": selected, "chief_complaint": summary,
          "vitals": vitals, "llm_mode": llm_mode}, timeout,
     )
     timings["recommend_rules"] = t
