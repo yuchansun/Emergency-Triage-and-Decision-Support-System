@@ -117,6 +117,22 @@ type AiHighlightKey = 'chief' | 'symptoms' | 'rules';
 
 const AI_HIGHLIGHT_MS = 1150;
 
+const TRAUMA_MECHANISM_KEYWORDS = [
+  '車禍', '车祸', '跌倒', '摔倒', '摔到', '摔傷', '摔伤', '撞到', '碰撞', '撞擊', '撞击',
+  '機車', '机车', '摩托', '汽車', '汽车', '被車', '車撞',
+  '骨折', '脫臼', '脱臼', '扭傷', '扭伤', '外傷', '外伤',
+  '擦傷', '擦伤', '撕裂傷', '撕裂伤', '鈍傷', '钝伤', '穿刺傷', '穿刺伤',
+  '刀傷', '刀伤', '刺傷', '刺伤', '燙傷', '烫伤', '燒傷', '烧伤', '燒燙傷',
+  '利刃', '切割傷', '槍傷', '枪伤', '爆炸', '墜落', '坠落', '高處', '高处',
+  '創傷性截肢', '创伤性截肢', '截肢',
+];
+
+const hasTraumaMechanism = (text: string): boolean => {
+  const t = text.trim();
+  if (!t) return false;
+  return TRAUMA_MECHANISM_KEYWORDS.some(kw => t.includes(kw));
+};
+
 const ChiefComplaintContext = createContext<ChiefComplaintContextApi | null>(null);
 
 function useChiefComplaintApi(): ChiefComplaintContextApi {
@@ -644,6 +660,49 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     return results;
   };
 
+  // 外傷機轉但 LLM 未推薦 T 類時，依受傷部位從 TTAS 外傷症狀補候選
+  const getTraumaMechanismFallback = (summary: string): string[] => {
+    if (!triageRows || !hasTraumaMechanism(summary)) {
+      return getSafeFallbackByTab(summary, 't');
+    }
+
+    const regionHints: string[] = [];
+    if (/脚|腳|腿|小腿|大腿|足|踝|膝/.test(summary)) regionHints.push('下肢');
+    if (/手|臂|腕|肘|肩/.test(summary)) regionHints.push('上肢');
+    if (/頭|头|腦/.test(summary)) regionHints.push('頭');
+    if (/胸|肋/.test(summary)) regionHints.push('胸');
+    if (/腹|骨盆|臀|屁股/.test(summary)) regionHints.push('腹');
+
+    const seen = new Set<string>();
+    const results: string[] = [];
+    const picked = new Set(
+      Array.from(selectedSymptoms).map(s =>
+        s.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '')
+      )
+    );
+
+    const tryAdd = (symptom: string) => {
+      if (seen.has(symptom) || picked.has(symptom)) return;
+      seen.add(symptom);
+      results.push(symptom);
+    };
+
+    const traumaPattern = /鈍傷|钝伤|撕裂|擦傷|擦伤|扭傷|扭伤|穿刺|截肢|骨折/;
+
+    for (const row of triageRows) {
+      const code = row.system_code || '';
+      if (!code.startsWith('T') && !code.startsWith('E')) continue;
+      const name = row.symptom_name;
+      if (regionHints.length > 0 && !regionHints.some(h => name.includes(h))) continue;
+      if (!traumaPattern.test(name)) continue;
+      tryAdd(name);
+      if (results.length >= 5) break;
+    }
+
+    if (results.length > 0) return results;
+    return getSafeFallbackByTab(summary, 't');
+  };
+
   // 搜尋推薦症狀（基於輸入框中的關鍵詞）
   const searchSymptoms = (text: string, selectedOverride?: Set<string>) => {
     if (!symptomDatabase.length) {
@@ -943,6 +1002,12 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       lastIntegrateSignatureRef.current = integrateSignature;
       lastIntegrateVitalsSignatureRef.current = vitalsSignature;
 
+      const traumaMechanism = hasTraumaMechanism(summary);
+      if (traumaMechanism) {
+        setActiveTab('t');
+        console.log('[CC] 偵測外傷機轉，切換至 T 外傷 Tab');
+      }
+
       // 主訴整理完成後先閃 2 下，再進行推薦症狀 API
       flashAiHighlight('chief');
       const chiefFlashEndsAt = Date.now() + AI_HIGHLIGHT_MS;
@@ -957,7 +1022,9 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       console.log('[LLM] unified recommendations from backend =', unifiedList);
       const split = splitRecommendationsByTab(unifiedList);
       const llmHasResult = split.trauma.length > 0 || split.nonTrauma.length > 0;
-      const traumaList = split.trauma.length ? split.trauma : getSafeFallbackByTab(summary, 't');
+      const traumaList = split.trauma.length
+        ? split.trauma
+        : (hasTraumaMechanism(summary) ? getTraumaMechanismFallback(summary) : getSafeFallbackByTab(summary, 't'));
       const nonTraumaList = split.nonTrauma.length ? split.nonTrauma : getSafeFallbackByTab(summary, 'a');
       const picked = new Set(
         Array.from(selectedSymptoms).map(s =>
@@ -982,7 +1049,7 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       );
 
       // 一鍵統整後只顯示 LLM 結果，不回退關鍵字推薦
-      if (activeTab === 't') {
+      if (traumaMechanism || activeTab === 't') {
         setRecommendedSymptoms(filteredTrauma);
       } else {
         setRecommendedSymptoms(filteredNonTrauma);

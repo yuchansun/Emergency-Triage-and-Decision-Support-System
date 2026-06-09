@@ -75,6 +75,31 @@ def _get_llm_fn(llm_mode: str):
     return call_gemini_llm if str(llm_mode).lower() == "cloud" else call_local_llm
 
 
+TRAUMA_MECHANISM_KEYWORDS = (
+    "車禍", "车祸", "跌倒", "摔倒", "摔到", "摔傷", "摔伤", "撞到", "碰撞", "撞擊", "撞击",
+    "機車", "机车", "摩托", "汽車", "汽车", "被車", "車撞",
+    "骨折", "脫臼", "脱臼", "扭傷", "扭伤", "外傷", "外伤",
+    "擦傷", "擦伤", "撕裂傷", "撕裂伤", "鈍傷", "钝伤", "穿刺傷", "穿刺伤",
+    "刀傷", "刀伤", "刺傷", "刺伤", "燙傷", "烫伤", "燒傷", "烧伤", "燒燙傷",
+    "利刃", "切割傷", "槍傷", "枪伤", "爆炸", "墜落", "坠落", "高處", "高处",
+    "創傷性截肢", "创伤性截肢", "截肢",
+)
+
+
+def has_trauma_mechanism(text: str) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    return any(kw in t for kw in TRAUMA_MECHANISM_KEYWORDS)
+
+
+TRAUMA_SYMPTOM_PROMPT_HINT = (
+    "\n\n【外傷機轉】主訴含車禍、跌倒、撞擊等外力因素。"
+    "請優先選擇外傷類症狀（名稱常含：鈍傷、撕裂傷、擦傷、扭傷、穿刺傷、骨折、截肢等），"
+    "勿僅選「〇〇疼痛」等非外傷通用名稱；受傷部位在下肢時優先下肢外傷症狀。\n"
+)
+
+
 def _needs_summary_retry(raw_text: str, summary_text: str) -> bool:
     raw = (raw_text or "").strip()
     summary = (summary_text or "").strip()
@@ -446,7 +471,8 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
         max_results = min(body.max_results, 5)  # 限制最多5個推薦
         vitals = body.vitals
         
-        print(f"[LLM] 開始推薦症狀，主訴：{text}，候選數量：{len(candidates)}")
+        prefer_trauma = has_trauma_mechanism(text)
+        print(f"[LLM] 開始推薦症狀，主訴：{text}，候選數量：{len(candidates)}，外傷機轉={prefer_trauma}")
         
         # 分析生命徵象異常
         vitals_symptoms = []
@@ -502,7 +528,21 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
                 candidates=candidates,
                 top_k=20,
             )
-            if narrowed_candidates:
+            if prefer_trauma:
+                trauma_biased = rag_pipeline.find_similar_symptoms(
+                    query=f"外傷 trauma {semantic_query}",
+                    candidates=candidates,
+                    top_k=10,
+                )
+                merged: list[str] = []
+                for name in (trauma_biased or []) + (narrowed_candidates or []):
+                    if name not in merged:
+                        merged.append(name)
+                    if len(merged) >= 20:
+                        break
+                narrowed_candidates = merged
+                print(f"[LLM] 外傷機轉：合併語意候選 {len(narrowed_candidates)}，前 10：{narrowed_candidates[:10]}")
+            elif narrowed_candidates:
                 print(f"[LLM] 語意縮減候選 {len(candidates)} → {len(narrowed_candidates)}，前 10：{narrowed_candidates[:10]}")
             else:
                 # 萬一語意檢索失敗，仍維持原本全量候選給 LLM
@@ -534,8 +574,12 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
                 "1. 症狀必須與主訴或客觀異常高度相關\n"
                 "2. 勿僅因血壓略高就推薦高血壓急症；無明確線索時勿過度升級\n"
                 "3. 避免推薦不相關或重複的症狀\n"
-                "4. 如果候選清單中沒有明顯相關的症狀，請回傳空陣列 []\n\n"
-                "請嚴格只輸出 JSON 陣列格式，不要加任何解釋文字。範例：\n"
+                "4. 如果候選清單中沒有明顯相關的症狀，請回傳空陣列 []\n"
+            )
+            if prefer_trauma:
+                prompt += TRAUMA_SYMPTOM_PROMPT_HINT
+            prompt += (
+                "\n請嚴格只輸出 JSON 陣列格式，不要加任何解釋文字。範例：\n"
                 "[\"頭痛\", \"胸痛\"]"
             )
             
