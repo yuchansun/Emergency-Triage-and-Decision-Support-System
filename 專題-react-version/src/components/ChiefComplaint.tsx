@@ -115,6 +115,13 @@ interface ChiefComplaintContextApi {
 
 type AiHighlightKey = 'chief' | 'symptoms' | 'rules';
 
+type RecommendedRuleItem = {
+  rule_code: string;
+  symptom_name: string;
+  judge_name: string;
+  ttas_degree: number;
+};
+
 const AI_HIGHLIGHT_MS = 1150;
 
 const TRAUMA_MECHANISM_KEYWORDS = [
@@ -388,6 +395,9 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     setRecommendationSource('none');
     setRecommendedSymptoms([]);
     lastIntegrateSignatureRef.current = '';
+    rulesPrefetchCacheRef.current = null;
+    rulesPrefetchInFlightRef.current = new Set();
+    rulesPrefetchGenerationRef.current += 1;
   };
 
   // 生命徵象變更後：上次自動統整的主訴與推薦一律失效
@@ -416,6 +426,16 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     }
   }, [vitalsSignature, inputText]);
   const [rulesRefreshNonce, setRulesRefreshNonce] = useState(0);
+  const rulesPrefetchCacheRef = useRef<{
+    chiefComplaint: string;
+    vitalsSignature: string;
+    llmMode: string;
+    rulesBySymptom: Map<string, RecommendedRuleItem[]>;
+  } | null>(null);
+  const rulesPrefetchInFlightRef = useRef<Set<string>>(new Set());
+  const rulesPrefetchGenerationRef = useRef(0);
+  const selectedSymptomNamesRef = useRef<string[]>([]);
+  const prefetchRulesForSymptomsRef = useRef<(symptoms: string[]) => void>(() => {});
   const [isSupplementOpen, setIsSupplementOpen] = useState<boolean>(false);
   const [supplementText, setSupplementText] = useState<string>('');
 
@@ -1054,7 +1074,12 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       } else {
         setRecommendedSymptoms(filteredNonTrauma);
       }
-      // 一鍵統整後，無論症狀是否剛好一樣，都強制重跑一次推薦判斷規則
+      // 畫面上推薦症狀出現後，背景逐症狀預取判斷規則
+      const displayRecommendations =
+        traumaMechanism || activeTab === 't' ? filteredTrauma : filteredNonTrauma;
+      prefetchRulesForSymptomsRef.current(displayRecommendations);
+
+      // 若已有選取症狀，強制重跑顯示邏輯
       setRulesRefreshNonce(prev => prev + 1);
 
       // 推薦症狀完成後再閃 2 下（等主訴高亮結束，避免兩區同時閃）
@@ -1374,14 +1399,166 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     rule_code: string;      // ← 新增
     symptom_name: string;   // ← 新增
   }>>({});
-  const [recommendedRules, setRecommendedRules] = useState<Array<{
-    rule_code: string;
-    symptom_name: string;
-    judge_name: string;
-    ttas_degree: number;
-  }>>([]);
+  const [recommendedRules, setRecommendedRules] = useState<RecommendedRuleItem[]>([]);
   const [isRecommendRulesLoading, setIsRecommendRulesLoading] = useState(false);
 
+  const getRulesPrefetchContext = () => ({
+    chiefComplaint: inputText || '',
+    vitalsSignature,
+    llmMode,
+  });
+
+  const isSameRulesPrefetchContext = (ctx: ReturnType<typeof getRulesPrefetchContext>) => {
+    const cache = rulesPrefetchCacheRef.current;
+    if (!cache) return false;
+    return (
+      cache.chiefComplaint === ctx.chiefComplaint &&
+      cache.vitalsSignature === ctx.vitalsSignature &&
+      cache.llmMode === ctx.llmMode
+    );
+  };
+
+  const ensureRulesPrefetchCache = (ctx: ReturnType<typeof getRulesPrefetchContext>) => {
+    if (!isSameRulesPrefetchContext(ctx)) {
+      rulesPrefetchGenerationRef.current += 1;
+      rulesPrefetchInFlightRef.current = new Set();
+      rulesPrefetchCacheRef.current = {
+        ...ctx,
+        rulesBySymptom: new Map(),
+      };
+    }
+    return rulesPrefetchCacheRef.current!;
+  };
+
+  const normalizeRecommendRulesResponse = (data: unknown): RecommendedRuleItem[] => {
+    const raw = (data as { recommended_rules?: unknown })?.recommended_rules;
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((rule: unknown) =>
+        rule &&
+        typeof (rule as RecommendedRuleItem).rule_code === 'string' &&
+        typeof (rule as RecommendedRuleItem).symptom_name === 'string' &&
+        typeof (rule as RecommendedRuleItem).judge_name === 'string' &&
+        Number.isFinite(Number((rule as RecommendedRuleItem).ttas_degree))
+      )
+      .map((rule: unknown) => ({
+        rule_code: (rule as RecommendedRuleItem).rule_code,
+        symptom_name: (rule as RecommendedRuleItem).symptom_name,
+        judge_name: (rule as RecommendedRuleItem).judge_name,
+        ttas_degree: Number((rule as RecommendedRuleItem).ttas_degree),
+      }));
+  };
+
+  const fetchRecommendRulesFromApi = async (
+    symptomNames: string[],
+    context?: ReturnType<typeof getRulesPrefetchContext>
+  ): Promise<RecommendedRuleItem[]> => {
+    if (!symptomNames.length) return [];
+    const ctx = context ?? getRulesPrefetchContext();
+    const res = await fetch(`${LLM_BASE_URL}/api/recommend-rules`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        selected_symptoms: symptomNames,
+        chief_complaint: ctx.chiefComplaint,
+        vitals: vitals || {},
+        llm_mode: ctx.llmMode,
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return normalizeRecommendRulesResponse(data);
+  };
+
+  const collectCachedRulesForSymptoms = (symptomNames: string[]): RecommendedRuleItem[] | null => {
+    if (!isSameRulesPrefetchContext(getRulesPrefetchContext())) return null;
+    const cache = rulesPrefetchCacheRef.current;
+    if (!cache) return null;
+    if (!symptomNames.every(name => cache.rulesBySymptom.has(name))) return null;
+    const result: RecommendedRuleItem[] = [];
+    for (const name of symptomNames) {
+      result.push(...(cache.rulesBySymptom.get(name) ?? []));
+    }
+    return result;
+  };
+
+  const applySelectedRulesFromCache = (symptomNames: string[]): boolean => {
+    const cached = collectCachedRulesForSymptoms(symptomNames);
+    if (cached === null) return false;
+    setRecommendedRules(cached);
+    setIsRecommendRulesLoading(false);
+    return true;
+  };
+
+  const prefetchRulesForSymptoms = (symptomNames: string[]) => {
+    const ctx = getRulesPrefetchContext();
+    const generation = rulesPrefetchGenerationRef.current;
+    const cache = ensureRulesPrefetchCache(ctx);
+    const unique = [...new Set(symptomNames)].filter(Boolean);
+    if (!unique.length) return;
+
+    for (const symptom of unique) {
+      if (cache.rulesBySymptom.has(symptom)) continue;
+      if (rulesPrefetchInFlightRef.current.has(symptom)) continue;
+
+      rulesPrefetchInFlightRef.current.add(symptom);
+      console.log('[RULES] prefetch start (1 symptom):', symptom);
+
+      void (async () => {
+        try {
+          const rules = await fetchRecommendRulesFromApi([symptom], ctx);
+          if (generation !== rulesPrefetchGenerationRef.current) return;
+          if (!isSameRulesPrefetchContext(ctx)) return;
+
+          const currentCache = rulesPrefetchCacheRef.current;
+          if (!currentCache) return;
+          currentCache.rulesBySymptom.set(
+            symptom,
+            rules.filter(rule => rule.symptom_name === symptom)
+          );
+          console.log('[RULES] prefetch done:', symptom, rules.length, 'rules');
+
+          const selected = selectedSymptomNamesRef.current;
+          if (selected.length > 0) {
+            applySelectedRulesFromCache(selected);
+          }
+        } catch (err) {
+          console.error('[RULES] prefetch failed:', symptom, err);
+          if (generation !== rulesPrefetchGenerationRef.current) return;
+          if (!isSameRulesPrefetchContext(ctx)) return;
+          rulesPrefetchCacheRef.current?.rulesBySymptom.set(symptom, []);
+        } finally {
+          rulesPrefetchInFlightRef.current.delete(symptom);
+          if (generation === rulesPrefetchGenerationRef.current) {
+            const selected = selectedSymptomNamesRef.current;
+            if (selected.length > 0) {
+              applySelectedRulesFromCache(selected);
+            }
+          }
+        }
+      })();
+    }
+  };
+
+  prefetchRulesForSymptomsRef.current = prefetchRulesForSymptoms;
+
+  // 畫面上推薦症狀變動時，背景逐症狀預取規則
+  useEffect(() => {
+    if (isLlmIntegrating || !recommendedSymptoms.length) return;
+
+    const debounceMs = recommendationSource !== 'none' ? 200 : 600;
+    const timer = setTimeout(() => {
+      prefetchRulesForSymptoms(recommendedSymptoms);
+    }, debounceMs);
+
+    return () => clearTimeout(timer);
+  }, [recommendedSymptoms, recommendationSource, inputText, vitalsSignature, llmMode, isLlmIntegrating]);
+
+  useEffect(() => {
+    selectedSymptomNamesRef.current = symptomTags.map(tag => tag.display);
+  }, [symptomTags]);
+
+  // 點選症狀後顯示規則：優先讀預取快取
   useEffect(() => {
     const selectedSymptomNames = symptomTags.map(tag => tag.display);
     if (selectedSymptomNames.length === 0) {
@@ -1390,41 +1567,41 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       return;
     }
 
+    if (applySelectedRulesFromCache(selectedSymptomNames)) {
+      return;
+    }
+
+    const missing = selectedSymptomNames.filter(name => {
+      const cache = rulesPrefetchCacheRef.current;
+      return !cache?.rulesBySymptom.has(name);
+    });
+    const waitingPrefetch = missing.some(name => rulesPrefetchInFlightRef.current.has(name));
+
+    if (missing.length > 0) {
+      prefetchRulesForSymptoms(missing);
+    }
+
+    if (waitingPrefetch || missing.length > 0) {
+      setIsRecommendRulesLoading(true);
+      return;
+    }
+
     let cancelled = false;
     const timer = setTimeout(async () => {
       setIsRecommendRulesLoading(true);
       try {
-        const res = await fetch(`${LLM_BASE_URL}/api/recommend-rules`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            selected_symptoms: selectedSymptomNames,
-            chief_complaint: inputText || '',
-            vitals: vitals || {},
-            llm_mode: llmMode,
-          }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+        const rules = await fetchRecommendRulesFromApi(selectedSymptomNames);
         if (cancelled) return;
-        const normalized = Array.isArray(data?.recommended_rules)
-          ? data.recommended_rules
-            .filter((rule: any) =>
-              rule &&
-              typeof rule.rule_code === 'string' &&
-              typeof rule.symptom_name === 'string' &&
-              typeof rule.judge_name === 'string' &&
-              Number.isFinite(Number(rule.ttas_degree))
-            )
-            .map((rule: any) => ({
-              rule_code: rule.rule_code,
-              symptom_name: rule.symptom_name,
-              judge_name: rule.judge_name,
-              ttas_degree: Number(rule.ttas_degree),
-            }))
-          : [];
-        // 後端：每個已選症狀各最多 3 條 AI 推薦，不再只截前 3 筆
-        setRecommendedRules(normalized);
+        setRecommendedRules(rules);
+
+        const ctx = getRulesPrefetchContext();
+        const cache = ensureRulesPrefetchCache(ctx);
+        for (const name of selectedSymptomNames) {
+          cache.rulesBySymptom.set(
+            name,
+            rules.filter(rule => rule.symptom_name === name)
+          );
+        }
       } catch (err) {
         console.error('[RULES] 推薦判斷規則失敗', err);
         if (!cancelled) setRecommendedRules([]);
@@ -1437,7 +1614,7 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [symptomTags, vitals, llmMode, LLM_BASE_URL, rulesRefreshNonce]);
+  }, [symptomTags, vitalsSignature, inputText, llmMode, LLM_BASE_URL, rulesRefreshNonce]);
 
   const wasRecommendRulesLoadingRef = useRef(false);
   useEffect(() => {
