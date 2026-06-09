@@ -1,0 +1,18 @@
+{
+  "label": "qwen2.5-7b",
+  "n_cases": 64,
+  "level_exact_acc": 0.203,
+  "under_triage_rate": 0.359,
+  "over_triage_rate": 0.438,
+  "level_mae": 1.016,
+  "extract_recall": 0.281,
+  "symptom_recall": 0.328,
+  "symptom_precision": 0.192,
+  "rule_hit_rate": 0.031,
+  "avg_latency_total": 57.204,
+  "avg_latency_summarize": 6.423,
+  "avg_latency_recommend_symptoms": 8.244,
+  "avg_latency_recommend_rules": 22.767,
+  "avg_latency_triage_advice": 19.77,
+  "cases_with_errors": 0
+}
