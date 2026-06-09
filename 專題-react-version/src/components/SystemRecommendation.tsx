@@ -64,26 +64,26 @@ const SystemRecommendation: React.FC<SystemRecommendationProps> = ({
   };
 
   const handleConfirm = () => {
-    if (selectedLevel) {
-      alert(`確定級數：第${selectedLevel}級`);
-
-      // === 只打包自己的資料 ===
-      const triageData = {
-        selectedSymptoms: Array.from(selectedSymptoms),
-        inputText,
-        worstSelectedDegree,
-        selectedLevel, // 確保護理師選擇的級數被傳遞
-        timestamp: new Date().toISOString(),
-      };
-
-      if (onConfirmAndSave) {
-        onConfirmAndSave(triageData); // 傳回 App，避免重複觸發第二條儲存流程
-      } else {
-        onOpenTriageReport();
-        onSubmitLevel();
-      }
-    } else {
+    if (!selectedLevel) {
       alert('請先選擇級數');
+      return;
+    }
+
+    if (!window.confirm(`確定級數：第${selectedLevel}級`)) return;
+
+    const triageData = {
+      selectedSymptoms: Array.from(selectedSymptoms),
+      inputText,
+      worstSelectedDegree,
+      selectedLevel,
+      timestamp: new Date().toISOString(),
+    };
+
+    if (onConfirmAndSave) {
+      onConfirmAndSave(triageData);
+    } else {
+      onOpenTriageReport();
+      onSubmitLevel();
     }
   };
 
