@@ -78,7 +78,10 @@ def _get_llm_fn(llm_mode: str):
 def _needs_summary_retry(raw_text: str, summary_text: str) -> bool:
     raw = (raw_text or "").strip()
     summary = (summary_text or "").strip()
-    if not raw or not summary:
+    # 純生命徵象（無文字主訴）不應觸發「改寫主訴」重試，否則 LLM 會憑空捏造症狀
+    if not raw:
+        return False
+    if not summary:
         return True
     if summary == raw:
         return True
@@ -330,18 +333,17 @@ async def summarize_cc(body: SummarizeRequest):
         llm_mode = getattr(body, 'llm_mode', 'local')
         llm_fn = _get_llm_fn(llm_mode)
 
-        # 先把生命徵象轉成症狀標籤（例如：發燒、低血氧）
         vitals_symptoms = []
         if vitals:
             vitals_symptoms, _ = vitals_analyzer.analyze_vitals(vitals)
-        
-        # 如果沒有文字輸入但有生命徵象異常，直接使用生命徵象分析結果
+
+        # 純生命徵象：有客觀異常時直接回傳，不經 LLM（避免 RAG/重試機制捏造主訴）
         if not raw and vitals_symptoms:
             summary = to_taiwan_traditional("、".join(vitals_symptoms))
-            print(f"[LLM] 純生命徵象輸入，快速返回：{summary}")
+            print(f"[LLM] 純生命徵象輸入，直接回傳客觀異常：{summary}")
             return SummarizeResponse(summary=summary)
-        
-        # 文字 + 生命徵象同時存在時，先整理文字，再把 vitals 症狀補進去
+
+        # 文字 + 生命徵象同時存在時，先整理文字，再把 vitals 客觀異常補進去
         if raw and vitals_symptoms:
             print(f"[LLM] 處理混合輸入：'{raw}' + 生命徵象")
             
@@ -453,34 +455,36 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
             print(f"[LLM] 生命徵象分析：{vitals_symptoms}")
         
         # 先檢索背景知識，後面組 prompt 會放進去當上下文
+        vitals_context = vitals_analyzer.format_vitals_for_llm(vitals) if vitals else ""
+
         relevant_knowledge = []
-        if text:
+        rag_query_parts = [p for p in (text, vitals_context) if p]
+        if rag_query_parts:
             try:
-                # 根據主訴檢索相關知識
                 relevant_knowledge = rag_pipeline.retrieve_relevant_knowledge(
-                    query=text, 
-                    category=None, 
-                    n_results=3
+                    query=" ".join(rag_query_parts),
+                    category=None,
+                    n_results=3,
                 )
                 print(f"[LLM] 檢索到 {len(relevant_knowledge)} 條相關知識")
             except Exception as e:
                 print(f"[LLM] RAG檢索失敗: {e}")
-        
-        # 如果是純生命徵象輸入（沒有文字），使用直接的症狀映射
-        # match_vital_labels_to_symptom_candidates 內部會先查字典，未命中時走語意檢索
-        if not text and vitals_symptoms:
+
+        # 純生命徵象輸入：先嘗試語意映射，無命中則走 LLM+RAG
+        if not text and vitals and vitals_symptoms:
             matched_symptoms = match_vital_labels_to_symptom_candidates(
                 vitals_symptoms, candidates
             )
-            print(f"[LLM] 純生命徵象推薦：{vitals_symptoms} → {matched_symptoms}")
-            return RecommendSymptomsResponse(
-                recommended_symptoms=_finalize_symptom_recommendations(
-                    matched_symptoms, vitals, vitals_symptoms, max_results
+            if matched_symptoms:
+                print(f"[LLM] 純生命徵象語意映射：{vitals_symptoms} → {matched_symptoms}")
+                return RecommendSymptomsResponse(
+                    recommended_symptoms=_finalize_symptom_recommendations(
+                        matched_symptoms, vitals, vitals_symptoms, max_results
+                    )
                 )
-            )
 
-        # 主訴有文字時，優先走 RAG 增強推薦
-        if text:
+        # 主訴有文字，或純生命徵象需 LLM 解讀時，走 RAG 增強推薦
+        if text or vitals_context:
             # 格式化檢索到的知識
             context = ""
             if relevant_knowledge:
@@ -489,9 +493,10 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
 
             # Phase 1：用語意檢索把全候選縮到 LLM 容易處理的範圍。
             # 同時把 vitals 標籤併入 query，讓 GCS=8 → 嚴重意識障礙 → 意識程度改變 這條路打通。
-            semantic_query = text
+            semantic_query_parts = [p for p in (text, vitals_context) if p]
             if vitals_symptoms:
-                semantic_query = f"{text}；生命徵象異常：{', '.join(vitals_symptoms)}"
+                semantic_query_parts.append(f"客觀異常：{', '.join(vitals_symptoms)}")
+            semantic_query = "；".join(semantic_query_parts) if semantic_query_parts else text
             narrowed_candidates = rag_pipeline.find_similar_symptoms(
                 query=semantic_query,
                 candidates=candidates,
@@ -507,16 +512,16 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
             # 建立候選症狀清單（縮減後）
             candidate_lines = "\n".join(f"- {name}" for name in narrowed_candidates)
             
-            # 建構包含RAG知識的提示
             prompt = (
                 "你是一位熟悉台灣急診分級系統的專業護理師。"
                 "請根據以下資訊，從候選症狀清單中推薦最相關的症狀。\n\n"
-                f"患者主訴：{text}\n"
+                f"患者主訴：{text or '（無文字主訴，僅生命徵象）'}\n"
             )
-            
-            # 添加生命徵象信息
+
+            if vitals_context:
+                prompt += f"生命徵象測量值：{vitals_context}\n"
             if vitals_symptoms:
-                prompt += f"生命徵象異常：{', '.join(vitals_symptoms)}\n"
+                prompt += f"客觀異常（有明確臨床門檻）：{', '.join(vitals_symptoms)}\n"
             
             # 添加RAG檢索的醫學知識
             if context:
@@ -526,8 +531,8 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
                 f"\n候選症狀清單（只能從這些裡面選）：\n{candidate_lines}\n\n"
                 f"請從候選清單中選出 1 到 {max_results} 個最相關且重要的症狀。"
                 "考慮以下原則：\n"
-                "1. 症狀必須與主訴高度相關\n"
-                "2. 不要僅因『可能嚴重』就推論危急症狀；無明確線索時勿過度升級\n"
+                "1. 症狀必須與主訴或客觀異常高度相關\n"
+                "2. 勿僅因血壓略高就推薦高血壓急症；無明確線索時勿過度升級\n"
                 "3. 避免推薦不相關或重複的症狀\n"
                 "4. 如果候選清單中沒有明顯相關的症狀，請回傳空陣列 []\n\n"
                 "請嚴格只輸出 JSON 陣列格式，不要加任何解釋文字。範例：\n"

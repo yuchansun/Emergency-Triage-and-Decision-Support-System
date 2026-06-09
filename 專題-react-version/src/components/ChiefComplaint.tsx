@@ -256,6 +256,9 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
         // 清空語音緩衝
         voiceBufferRef.current = '';
 
+        // 立即保留原始口述，避免生命徵象修正後遺失語音主訴
+        appendPreservedTextSource(currentVoiceText);
+
         // 直接處理語音內容，不依賴 onend 事件
         console.log('[INTEGRATE] 直接處理語音內容');
         void runLlmSummarizeAndRecommend(currentVoiceText);
@@ -295,9 +298,12 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       return;
     }
 
-    // 使用當前輸入框的內容加上生命徵象一起統整
-    console.log('[INTEGRATE] 統整當前主訴內容:', inputText);
-    void runLlmSummarizeAndRecommend(inputText);
+    let textForIntegrate = isStaleAutoSummary(inputText) ? '' : inputText;
+    if (!textForIntegrate.trim()) {
+      textForIntegrate = resolveTextSourceForIntegrate();
+    }
+    console.log('[INTEGRATE] 統整當前主訴內容:', textForIntegrate);
+    void runLlmSummarizeAndRecommend(textForIntegrate.trim() ? textForIntegrate : undefined);
   };
 
   const [recommendedSymptoms, setRecommendedSymptoms] = useState<string[]>([]);
@@ -321,9 +327,91 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
   const [lastLlmSummary, setLastLlmSummary] = useState<string>('');
   const [recommendationSource, setRecommendationSource] = useState<'llm' | 'fallback' | 'none'>('none');
   const lastIntegrateSignatureRef = useRef<string>('');
+  const lastLlmSummaryRef = useRef<string>('');
+  const lastIntegrateVitalsSignatureRef = useRef<string>('');
+  // 保留使用者原始口述／手動輸入（非 LLM 統整結果），生命徵象修正後可重新合併
+  const preservedTextSourceRef = useRef<string>('');
+  const integrateRequestIdRef = useRef(0);
+  const prevVitalsSignatureRef = useRef<string>('');
+
+  const vitalsSignature = useMemo(() => JSON.stringify(vitals ?? {}), [vitals]);
+
+  const appendPreservedTextSource = (text: string) => {
+    const t = (text || '').trim();
+    if (!t) return;
+    const prev = preservedTextSourceRef.current.trim();
+    if (prev && (prev === t || prev.includes(t))) return;
+    preservedTextSourceRef.current = prev ? `${prev}；${t}` : t;
+  };
+
+  const vitalsChangedSinceLastIntegrate = (): boolean =>
+    Boolean(
+      lastIntegrateVitalsSignatureRef.current &&
+      vitalsSignature !== lastIntegrateVitalsSignatureRef.current
+    );
+
+  const isStaleAutoSummary = (text: string): boolean => {
+    const t = (text || '').trim();
+    const last = lastLlmSummaryRef.current.trim();
+    if (!last) return false;
+    if (!t) return vitalsChangedSinceLastIntegrate();
+    if (t === last) return true;
+    if (!vitalsChangedSinceLastIntegrate()) return false;
+    return last.split('、').some(part => {
+      const p = part.trim();
+      return p.length > 0 && t.includes(p);
+    });
+  };
+
+  const clearIntegrateArtifacts = () => {
+    setLastLlmSummary('');
+    lastLlmSummaryRef.current = '';
+    lastIntegrateVitalsSignatureRef.current = '';
+    setLlmTraumaSymptoms(null);
+    setLlmNonTraumaSymptoms(null);
+    setRecommendationSource('none');
+    setRecommendedSymptoms([]);
+    lastIntegrateSignatureRef.current = '';
+  };
+
+  // 生命徵象變更後：上次自動統整的主訴與推薦一律失效
+  useEffect(() => {
+    if (prevVitalsSignatureRef.current === vitalsSignature) return;
+    const isFirstMount = prevVitalsSignatureRef.current === '';
+    prevVitalsSignatureRef.current = vitalsSignature;
+    lastIntegrateSignatureRef.current = '';
+    if (isFirstMount) return;
+
+    const autoSummary = lastLlmSummaryRef.current.trim();
+    if (!autoSummary) return;
+
+    const current = inputText.trim();
+    const hasStalePart =
+      !current ||
+      current === autoSummary ||
+      autoSummary.split('、').some(part => {
+        const p = part.trim();
+        return p.length > 0 && current.includes(p);
+      });
+
+    if (hasStalePart) {
+      setInputText('');
+      clearIntegrateArtifacts();
+    }
+  }, [vitalsSignature, inputText]);
   const [rulesRefreshNonce, setRulesRefreshNonce] = useState(0);
   const [isSupplementOpen, setIsSupplementOpen] = useState<boolean>(false);
   const [supplementText, setSupplementText] = useState<string>('');
+
+  const getSupplementVoiceSource = (): string => {
+    const lines = supplementText.split('\n').map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return '';
+    return lines.join('；');
+  };
+
+  const resolveTextSourceForIntegrate = (): string =>
+    preservedTextSourceRef.current.trim() || getSupplementVoiceSource();
+
   const [aiHighlights, setAiHighlights] = useState<Record<AiHighlightKey, boolean>>({
     chief: false,
     symptoms: false,
@@ -747,9 +835,15 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       const currentInput = inputText.trim();
       const newVoice = rawText.trim();
 
-      // 檢查新語音是否已經在現有主訴中
+      if (!newVoice) {
+        source = resolveTextSourceForIntegrate();
+      } else {
+      // 檢查新語音是否已經在現有主訴中（空字串不可視為「已處理過」）
       const isAlreadyProcessed = currentInput.includes(newVoice) ||
-        newVoice.split(/[、，,]/).some(part => currentInput.includes(part.trim()));
+        newVoice.split(/[、，,]/).some(part => {
+          const p = part.trim();
+          return p.length > 0 && currentInput.includes(p);
+        });
 
       if (isAlreadyProcessed) {
         console.log('[LLM] 語音內容已處理過，跳過合併');
@@ -765,14 +859,18 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
         // 只有現有主訴
         source = currentInput;
       }
+      }
     }
-    // 如果有語音內容且還沒清空，使用語音內容
     else if (fullVoiceRef.current) {
       source = fullVoiceRef.current.trim();
+    } else {
+      const resolved = resolveTextSourceForIntegrate();
+      source = resolved || inputText.trim();
     }
-    // 最後使用目前主訴欄位
-    else {
-      source = inputText.trim();
+
+    if (isStaleAutoSummary(source)) {
+      console.log('[LLM] 偵測到過期自動統整主訴，改回原始口述來源');
+      source = resolveTextSourceForIntegrate();
     }
 
     console.log('[LLM] 整理主訴 source:', source);
@@ -799,13 +897,21 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
           const spo2 = parseFloat(value);
           return !isNaN(spo2) && spo2 < 94;
         }
+        if (key === 'respRate') {
+          const rr = parseFloat(value);
+          return !isNaN(rr) && (rr > 20 || rr < 12);
+        }
       }
       return false;
     });
 
-    // 如果沒有文字輸入也沒有異常生命徵象，就不處理
+    // 如果沒有文字輸入也沒有異常生命徵象，清除上次統整殘留後結束
     if (!source && !hasAbnormalVitals) {
-      console.log('[CC] 沒有文字輸入也沒有異常生命徵象，跳過處理');
+      if (lastLlmSummaryRef.current.trim() || recommendationSource !== 'none') {
+        setInputText('');
+        clearIntegrateArtifacts();
+      }
+      console.log('[CC] 沒有文字輸入也沒有異常生命徵象，已清除舊統整結果');
       return;
     }
 
@@ -817,22 +923,25 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     }
 
     setIsLlmIntegrating(true);
+    const requestId = ++integrateRequestIdRef.current;
     try {
-      const integrateSignature = `${normalizeForRecommend(source)}::${llmMode}::${JSON.stringify(vitals || {})}`;
-      const shouldReuseLastSummary =
-        integrateSignature === lastIntegrateSignatureRef.current &&
-        lastLlmSummary.trim().length > 0;
+      const integrateSignature = `${normalizeForRecommend(source)}::${llmMode}::${vitalsSignature}`;
 
-      // 相同輸入 + 相同生命徵象時，不要重複改寫主訴文字，避免越按越失真
-      const summary = shouldReuseLastSummary
-        ? lastLlmSummary.trim()
-        : await summarizeChiefComplaint(source);
-
-      if (!shouldReuseLastSummary) {
-        setLastLlmSummary(summary.trim());
-        setInputText(summary);
-        lastIntegrateSignatureRef.current = integrateSignature;
+      if (source) {
+        preservedTextSourceRef.current = source;
       }
+
+      const summary = (await summarizeChiefComplaint(source)).trim();
+      if (requestId !== integrateRequestIdRef.current) {
+        console.log('[LLM] 略過過期的統整結果（已有較新的請求）');
+        return;
+      }
+
+      setLastLlmSummary(summary);
+      lastLlmSummaryRef.current = summary;
+      setInputText(summary);
+      lastIntegrateSignatureRef.current = integrateSignature;
+      lastIntegrateVitalsSignatureRef.current = vitalsSignature;
 
       // 主訴整理完成後先閃 2 下，再進行推薦症狀 API
       flashAiHighlight('chief');
@@ -841,6 +950,10 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       // 真正 unified RAG：一次檢索 + 一次推薦，再前端分類
       // Phase 2：信任後端 RAG/LLM 已挑好的結果，前端不再做 substring 性質的相關性過濾或強制注入。
       const unifiedList = (await requestUnifiedRecommendations(summary)) ?? [];
+      if (requestId !== integrateRequestIdRef.current) {
+        console.log('[LLM] 略過過期的推薦結果（已有較新的請求）');
+        return;
+      }
       console.log('[LLM] unified recommendations from backend =', unifiedList);
       const split = splitRecommendationsByTab(unifiedList);
       const llmHasResult = split.trauma.length > 0 || split.nonTrauma.length > 0;
@@ -908,6 +1021,18 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value;
     setInputText(text);
+
+    if (text.trim() !== lastLlmSummaryRef.current.trim()) {
+      lastIntegrateSignatureRef.current = '';
+      if (!text.trim()) {
+        preservedTextSourceRef.current = '';
+        clearIntegrateArtifacts();
+      } else if (!isStaleAutoSummary(text)) {
+        // 使用者手動輸入的新主訴，生命徵象修正後仍應保留
+        preservedTextSourceRef.current = text.trim();
+      }
+    }
+
     // 不立即把 recommendationSource 清空，避免輸入中的排序抖動
     // 若目前已有 LLM 結果，輸入中先維持 LLM 顯示，避免順序抖動。
     // 但必須依目前已選即時過濾，否則使用者選過的症狀又會跳回推薦欄。
