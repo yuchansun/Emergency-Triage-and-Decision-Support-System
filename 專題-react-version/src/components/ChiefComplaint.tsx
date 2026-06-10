@@ -115,7 +115,30 @@ interface ChiefComplaintContextApi {
 
 type AiHighlightKey = 'chief' | 'symptoms' | 'rules';
 
+type RecommendedRuleItem = {
+  rule_code: string;
+  symptom_name: string;
+  judge_name: string;
+  ttas_degree: number;
+};
+
 const AI_HIGHLIGHT_MS = 1150;
+
+const TRAUMA_MECHANISM_KEYWORDS = [
+  '車禍', '车祸', '跌倒', '摔倒', '摔到', '摔傷', '摔伤', '撞到', '碰撞', '撞擊', '撞击',
+  '機車', '机车', '摩托', '汽車', '汽车', '被車', '車撞',
+  '骨折', '脫臼', '脱臼', '扭傷', '扭伤', '外傷', '外伤',
+  '擦傷', '擦伤', '撕裂傷', '撕裂伤', '鈍傷', '钝伤', '穿刺傷', '穿刺伤',
+  '刀傷', '刀伤', '刺傷', '刺伤', '燙傷', '烫伤', '燒傷', '烧伤', '燒燙傷',
+  '利刃', '切割傷', '槍傷', '枪伤', '爆炸', '墜落', '坠落', '高處', '高处',
+  '創傷性截肢', '创伤性截肢', '截肢',
+];
+
+const hasTraumaMechanism = (text: string): boolean => {
+  const t = text.trim();
+  if (!t) return false;
+  return TRAUMA_MECHANISM_KEYWORDS.some(kw => t.includes(kw));
+};
 
 const ChiefComplaintContext = createContext<ChiefComplaintContextApi | null>(null);
 
@@ -256,6 +279,9 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
         // 清空語音緩衝
         voiceBufferRef.current = '';
 
+        // 立即保留原始口述，避免生命徵象修正後遺失語音主訴
+        appendPreservedTextSource(currentVoiceText);
+
         // 直接處理語音內容，不依賴 onend 事件
         console.log('[INTEGRATE] 直接處理語音內容');
         void runLlmSummarizeAndRecommend(currentVoiceText);
@@ -295,9 +321,12 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       return;
     }
 
-    // 使用當前輸入框的內容加上生命徵象一起統整
-    console.log('[INTEGRATE] 統整當前主訴內容:', inputText);
-    void runLlmSummarizeAndRecommend(inputText);
+    let textForIntegrate = isStaleAutoSummary(inputText) ? '' : inputText;
+    if (!textForIntegrate.trim()) {
+      textForIntegrate = resolveTextSourceForIntegrate();
+    }
+    console.log('[INTEGRATE] 統整當前主訴內容:', textForIntegrate);
+    void runLlmSummarizeAndRecommend(textForIntegrate.trim() ? textForIntegrate : undefined);
   };
 
   const [recommendedSymptoms, setRecommendedSymptoms] = useState<string[]>([]);
@@ -321,9 +350,104 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
   const [lastLlmSummary, setLastLlmSummary] = useState<string>('');
   const [recommendationSource, setRecommendationSource] = useState<'llm' | 'fallback' | 'none'>('none');
   const lastIntegrateSignatureRef = useRef<string>('');
+  const lastLlmSummaryRef = useRef<string>('');
+  const lastIntegrateVitalsSignatureRef = useRef<string>('');
+  // 保留使用者原始口述／手動輸入（非 LLM 統整結果），生命徵象修正後可重新合併
+  const preservedTextSourceRef = useRef<string>('');
+  const integrateRequestIdRef = useRef(0);
+  const prevVitalsSignatureRef = useRef<string>('');
+
+  const vitalsSignature = useMemo(() => JSON.stringify(vitals ?? {}), [vitals]);
+
+  const appendPreservedTextSource = (text: string) => {
+    const t = (text || '').trim();
+    if (!t) return;
+    const prev = preservedTextSourceRef.current.trim();
+    if (prev && (prev === t || prev.includes(t))) return;
+    preservedTextSourceRef.current = prev ? `${prev}；${t}` : t;
+  };
+
+  const vitalsChangedSinceLastIntegrate = (): boolean =>
+    Boolean(
+      lastIntegrateVitalsSignatureRef.current &&
+      vitalsSignature !== lastIntegrateVitalsSignatureRef.current
+    );
+
+  const isStaleAutoSummary = (text: string): boolean => {
+    const t = (text || '').trim();
+    const last = lastLlmSummaryRef.current.trim();
+    if (!last) return false;
+    if (!t) return vitalsChangedSinceLastIntegrate();
+    if (t === last) return true;
+    if (!vitalsChangedSinceLastIntegrate()) return false;
+    return last.split('、').some(part => {
+      const p = part.trim();
+      return p.length > 0 && t.includes(p);
+    });
+  };
+
+  const clearIntegrateArtifacts = () => {
+    setLastLlmSummary('');
+    lastLlmSummaryRef.current = '';
+    lastIntegrateVitalsSignatureRef.current = '';
+    setLlmTraumaSymptoms(null);
+    setLlmNonTraumaSymptoms(null);
+    setRecommendationSource('none');
+    setRecommendedSymptoms([]);
+    lastIntegrateSignatureRef.current = '';
+    rulesPrefetchCacheRef.current = null;
+    rulesPrefetchInFlightRef.current = new Set();
+    rulesPrefetchGenerationRef.current += 1;
+  };
+
+  // 生命徵象變更後：上次自動統整的主訴與推薦一律失效
+  useEffect(() => {
+    if (prevVitalsSignatureRef.current === vitalsSignature) return;
+    const isFirstMount = prevVitalsSignatureRef.current === '';
+    prevVitalsSignatureRef.current = vitalsSignature;
+    lastIntegrateSignatureRef.current = '';
+    if (isFirstMount) return;
+
+    const autoSummary = lastLlmSummaryRef.current.trim();
+    if (!autoSummary) return;
+
+    const current = inputText.trim();
+    const hasStalePart =
+      !current ||
+      current === autoSummary ||
+      autoSummary.split('、').some(part => {
+        const p = part.trim();
+        return p.length > 0 && current.includes(p);
+      });
+
+    if (hasStalePart) {
+      setInputText('');
+      clearIntegrateArtifacts();
+    }
+  }, [vitalsSignature, inputText]);
   const [rulesRefreshNonce, setRulesRefreshNonce] = useState(0);
+  const rulesPrefetchCacheRef = useRef<{
+    chiefComplaint: string;
+    vitalsSignature: string;
+    llmMode: string;
+    rulesBySymptom: Map<string, RecommendedRuleItem[]>;
+  } | null>(null);
+  const rulesPrefetchInFlightRef = useRef<Set<string>>(new Set());
+  const rulesPrefetchGenerationRef = useRef(0);
+  const selectedSymptomNamesRef = useRef<string[]>([]);
+  const prefetchRulesForSymptomsRef = useRef<(symptoms: string[]) => void>(() => {});
   const [isSupplementOpen, setIsSupplementOpen] = useState<boolean>(false);
   const [supplementText, setSupplementText] = useState<string>('');
+
+  const getSupplementVoiceSource = (): string => {
+    const lines = supplementText.split('\n').map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return '';
+    return lines.join('；');
+  };
+
+  const resolveTextSourceForIntegrate = (): string =>
+    preservedTextSourceRef.current.trim() || getSupplementVoiceSource();
+
   const [aiHighlights, setAiHighlights] = useState<Record<AiHighlightKey, boolean>>({
     chief: false,
     symptoms: false,
@@ -556,6 +680,49 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     return results;
   };
 
+  // 外傷機轉但 LLM 未推薦 T 類時，依受傷部位從 TTAS 外傷症狀補候選
+  const getTraumaMechanismFallback = (summary: string): string[] => {
+    if (!triageRows || !hasTraumaMechanism(summary)) {
+      return getSafeFallbackByTab(summary, 't');
+    }
+
+    const regionHints: string[] = [];
+    if (/脚|腳|腿|小腿|大腿|足|踝|膝/.test(summary)) regionHints.push('下肢');
+    if (/手|臂|腕|肘|肩/.test(summary)) regionHints.push('上肢');
+    if (/頭|头|腦/.test(summary)) regionHints.push('頭');
+    if (/胸|肋/.test(summary)) regionHints.push('胸');
+    if (/腹|骨盆|臀|屁股/.test(summary)) regionHints.push('腹');
+
+    const seen = new Set<string>();
+    const results: string[] = [];
+    const picked = new Set(
+      Array.from(selectedSymptoms).map(s =>
+        s.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '')
+      )
+    );
+
+    const tryAdd = (symptom: string) => {
+      if (seen.has(symptom) || picked.has(symptom)) return;
+      seen.add(symptom);
+      results.push(symptom);
+    };
+
+    const traumaPattern = /鈍傷|钝伤|撕裂|擦傷|擦伤|扭傷|扭伤|穿刺|截肢|骨折/;
+
+    for (const row of triageRows) {
+      const code = row.system_code || '';
+      if (!code.startsWith('T') && !code.startsWith('E')) continue;
+      const name = row.symptom_name;
+      if (regionHints.length > 0 && !regionHints.some(h => name.includes(h))) continue;
+      if (!traumaPattern.test(name)) continue;
+      tryAdd(name);
+      if (results.length >= 5) break;
+    }
+
+    if (results.length > 0) return results;
+    return getSafeFallbackByTab(summary, 't');
+  };
+
   // 搜尋推薦症狀（基於輸入框中的關鍵詞）
   const searchSymptoms = (text: string, selectedOverride?: Set<string>) => {
     if (!symptomDatabase.length) {
@@ -747,9 +914,15 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       const currentInput = inputText.trim();
       const newVoice = rawText.trim();
 
-      // 檢查新語音是否已經在現有主訴中
+      if (!newVoice) {
+        source = resolveTextSourceForIntegrate();
+      } else {
+      // 檢查新語音是否已經在現有主訴中（空字串不可視為「已處理過」）
       const isAlreadyProcessed = currentInput.includes(newVoice) ||
-        newVoice.split(/[、，,]/).some(part => currentInput.includes(part.trim()));
+        newVoice.split(/[、，,]/).some(part => {
+          const p = part.trim();
+          return p.length > 0 && currentInput.includes(p);
+        });
 
       if (isAlreadyProcessed) {
         console.log('[LLM] 語音內容已處理過，跳過合併');
@@ -765,14 +938,18 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
         // 只有現有主訴
         source = currentInput;
       }
+      }
     }
-    // 如果有語音內容且還沒清空，使用語音內容
     else if (fullVoiceRef.current) {
       source = fullVoiceRef.current.trim();
+    } else {
+      const resolved = resolveTextSourceForIntegrate();
+      source = resolved || inputText.trim();
     }
-    // 最後使用目前主訴欄位
-    else {
-      source = inputText.trim();
+
+    if (isStaleAutoSummary(source)) {
+      console.log('[LLM] 偵測到過期自動統整主訴，改回原始口述來源');
+      source = resolveTextSourceForIntegrate();
     }
 
     console.log('[LLM] 整理主訴 source:', source);
@@ -799,13 +976,21 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
           const spo2 = parseFloat(value);
           return !isNaN(spo2) && spo2 < 94;
         }
+        if (key === 'respRate') {
+          const rr = parseFloat(value);
+          return !isNaN(rr) && (rr > 20 || rr < 12);
+        }
       }
       return false;
     });
 
-    // 如果沒有文字輸入也沒有異常生命徵象，就不處理
+    // 如果沒有文字輸入也沒有異常生命徵象，清除上次統整殘留後結束
     if (!source && !hasAbnormalVitals) {
-      console.log('[CC] 沒有文字輸入也沒有異常生命徵象，跳過處理');
+      if (lastLlmSummaryRef.current.trim() || recommendationSource !== 'none') {
+        setInputText('');
+        clearIntegrateArtifacts();
+      }
+      console.log('[CC] 沒有文字輸入也沒有異常生命徵象，已清除舊統整結果');
       return;
     }
 
@@ -817,21 +1002,30 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     }
 
     setIsLlmIntegrating(true);
+    const requestId = ++integrateRequestIdRef.current;
     try {
-      const integrateSignature = `${normalizeForRecommend(source)}::${llmMode}::${JSON.stringify(vitals || {})}`;
-      const shouldReuseLastSummary =
-        integrateSignature === lastIntegrateSignatureRef.current &&
-        lastLlmSummary.trim().length > 0;
+      const integrateSignature = `${normalizeForRecommend(source)}::${llmMode}::${vitalsSignature}`;
 
-      // 相同輸入 + 相同生命徵象時，不要重複改寫主訴文字，避免越按越失真
-      const summary = shouldReuseLastSummary
-        ? lastLlmSummary.trim()
-        : await summarizeChiefComplaint(source);
+      if (source) {
+        preservedTextSourceRef.current = source;
+      }
 
-      if (!shouldReuseLastSummary) {
-        setLastLlmSummary(summary.trim());
-        setInputText(summary);
-        lastIntegrateSignatureRef.current = integrateSignature;
+      const summary = (await summarizeChiefComplaint(source)).trim();
+      if (requestId !== integrateRequestIdRef.current) {
+        console.log('[LLM] 略過過期的統整結果（已有較新的請求）');
+        return;
+      }
+
+      setLastLlmSummary(summary);
+      lastLlmSummaryRef.current = summary;
+      setInputText(summary);
+      lastIntegrateSignatureRef.current = integrateSignature;
+      lastIntegrateVitalsSignatureRef.current = vitalsSignature;
+
+      const traumaMechanism = hasTraumaMechanism(summary);
+      if (traumaMechanism) {
+        setActiveTab('t');
+        console.log('[CC] 偵測外傷機轉，切換至 T 外傷 Tab');
       }
 
       // 主訴整理完成後先閃 2 下，再進行推薦症狀 API
@@ -841,10 +1035,16 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       // 真正 unified RAG：一次檢索 + 一次推薦，再前端分類
       // Phase 2：信任後端 RAG/LLM 已挑好的結果，前端不再做 substring 性質的相關性過濾或強制注入。
       const unifiedList = (await requestUnifiedRecommendations(summary)) ?? [];
+      if (requestId !== integrateRequestIdRef.current) {
+        console.log('[LLM] 略過過期的推薦結果（已有較新的請求）');
+        return;
+      }
       console.log('[LLM] unified recommendations from backend =', unifiedList);
       const split = splitRecommendationsByTab(unifiedList);
       const llmHasResult = split.trauma.length > 0 || split.nonTrauma.length > 0;
-      const traumaList = split.trauma.length ? split.trauma : getSafeFallbackByTab(summary, 't');
+      const traumaList = split.trauma.length
+        ? split.trauma
+        : (hasTraumaMechanism(summary) ? getTraumaMechanismFallback(summary) : getSafeFallbackByTab(summary, 't'));
       const nonTraumaList = split.nonTrauma.length ? split.nonTrauma : getSafeFallbackByTab(summary, 'a');
       const picked = new Set(
         Array.from(selectedSymptoms).map(s =>
@@ -869,12 +1069,17 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       );
 
       // 一鍵統整後只顯示 LLM 結果，不回退關鍵字推薦
-      if (activeTab === 't') {
+      if (traumaMechanism || activeTab === 't') {
         setRecommendedSymptoms(filteredTrauma);
       } else {
         setRecommendedSymptoms(filteredNonTrauma);
       }
-      // 一鍵統整後，無論症狀是否剛好一樣，都強制重跑一次推薦判斷規則
+      // 畫面上推薦症狀出現後，背景逐症狀預取判斷規則
+      const displayRecommendations =
+        traumaMechanism || activeTab === 't' ? filteredTrauma : filteredNonTrauma;
+      prefetchRulesForSymptomsRef.current(displayRecommendations);
+
+      // 若已有選取症狀，強制重跑顯示邏輯
       setRulesRefreshNonce(prev => prev + 1);
 
       // 推薦症狀完成後再閃 2 下（等主訴高亮結束，避免兩區同時閃）
@@ -908,6 +1113,18 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value;
     setInputText(text);
+
+    if (text.trim() !== lastLlmSummaryRef.current.trim()) {
+      lastIntegrateSignatureRef.current = '';
+      if (!text.trim()) {
+        preservedTextSourceRef.current = '';
+        clearIntegrateArtifacts();
+      } else if (!isStaleAutoSummary(text)) {
+        // 使用者手動輸入的新主訴，生命徵象修正後仍應保留
+        preservedTextSourceRef.current = text.trim();
+      }
+    }
+
     // 不立即把 recommendationSource 清空，避免輸入中的排序抖動
     // 若目前已有 LLM 結果，輸入中先維持 LLM 顯示，避免順序抖動。
     // 但必須依目前已選即時過濾，否則使用者選過的症狀又會跳回推薦欄。
@@ -1182,14 +1399,166 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     rule_code: string;      // ← 新增
     symptom_name: string;   // ← 新增
   }>>({});
-  const [recommendedRules, setRecommendedRules] = useState<Array<{
-    rule_code: string;
-    symptom_name: string;
-    judge_name: string;
-    ttas_degree: number;
-  }>>([]);
+  const [recommendedRules, setRecommendedRules] = useState<RecommendedRuleItem[]>([]);
   const [isRecommendRulesLoading, setIsRecommendRulesLoading] = useState(false);
 
+  const getRulesPrefetchContext = () => ({
+    chiefComplaint: inputText || '',
+    vitalsSignature,
+    llmMode,
+  });
+
+  const isSameRulesPrefetchContext = (ctx: ReturnType<typeof getRulesPrefetchContext>) => {
+    const cache = rulesPrefetchCacheRef.current;
+    if (!cache) return false;
+    return (
+      cache.chiefComplaint === ctx.chiefComplaint &&
+      cache.vitalsSignature === ctx.vitalsSignature &&
+      cache.llmMode === ctx.llmMode
+    );
+  };
+
+  const ensureRulesPrefetchCache = (ctx: ReturnType<typeof getRulesPrefetchContext>) => {
+    if (!isSameRulesPrefetchContext(ctx)) {
+      rulesPrefetchGenerationRef.current += 1;
+      rulesPrefetchInFlightRef.current = new Set();
+      rulesPrefetchCacheRef.current = {
+        ...ctx,
+        rulesBySymptom: new Map(),
+      };
+    }
+    return rulesPrefetchCacheRef.current!;
+  };
+
+  const normalizeRecommendRulesResponse = (data: unknown): RecommendedRuleItem[] => {
+    const raw = (data as { recommended_rules?: unknown })?.recommended_rules;
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((rule: unknown) =>
+        rule &&
+        typeof (rule as RecommendedRuleItem).rule_code === 'string' &&
+        typeof (rule as RecommendedRuleItem).symptom_name === 'string' &&
+        typeof (rule as RecommendedRuleItem).judge_name === 'string' &&
+        Number.isFinite(Number((rule as RecommendedRuleItem).ttas_degree))
+      )
+      .map((rule: unknown) => ({
+        rule_code: (rule as RecommendedRuleItem).rule_code,
+        symptom_name: (rule as RecommendedRuleItem).symptom_name,
+        judge_name: (rule as RecommendedRuleItem).judge_name,
+        ttas_degree: Number((rule as RecommendedRuleItem).ttas_degree),
+      }));
+  };
+
+  const fetchRecommendRulesFromApi = async (
+    symptomNames: string[],
+    context?: ReturnType<typeof getRulesPrefetchContext>
+  ): Promise<RecommendedRuleItem[]> => {
+    if (!symptomNames.length) return [];
+    const ctx = context ?? getRulesPrefetchContext();
+    const res = await fetch(`${LLM_BASE_URL}/api/recommend-rules`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        selected_symptoms: symptomNames,
+        chief_complaint: ctx.chiefComplaint,
+        vitals: vitals || {},
+        llm_mode: ctx.llmMode,
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return normalizeRecommendRulesResponse(data);
+  };
+
+  const collectCachedRulesForSymptoms = (symptomNames: string[]): RecommendedRuleItem[] | null => {
+    if (!isSameRulesPrefetchContext(getRulesPrefetchContext())) return null;
+    const cache = rulesPrefetchCacheRef.current;
+    if (!cache) return null;
+    if (!symptomNames.every(name => cache.rulesBySymptom.has(name))) return null;
+    const result: RecommendedRuleItem[] = [];
+    for (const name of symptomNames) {
+      result.push(...(cache.rulesBySymptom.get(name) ?? []));
+    }
+    return result;
+  };
+
+  const applySelectedRulesFromCache = (symptomNames: string[]): boolean => {
+    const cached = collectCachedRulesForSymptoms(symptomNames);
+    if (cached === null) return false;
+    setRecommendedRules(cached);
+    setIsRecommendRulesLoading(false);
+    return true;
+  };
+
+  const prefetchRulesForSymptoms = (symptomNames: string[]) => {
+    const ctx = getRulesPrefetchContext();
+    const generation = rulesPrefetchGenerationRef.current;
+    const cache = ensureRulesPrefetchCache(ctx);
+    const unique = [...new Set(symptomNames)].filter(Boolean);
+    if (!unique.length) return;
+
+    for (const symptom of unique) {
+      if (cache.rulesBySymptom.has(symptom)) continue;
+      if (rulesPrefetchInFlightRef.current.has(symptom)) continue;
+
+      rulesPrefetchInFlightRef.current.add(symptom);
+      console.log('[RULES] prefetch start (1 symptom):', symptom);
+
+      void (async () => {
+        try {
+          const rules = await fetchRecommendRulesFromApi([symptom], ctx);
+          if (generation !== rulesPrefetchGenerationRef.current) return;
+          if (!isSameRulesPrefetchContext(ctx)) return;
+
+          const currentCache = rulesPrefetchCacheRef.current;
+          if (!currentCache) return;
+          currentCache.rulesBySymptom.set(
+            symptom,
+            rules.filter(rule => rule.symptom_name === symptom)
+          );
+          console.log('[RULES] prefetch done:', symptom, rules.length, 'rules');
+
+          const selected = selectedSymptomNamesRef.current;
+          if (selected.length > 0) {
+            applySelectedRulesFromCache(selected);
+          }
+        } catch (err) {
+          console.error('[RULES] prefetch failed:', symptom, err);
+          if (generation !== rulesPrefetchGenerationRef.current) return;
+          if (!isSameRulesPrefetchContext(ctx)) return;
+          rulesPrefetchCacheRef.current?.rulesBySymptom.set(symptom, []);
+        } finally {
+          rulesPrefetchInFlightRef.current.delete(symptom);
+          if (generation === rulesPrefetchGenerationRef.current) {
+            const selected = selectedSymptomNamesRef.current;
+            if (selected.length > 0) {
+              applySelectedRulesFromCache(selected);
+            }
+          }
+        }
+      })();
+    }
+  };
+
+  prefetchRulesForSymptomsRef.current = prefetchRulesForSymptoms;
+
+  // 畫面上推薦症狀變動時，背景逐症狀預取規則
+  useEffect(() => {
+    if (isLlmIntegrating || !recommendedSymptoms.length) return;
+
+    const debounceMs = recommendationSource !== 'none' ? 200 : 600;
+    const timer = setTimeout(() => {
+      prefetchRulesForSymptoms(recommendedSymptoms);
+    }, debounceMs);
+
+    return () => clearTimeout(timer);
+  }, [recommendedSymptoms, recommendationSource, inputText, vitalsSignature, llmMode, isLlmIntegrating]);
+
+  useEffect(() => {
+    selectedSymptomNamesRef.current = symptomTags.map(tag => tag.display);
+  }, [symptomTags]);
+
+  // 點選症狀後顯示規則：優先讀預取快取
   useEffect(() => {
     const selectedSymptomNames = symptomTags.map(tag => tag.display);
     if (selectedSymptomNames.length === 0) {
@@ -1198,41 +1567,41 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       return;
     }
 
+    if (applySelectedRulesFromCache(selectedSymptomNames)) {
+      return;
+    }
+
+    const missing = selectedSymptomNames.filter(name => {
+      const cache = rulesPrefetchCacheRef.current;
+      return !cache?.rulesBySymptom.has(name);
+    });
+    const waitingPrefetch = missing.some(name => rulesPrefetchInFlightRef.current.has(name));
+
+    if (missing.length > 0) {
+      prefetchRulesForSymptoms(missing);
+    }
+
+    if (waitingPrefetch || missing.length > 0) {
+      setIsRecommendRulesLoading(true);
+      return;
+    }
+
     let cancelled = false;
     const timer = setTimeout(async () => {
       setIsRecommendRulesLoading(true);
       try {
-        const res = await fetch(`${LLM_BASE_URL}/api/recommend-rules`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            selected_symptoms: selectedSymptomNames,
-            chief_complaint: inputText || '',
-            vitals: vitals || {},
-            llm_mode: llmMode,
-          }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+        const rules = await fetchRecommendRulesFromApi(selectedSymptomNames);
         if (cancelled) return;
-        const normalized = Array.isArray(data?.recommended_rules)
-          ? data.recommended_rules
-            .filter((rule: any) =>
-              rule &&
-              typeof rule.rule_code === 'string' &&
-              typeof rule.symptom_name === 'string' &&
-              typeof rule.judge_name === 'string' &&
-              Number.isFinite(Number(rule.ttas_degree))
-            )
-            .map((rule: any) => ({
-              rule_code: rule.rule_code,
-              symptom_name: rule.symptom_name,
-              judge_name: rule.judge_name,
-              ttas_degree: Number(rule.ttas_degree),
-            }))
-          : [];
-        // 後端：每個已選症狀各最多 3 條 AI 推薦，不再只截前 3 筆
-        setRecommendedRules(normalized);
+        setRecommendedRules(rules);
+
+        const ctx = getRulesPrefetchContext();
+        const cache = ensureRulesPrefetchCache(ctx);
+        for (const name of selectedSymptomNames) {
+          cache.rulesBySymptom.set(
+            name,
+            rules.filter(rule => rule.symptom_name === name)
+          );
+        }
       } catch (err) {
         console.error('[RULES] 推薦判斷規則失敗', err);
         if (!cancelled) setRecommendedRules([]);
@@ -1245,7 +1614,7 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [symptomTags, vitals, llmMode, LLM_BASE_URL, rulesRefreshNonce]);
+  }, [symptomTags, vitalsSignature, inputText, llmMode, LLM_BASE_URL, rulesRefreshNonce]);
 
   const wasRecommendRulesLoadingRef = useRef(false);
   useEffect(() => {

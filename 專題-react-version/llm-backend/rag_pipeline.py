@@ -3,7 +3,7 @@
 import json
 from typing import Any, Dict, List, Optional, Tuple
 from knowledge_base import knowledge_base
-from vitals_analyzer import match_vital_labels_to_symptom_candidates, vitals_analyzer
+from vitals_analyzer import vitals_analyzer
 
 # 主訴 → 症狀關鍵詞時共用：強制繁中、忠實原文、避免英文殘留與臆測症狀
 CHIEF_COMPLAINT_SYMPTOM_KEYWORDS_RULES = """
@@ -19,10 +19,10 @@ CHIEF_COMPLAINT_SYMPTOM_KEYWORDS_RULES = """
 - 參考摘錄或醫學知識僅供對照用語，不得因而新增主訴未出現的症狀。
 
 【生命徵象數值處理（重要）】
-- 若原始主訴中夾雜了生命徵象數值或縮寫（例如「GCS 8」「E2V2M4」「血壓 240/200」「血糖 169」「SpO2 88%」「脈壓差大於40」等），**請忽略這些數字、勿自行套用嚴重度分類規則**，不可由原文中的數字推論出「嚴重意識障礙」「重度高血壓」「高血糖」「低血氧」等結論性嚴重度詞。
-- 生命徵象的嚴重度分類由系統的數值規則層另外計算並於後段合併，請勿在此步驟重複產生，以免出現「截斷詞 + 完整詞」並存。
-- 對於明顯的觀察性描述（例如「意識改變」「右側肢體無力」「呼吸喘」），照原文語意整理即可，不需替換為標準術語或加上 GCS、TTAS 級別等推論。
-- 對於「脈壓差大」「血糖偏高」這類沒有對應系統標準分類的觀察，可暫時保留為觀察性描述，但勿改為「重度高血壓」「高血糖」等結論詞。
+- 若原始主訴中夾雜了生命徵象數值或縮寫（例如「GCS 8」「E2V2M4」「血壓 240/200」「血糖 169」「SpO2 88%」等），請依字面整理觀察性描述，勿臆測未提及的症狀。
+- 若另提供「生命徵象測量值」或「客觀異常」區塊，請優先參考該區塊；客觀異常僅含少數有明確臨床門檻的項目（如發燒、低血氧、低血壓、高血壓危象、低血糖、意識障礙等），其餘數值請搭配檢索知識謹慎解讀，勿將輕微偏離正常值自動升級為「輕度/重度高血壓」等分級詞。
+- 血壓略高於正常但未到高血壓危象門檻時，不得僅因數值就輸出「高血壓」「高血壓急症」等結論性症狀，除非主訴明確提及。
+- 對於明顯的觀察性描述（例如「意識改變」「右側肢體無力」「呼吸喘」），照原文語意整理即可。
 """
 
 class RAGPipeline:
@@ -128,34 +128,36 @@ class RAGPipeline:
     def enhance_symptom_summary(self, original_text: str, symptoms: List[str] = None, vitals: Dict[str, Any] = None) -> str:
         """使用 RAG 增強症狀摘要，整合生命徵象分析"""
         try:
-            # 分析生命徵象異常
             vitals_symptoms = []
-            vitals_summary = ""
-            
+            vitals_section = ""
+            vitals_context = ""
+
             if vitals:
-                vitals_symptoms, abnormal_summary = vitals_analyzer.analyze_vitals(vitals)
+                vitals_context = vitals_analyzer.format_vitals_for_llm(vitals)
+                vitals_symptoms, _ = vitals_analyzer.analyze_vitals(vitals)
+                if vitals_context:
+                    vitals_section += f"\n\n生命徵象測量值：{vitals_context}"
                 if vitals_symptoms:
-                    vitals_summary = f"\n\n生命徵象異常分析：{', '.join(vitals_symptoms)}"
-                    print(f"[RAG] 檢測到生命徵象異常：{vitals_symptoms}")
-            
-            # 合併原有症狀和生命徵象症狀
+                    vitals_section += f"\n\n客觀異常（有明確臨床門檻）：{', '.join(vitals_symptoms)}"
+                    print(f"[RAG] 檢測到生命徵象客觀異常：{vitals_symptoms}")
+
             all_symptoms = []
             if symptoms:
                 all_symptoms.extend(symptoms)
             if vitals_symptoms:
                 all_symptoms.extend(vitals_symptoms)
-            
-            # 沒有文字也可以靠生命徵象做檢索（例如現場只先量到 vitals）
-            if all_symptoms:
-                query = f"症狀：{', '.join(all_symptoms)}"
-                if vitals_symptoms:
-                    query += f" 生命徵象：{', '.join(vitals_symptoms)}"
-                retrieved_docs = self.retrieve_relevant_knowledge(query, None, 2)  # 不限制類別
-            elif original_text:
-                query = f"症狀：{original_text}"
-                retrieved_docs = self.retrieve_relevant_knowledge(query, None, 2)  # 不限制類別
+
+            if all_symptoms or vitals_context or original_text:
+                query_parts = []
+                if original_text:
+                    query_parts.append(f"主訴：{original_text}")
+                if all_symptoms:
+                    query_parts.append(f"症狀：{', '.join(all_symptoms)}")
+                if vitals_context:
+                    query_parts.append(f"生命徵象：{vitals_context}")
+                query = " ".join(query_parts)
+                retrieved_docs = self.retrieve_relevant_knowledge(query, None, 2)
             else:
-                # 如果沒有文字也沒有生命徵象異常，就不進行 RAG 檢索
                 retrieved_docs = []
             
             # 格式化上下文
@@ -167,19 +169,27 @@ class RAGPipeline:
             else:
                 text_section = "原始主訴：無明確主訴（僅生命徵象異常）"
             
-            # 如果是純生命徵象輸入（沒有文字），使用簡化的 prompt
-            # 注意：所有數值門檻已由 vitals_analyzer 計算完畢，這裡 LLM 只需忠實列出上方分析結果。
-            if not original_text and vitals_symptoms:
-                enhanced_prompt = f"""
-你是一位急診分級護理師助手。請根據以下生命徵象異常分析，整理出症狀關鍵詞：
+            if not original_text and vitals:
+                if vitals_symptoms:
+                    enhanced_prompt = f"""
+你是一位急診分級護理師助手。以下為純生命徵象輸入（無文字主訴）：
 
-{text_section}{vitals_summary}
+{text_section}{vitals_section}
 
-請忠實列出「生命徵象異常分析」裡已經列出的標籤，不要新增、刪改、或自行套用任何數值規則。
-請嚴格使用頓號（、）分隔症狀，不要使用其他符號。
-範例格式：發燒、高血壓
+請「僅」列出上方「客觀異常（有明確臨床門檻）」區塊中已有的標籤，不得新增、刪改或從測量值推論其他症狀。
+禁止輸出胸痛、呼吸困難、出汗等未在客觀異常中列出的詞彙。
+請嚴格使用頓號（、）分隔。
+範例：發燒、心跳過緩
 
 請只回傳症狀關鍵詞，不要加任何解釋。
+"""
+                else:
+                    enhanced_prompt = f"""
+你是一位急診分級護理師助手。以下為純生命徵象輸入，且未達任何客觀異常門檻：
+
+{text_section}{vitals_section}
+
+請回傳空字串，不要輸出任何症狀關鍵詞。
 """
             else:
                 # 有文字輸入時，使用完整的 RAG 增強，但優先考慮生命徵象
@@ -216,10 +226,10 @@ class RAGPipeline:
                 
                 # 如果有生命徵象，強調優先考慮生命徵象
                 priority_instruction = ""
-                if vitals_symptoms:
+                if vitals_context or vitals_symptoms:
                     priority_instruction = """
-重要：請優先考慮生命徵象異常提供的症狀，不要被檢索到的醫學知識干擾。
-生命徵象異常是客觀測量結果，比檢索到的文獻更可靠。
+重要：請優先參考「生命徵象測量值」與「客觀異常」區塊；客觀異常為有明確臨床門檻的項目，應納入。
+其餘數值請勿自行套用分級規則（如輕度/重度高血壓），僅在與主訴或檢索知識高度相關時才整理為症狀。
 """
                 
                 # 沒撈到可靠 context，就退回較保守的 prompt
@@ -227,12 +237,11 @@ class RAGPipeline:
                     enhanced_prompt = f"""
 你是一位急診分級護理師助手。請根據以下資訊整理症狀關鍵詞：
 
-{text_section}{vitals_summary}
+{text_section}{vitals_section}
 
 {CHIEF_COMPLAINT_SYMPTOM_KEYWORDS_RULES}
 {priority_instruction}
-請從上述主訴與生命徵象分析中提取主要症狀關鍵詞（無則僅依主訴）。
-生命徵象若有異常，已由系統數值規則層整理成「生命徵象異常分析」標籤；請直接使用該標籤，不要自行套用任何數值規則。
+請從上述主訴與生命徵象中提取主要症狀關鍵詞（無主訴則依生命徵象與客觀異常）。
 
 請嚴格使用頓號（、）分隔症狀。
 範例格式：咳嗽、咳血
@@ -245,13 +254,12 @@ class RAGPipeline:
 
 {context}
 
-{text_section}{vitals_summary}
+{text_section}{vitals_section}
 
 {CHIEF_COMPLAINT_SYMPTOM_KEYWORDS_RULES}
 {priority_instruction}
-不要預設最嚴重情況；只能依主訴與「生命徵象異常分析」已列出的標籤整理，資訊不足時勿添加未提及之危急症狀。
+不要預設最嚴重情況；依主訴、生命徵象測量值與客觀異常整理，資訊不足時勿添加未提及之危急症狀。
 請參考上述摘錄僅作用詞對照，整理出主要症狀關鍵詞。
-生命徵象若有異常，已由系統數值規則層整理成標籤；請直接使用該標籤，不要自行套用任何數值規則。
 
 請嚴格使用頓號（、）分隔症狀。
 範例格式：咳嗽、咳血
@@ -263,22 +271,24 @@ class RAGPipeline:
             print(f"❌ RAG 增強失敗: {e}")
             # 失敗時回傳簡單 prompt（但仍然包含生命徵象分析）
             vitals_symptoms = []
-            vitals_summary = ""
-            
+            vitals_section = ""
+
             if vitals:
+                vitals_context = vitals_analyzer.format_vitals_for_llm(vitals)
                 vitals_symptoms, _ = vitals_analyzer.analyze_vitals(vitals)
+                if vitals_context:
+                    vitals_section += f"\n\n生命徵象測量值：{vitals_context}"
                 if vitals_symptoms:
-                    vitals_summary = f"\n\n生命徵象異常分析：{', '.join(vitals_symptoms)}"
-            
-            text_section = original_text if original_text else "原始主訴：無明確主訴（僅生命徵象異常）"
-            
+                    vitals_section += f"\n\n客觀異常（有明確臨床門檻）：{', '.join(vitals_symptoms)}"
+
+            text_section = original_text if original_text else "原始主訴：無明確主訴（僅生命徵象）"
+
             return f"""
 你是一位急診分級護理師助手。請從以下資訊中整理出症狀關鍵詞：
 
-{text_section}{vitals_summary}
+{text_section}{vitals_section}
 
 {CHIEF_COMPLAINT_SYMPTOM_KEYWORDS_RULES}
-生命徵象若有異常，已由系統數值規則層整理成「生命徵象異常分析」標籤；請直接使用該標籤，不要自行套用任何數值規則。
 
 請嚴格使用頓號（、）分隔症狀，不要使用其他符號。
 範例格式：咳嗽、咳血
@@ -289,69 +299,49 @@ class RAGPipeline:
     def enhance_symptom_recommendations(self, text: str, symptom_candidates: List[str], vitals: Dict[str, Any] = None, max_results: int = 10) -> str:
         """使用 RAG 增強症狀推薦，整合生命徵象分析"""
         try:
-            # 分析生命徵象異常
             vitals_symptoms = []
-            vitals_summary = ""
-            
+            vitals_section = ""
+            vitals_context = ""
+
             if vitals:
-                vitals_symptoms, abnormal_summary = vitals_analyzer.analyze_vitals(vitals)
+                vitals_context = vitals_analyzer.format_vitals_for_llm(vitals)
+                vitals_symptoms, _ = vitals_analyzer.analyze_vitals(vitals)
+                if vitals_context:
+                    vitals_section += f"\n\n生命徵象測量值：{vitals_context}"
                 if vitals_symptoms:
-                    vitals_summary = f"\n\n生命徵象異常：{', '.join(vitals_symptoms)}"
-                    print(f"[RAG] 推薦時檢測到生命徵象異常：{vitals_symptoms}")
+                    vitals_section += f"\n\n客觀異常（有明確臨床門檻）：{', '.join(vitals_symptoms)}"
+                    print(f"[RAG] 推薦時檢測到生命徵象客觀異常：{vitals_symptoms}")
             
             # 建構候選症狀清單
             candidate_lines = "\n".join(f"- {name}" for name in symptom_candidates)
             
-            # 如果是純生命徵象輸入（沒有文字），使用簡化的推薦邏輯
-            if not text and vitals_symptoms:
-                matched_symptoms = match_vital_labels_to_symptom_candidates(
-                    vitals_symptoms, symptom_candidates
-                )
-                # 純 vitals 情境下，直接走 deterministic mapping，少繞一層 LLM
-                if matched_symptoms:
-                    return f"""
-請從以下症狀中選擇最相關的：
+            query_parts = []
+            if text:
+                query_parts.append(f"症狀推薦：{text}")
+            if vitals_symptoms:
+                query_parts.append(f"客觀異常：{', '.join(vitals_symptoms)}")
+            if vitals_context:
+                query_parts.append(f"生命徵象：{vitals_context}")
+            query = " ".join(query_parts) if query_parts else f"症狀推薦：{text or vitals_context}"
 
-生命徵象異常：{', '.join(vitals_symptoms)}
-找到的相關症狀：{', '.join(matched_symptoms)}
+            retrieved_docs = self.retrieve_relevant_knowledge(query, None, 3)
+            context = self.format_context_for_llm(retrieved_docs)
 
-請嚴格只輸出 JSON 陣列格式，包含找到的相關症狀。
-範例：{json.dumps(matched_symptoms, ensure_ascii=False)}
-"""
-                else:
-                    # 如果沒有找到匹配的症狀，返回空陣列
-                    return f"""
-生命徵象異常：{', '.join(vitals_symptoms)}
-候選症狀清單中沒有找到相關症狀。
-
-請嚴格只輸出空的 JSON 陣列：[]
-"""
-            else:
-                # 有文字輸入時，使用完整的 RAG 增強推薦
-                # 檢索相關知識（包含生命徵象資訊）
-                query = f"症狀推薦：{text}"
-                if vitals_symptoms:
-                    query += f" 生命徵象：{', '.join(vitals_symptoms)}"
-                
-                retrieved_docs = self.retrieve_relevant_knowledge(query, None, 3)
-                
-                # 格式化上下文
-                context = self.format_context_for_llm(retrieved_docs)
-                
-                enhanced_prompt = f"""
+            enhanced_prompt = f"""
 你是一位熟悉台灣急診分級系統的護理師助手。請根據以下資訊推薦症狀：
 
 {context}
 
-主訴內容：{text}{vitals_summary}
+主訴內容：{text or '（無文字主訴，僅生命徵象）'}{vitals_section}
 
 候選症狀清單（只能從這些裡面選）：
 {candidate_lines}
 
 請參考上述醫學知識，從候選清單中選出 1 到 {max_results} 個最適合的症狀。
 請特別注意：
-- 如果已提供「生命徵象異常」標籤，請優先參考該標籤推薦相關症狀。
-- 生命徵象數值門檻已由系統規則層判斷；不要根據主訴文字中的數字自行套用任何數值規則。
+- 優先參考「客觀異常」區塊中有明確臨床門檻的項目。
+- 勿僅因血壓略高就推薦高血壓急症；僅在達高血壓危象門檻或主訴明確相關時才推薦。
+- 若候選清單與主訴、生命徵象均無明顯相關，請回傳空陣列。
 
 如果候選清單裡沒有跟主訴或生命徵象明顯相關的症狀，請回傳空的 JSON 陣列 []。
 請嚴格只輸出 JSON 陣列格式，不要加任何解釋文字。
@@ -362,19 +352,22 @@ class RAGPipeline:
             print(f"❌ RAG 症狀推薦增強失敗: {e}")
             # 失敗時回傳簡單 prompt（但仍然包含生命徵象分析）
             vitals_symptoms = []
-            vitals_summary = ""
-            
+            vitals_section = ""
+
             if vitals:
+                vitals_context = vitals_analyzer.format_vitals_for_llm(vitals)
                 vitals_symptoms, _ = vitals_analyzer.analyze_vitals(vitals)
+                if vitals_context:
+                    vitals_section += f"\n\n生命徵象測量值：{vitals_context}"
                 if vitals_symptoms:
-                    vitals_summary = f"\n\n生命徵象異常：{', '.join(vitals_symptoms)}"
-            
+                    vitals_section += f"\n\n客觀異常（有明確臨床門檻）：{', '.join(vitals_symptoms)}"
+
             candidate_lines = "\n".join(f"- {name}" for name in symptom_candidates)
-            
+
             return f"""
 你是一位熟悉台灣急診分級系統的護理師助手。
 
-主訴內容：{text}{vitals_summary}
+主訴內容：{text}{vitals_section}
 
 候選症狀清單（只能從這些裡面選）：
 {candidate_lines}
