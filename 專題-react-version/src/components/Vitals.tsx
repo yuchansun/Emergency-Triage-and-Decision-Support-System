@@ -212,6 +212,8 @@ const Vitals: React.FC<VitalsProps> = ({
   // === 新增：其他病史詳情的 state（如果需要存到 vitals，可以加到 vitals 物件中）
   // 這裡先用 local state，因為資料庫沒有這個欄位
   const [otherHistoryDetails, setOtherHistoryDetails] = useState<string>('');
+  const [painExpanded, setPainExpanded] = useState(false);
+  const [sentimentExpanded, setSentimentExpanded] = useState(false);
 
   // 藥物過敏詳情由 vitals.drugAllergy 解析，不再使用 local state，避免未儲存
   const allergyDetails = allergyParsed.detail;
@@ -543,56 +545,82 @@ const Vitals: React.FC<VitalsProps> = ({
           )}
         </fieldset>
 
-        {/* 疼痛指數 */}
-        <div className="col-span-1 md:col-span-2">
-          <label className="block text-sm font-medium pb-1">疼痛指數 (0-10)</label>
-          <div className="grid grid-cols-11 gap-1">
-            {[
-              { icon: 'sentiment_very_satisfied', value: 0 },
-              { icon: 'sentiment_satisfied', value: 1 },
-              { icon: 'sentiment_satisfied', value: 2 },
-              { icon: 'sentiment_neutral', value: 3 },
-              { icon: 'sentiment_neutral', value: 4 },
-              { icon: 'sentiment_dissatisfied', value: 5 },
-              { icon: 'sentiment_dissatisfied', value: 6 },
-              { icon: 'sentiment_very_dissatisfied', value: 7 },
-              { icon: 'sentiment_very_dissatisfied', value: 8 },
-              { icon: 'sick', value: 9 },
-              { icon: 'sick', value: 10 },
-            ].map(({ icon, value }) => (
-              <button
-                key={value}
-                type="button"
-                className={
-                  "flex items-center justify-center h-9 text-sm rounded-md bg-white dark:bg-background-dark border border-subtext-dark/30 hover:bg-primary/10 hover:border-primary transition-colors px-1.5" +
-                  (painScore === value ? " bg-primary text-white border-primary hover:bg-primary/90" : "")
-                }
-                onClick={() => setPainScore(value)}
-              >
-                <span className="material-symbols-outlined text-base">{icon}</span>
-                <span className="ml-1 font-bold">{value}</span>
-              </button>
-            ))}
+        {/* 疼痛指數 + 心理/情緒狀態 同行 */}
+        <div className="col-span-1 md:col-span-2 flex gap-4 relative">
+          {/* 疼痛指數 */}
+          <div className="flex-1 relative">
+            <button
+              type="button"
+              className="flex items-center justify-between w-full text-sm font-medium py-1 px-2 rounded-lg border border-subtext-dark/20 bg-white dark:bg-background-dark hover:bg-primary/5"
+              onClick={() => { setPainExpanded(v => !v); setSentimentExpanded(false); }}
+            >
+              <span>疼痛指數</span>
+              <span className="flex items-center gap-1 text-primary font-bold">
+                {painScore !== null ? (
+                  <>
+                    <span className="material-symbols-outlined text-base">
+                      {painScore <= 1 ? 'sentiment_very_satisfied'
+                      : painScore <= 4 ? 'sentiment_neutral'
+                      : painScore <= 6 ? 'sentiment_dissatisfied'
+                      : painScore <= 8 ? 'sentiment_very_dissatisfied'
+                      : 'sick'}
+                    </span>
+                    {painScore}
+                  </>
+                ) : <span className="text-subtext-light dark:text-subtext-dark font-normal">-</span>}
+                <span className="material-symbols-outlined text-sm">{painExpanded ? 'expand_less' : 'expand_more'}</span>
+              </span>
+            </button>
+            {painExpanded && (
+              <div className="absolute top-full left-0 z-50 mt-1 p-2 rounded-xl shadow-lg border border-subtext-dark/20 bg-white dark:bg-background-dark grid grid-cols-11 gap-1 w-max">
+                {[
+                  { icon: 'sentiment_very_satisfied', value: 0 },
+                  { icon: 'sentiment_satisfied', value: 1 },
+                  { icon: 'sentiment_satisfied', value: 2 },
+                  { icon: 'sentiment_neutral', value: 3 },
+                  { icon: 'sentiment_neutral', value: 4 },
+                  { icon: 'sentiment_dissatisfied', value: 5 },
+                  { icon: 'sentiment_dissatisfied', value: 6 },
+                  { icon: 'sentiment_very_dissatisfied', value: 7 },
+                  { icon: 'sentiment_very_dissatisfied', value: 8 },
+                  { icon: 'sick', value: 9 },
+                  { icon: 'sick', value: 10 },
+                ].map(({ icon, value }) => (
+                  <button key={value} type="button"
+                    className={"flex items-center justify-center h-9 text-sm rounded-md bg-white dark:bg-background-dark border border-subtext-dark/30 hover:bg-primary/10 hover:border-primary transition-colors px-1.5" + (painScore === value ? " bg-primary text-white border-primary hover:bg-primary/90" : "")}
+                    onClick={() => { setPainScore(value); setPainExpanded(false); }}>
+                    <span className="material-symbols-outlined text-base">{icon}</span>
+                    <span className="ml-1 font-bold">{value}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
 
-        {/* 新增：心理/情緒狀態 */}
-        <div className="col-span-1 md:col-span-2">
-          <label className="block text-sm font-medium pb-1">心理/情緒狀態 (0-10)</label>
-          <div className="grid grid-cols-11 gap-1">
-            {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(value => (
-              <button
-                key={value}
-                type="button"
-                className={
-                  "flex items-center justify-center h-9 text-sm rounded-md bg-white dark:bg-background-dark border border-subtext-dark/30 hover:bg-primary/10 hover:border-primary transition-colors px-1.5" +
-                  (sentiment === value ? " bg-primary text-white border-primary hover:bg-primary/90" : "")
-                }
-                onClick={() => setSentiment(value)}
-              >
-                {value}
-              </button>
-            ))}
+          {/* 心理/情緒狀態 */}
+          <div className="flex-1 relative">
+            <button
+              type="button"
+              className="flex items-center justify-between w-full text-sm font-medium py-1 px-2 rounded-lg border border-subtext-dark/20 bg-white dark:bg-background-dark hover:bg-primary/5"
+              onClick={() => { setSentimentExpanded(v => !v); setPainExpanded(false); }}
+            >
+              <span>心理/情緒狀態</span>
+              <span className="flex items-center gap-1 text-primary font-bold">
+                {sentiment !== null ? sentiment : <span className="text-subtext-light dark:text-subtext-dark font-normal">-</span>}
+                <span className="material-symbols-outlined text-sm">{sentimentExpanded ? 'expand_less' : 'expand_more'}</span>
+              </span>
+            </button>
+            {sentimentExpanded && (
+              <div className="absolute top-full right-0 z-50 mt-1 p-2 rounded-xl shadow-lg border border-subtext-dark/20 bg-white dark:bg-background-dark grid grid-cols-11 gap-1 w-max">
+                {[0,1,2,3,4,5,6,7,8,9,10].map(value => (
+                  <button key={value} type="button"
+                    className={"flex items-center justify-center h-9 w-9 text-sm rounded-md bg-white dark:bg-background-dark border border-subtext-dark/30 hover:bg-primary/10 hover:border-primary transition-colors" + (sentiment === value ? " bg-primary text-white border-primary hover:bg-primary/90" : "")}
+                    onClick={() => { setSentiment(value); setSentimentExpanded(false); }}>
+                    {value}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
