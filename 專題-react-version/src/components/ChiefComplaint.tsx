@@ -1686,16 +1686,16 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
   const getRuleColors = (degree: number) => {
     switch (degree) {
       case 1:
-        return { border: 'border-red-500', bg: 'bg-red-500/20 hover:bg-red-500/30', text: 'text-red-500' };
+        return { border: 'border-red-500', bg: 'bg-red-500/30 hover:bg-red-500/40', text: 'text-red-600' };
       case 2:
-        return { border: 'border-orange-500', bg: 'bg-orange-500/20 hover:bg-orange-500/30', text: 'text-orange-500' };
+        return { border: 'border-orange-500', bg: 'bg-orange-500/30 hover:bg-orange-500/40', text: 'text-orange-600' };
       case 3:
-        return { border: 'border-yellow-500', bg: 'bg-yellow-500/20 hover:bg-yellow-500/30', text: 'text-yellow-500' };
+        return { border: 'border-yellow-500', bg: 'bg-yellow-500/30 hover:bg-yellow-500/40', text: 'text-yellow-600' };
       case 4:
-        return { border: 'border-green-500', bg: 'bg-green-500/20 hover:bg-green-500/30', text: 'text-green-500' };
+        return { border: 'border-green-500', bg: 'bg-green-500/30 hover:bg-green-500/40', text: 'text-green-600' };
       case 5:
       default:
-        return { border: 'border-blue-500', bg: 'bg-blue-500/20 hover:bg-blue-500/30', text: 'text-blue-500' };
+        return { border: 'border-blue-500', bg: 'bg-blue-500/30 hover:bg-blue-500/40', text: 'text-blue-600' };
     }
   };
 
@@ -2105,38 +2105,46 @@ export const ChiefComplaintRecommendationsPanel: React.FC = () => {
                         <span className="text-xs font-semibold text-subtext-light dark:text-subtext-dark shrink-0">
                           {symptom}：
                         </span>
-                        {rules.map(rule => {
-                          const colors = c.getRuleColors(rule.ttas_degree);
-                          const isSelected = !!c.selectedRules[rule.rule_code];
-                          return (
-                            <button
-                              key={`${rule.symptom_name}__${rule.rule_code}`}
-                              type="button"
-                              onClick={() =>
-                                c.setSelectedRules(prev => {
-                                  const next = { ...prev };
-                                  Object.keys(next).forEach(ruleCode => {
-                                    if (next[ruleCode].symptom_name === rule.symptom_name) {
-                                      delete next[ruleCode];
-                                    }
-                                  });
-                                  if (prev[rule.rule_code]) return next;
-                                  next[rule.rule_code] = {
-                                    degree: rule.ttas_degree,
-                                    judge: rule.judge_name,
-                                    rule_code: rule.rule_code,
-                                    symptom_name: rule.symptom_name,
-                                  };
-                                  return next;
-                                })
-                              }
-                              className={`px-3 py-1.5 rounded-full border text-xs leading-snug text-left max-w-full ${colors.border} ${isSelected ? `${colors.bg.replace('20', '90')} text-white ring-2 ring-offset-1 ring-primary` : `${colors.bg} text-black`}`}
-                              title={`${rule.symptom_name}｜第${rule.ttas_degree}級：${rule.judge_name}`}
-                            >
-                              第{rule.ttas_degree}級：{rule.judge_name}
-                            </button>
-                          );
-                        })}
+                        {(() => {
+                          return rules.map((rule, idx) => {
+                            const colors = c.getRuleColors(rule.ttas_degree);
+                            const isSelected = !!c.selectedRules[rule.rule_code];
+                            const prevDegree = idx > 0 ? Number(rules[idx - 1].ttas_degree) : null;
+                            const renderSeparatorAbove = idx > 0 && Number(rule.ttas_degree) !== prevDegree;
+                            return (
+                              <React.Fragment key={`${rule.symptom_name}__${rule.rule_code}`}>
+                                {renderSeparatorAbove && (
+                                  <div className="w-full border-t-2 border-dashed border-primary/80 dark:border-primary/70 my-3" aria-hidden />
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    c.setSelectedRules(prev => {
+                                      const next = { ...prev };
+                                      Object.keys(next).forEach(ruleCode => {
+                                        if (next[ruleCode].symptom_name === rule.symptom_name) {
+                                          delete next[ruleCode];
+                                        }
+                                      });
+                                      if (prev[rule.rule_code]) return next;
+                                      next[rule.rule_code] = {
+                                        degree: rule.ttas_degree,
+                                        judge: rule.judge_name,
+                                        rule_code: rule.rule_code,
+                                        symptom_name: rule.symptom_name,
+                                      };
+                                      return next;
+                                    })
+                                  }
+                                  className={`px-3 py-1.5 rounded-full border font-semibold text-xs leading-snug text-left max-w-full transition duration-200 ease-out transform ${colors.border} ${isSelected ? `${colors.bg.replace('30', '95')} text-white ring-2 ring-offset-1 ring-primary shadow-lg` : `${colors.bg} ${colors.text} hover:scale-105 active:scale-95`}`}
+                                  title={`${rule.symptom_name}｜第${rule.ttas_degree}級：${rule.judge_name}`}
+                                >
+                                  第{rule.ttas_degree}級：{rule.judge_name}
+                                </button>
+                              </React.Fragment>
+                            );
+                          });
+                        })()}
                       </div>
                       ))}
                     </div>
@@ -2160,49 +2168,58 @@ export const ChiefComplaintRecommendationsPanel: React.FC = () => {
                       }, new Map<number, typeof criteria>())
                     )
                       .sort((a, b) => a[0] - b[0])
-                      .map(([degree, items]) => (
-                        <div key={`${display}-degree-${degree}`} className="flex flex-wrap gap-2 min-w-0">
-                          {items.map(item => {
-                            const colors = c.getRuleColors(item.degree);
-                            const isSelected = !!c.selectedRules[item.rule_code];
-                            return (
-                              <button
-                                key={item.rule_code}
-                                type="button"
-                                onClick={() =>
-                                  c.setSelectedRules(prev => {
-                                    const next = { ...prev };
-                                    const existing = prev[item.rule_code];
+                      .map(([degree, items], idx) => {
+                        const showSeparatorAbove = idx > 0;
+                        return (
+                          <React.Fragment key={`${display}-degree-${degree}`}>
+                            {showSeparatorAbove && (
+                              <div className="w-full border-t-2 border-dashed border-primary/80 dark:border-primary/60 my-3" aria-hidden />
+                            )}
+                            <div className="flex flex-wrap gap-2 min-w-0">
+                              {items.map(item => {
+                                const colors = c.getRuleColors(item.degree);
+                                const isSelected = !!c.selectedRules[item.rule_code];
+                                return (
+                                  <React.Fragment key={item.rule_code}>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        c.setSelectedRules(prev => {
+                                          const next = { ...prev };
+                                          const existing = prev[item.rule_code];
 
-                                    Object.keys(next).forEach(ruleCode => {
-                                      if (next[ruleCode].symptom_name === display) {
-                                        delete next[ruleCode];
+                                          Object.keys(next).forEach(ruleCode => {
+                                            if (next[ruleCode].symptom_name === display) {
+                                              delete next[ruleCode];
+                                            }
+                                          });
+
+                                          if (existing) {
+                                            return next;
+                                          }
+
+                                          next[item.rule_code] = {
+                                            degree: item.degree,
+                                            judge: item.judge,
+                                            rule_code: item.rule_code,
+                                            symptom_name: display,
+                                          };
+
+                                          return next;
+                                        })
                                       }
-                                    });
-
-                                    if (existing) {
-                                      return next;
-                                    }
-
-                                    next[item.rule_code] = {
-                                      degree: item.degree,
-                                      judge: item.judge,
-                                      rule_code: item.rule_code,
-                                      symptom_name: display,
-                                    };
-
-                                    return next;
-                                  })
-                                }
-                                className={`px-3 py-1.5 rounded-full border text-xs leading-snug text-left max-w-full ${colors.border} ${isSelected ? `${colors.bg.replace('20', '90')} text-white ring-2 ring-offset-1 ring-primary` : `${colors.bg} text-black`}`}
-                                title={`第${item.degree}級：${item.judge}`}
-                              >
-                                第{item.degree}級：{item.judge}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ))}
+                                      className={`px-3 py-1.5 rounded-full border font-semibold text-xs leading-snug text-left max-w-full transition duration-200 ease-out transform ${colors.border} ${isSelected ? `${colors.bg.replace('30', '95')} text-white ring-2 ring-offset-1 ring-primary shadow-lg` : `${colors.bg} ${colors.text} hover:scale-105 active:scale-95`}`}
+                                      title={`第${item.degree}級：${item.judge}`}
+                                    >
+                                      第{item.degree}級：{item.judge}
+                                    </button>
+                                  </React.Fragment>
+                                );
+                              })}
+                            </div>
+                          </React.Fragment>
+                        );
+                      })}
                   </div>
                 )
               ))}

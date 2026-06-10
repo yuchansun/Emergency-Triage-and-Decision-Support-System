@@ -86,7 +86,7 @@ function App() {
     temperature: '', heartRate: '', spo2: '', respRate: '', weight: '',
     systolicBP: '', diastolicBP: '', bloodSugar: '', bloodSugarLevel: null,
     gcsEye: null, gcsVerbal: null, gcsMotor: null, obHistory: null,
-    pastHistory: [], drugAllergy: null, painScore: null, doNotTreat: '', sentiment: null,
+    pastHistory: [], otherHistoryDetails: '', drugAllergy: null, painScore: null, doNotTreat: '', sentiment: null,
   });
 
   const getInitialTocc = (): ToccState => ({
@@ -225,7 +225,13 @@ function App() {
         weight: parseFloat(vitals.weight), blood_pressure_sys: parseInt(vitals.systolicBP),
         blood_pressure_dia: parseInt(vitals.diastolicBP), blood_sugar: parseInt(vitals.bloodSugar),
         gcs_eye: vitals.gcsEye, gcs_verbal: vitals.gcsVerbal, gcs_motor: vitals.gcsMotor,
-        past_medical_history: vitals.pastHistory.join(', '), do_not_treat: vitals.doNotTreat,
+        past_medical_history: [
+          vitals.pastHistory.join(', '),
+          vitals.otherHistoryDetails?.trim(),
+        ]
+          .filter(Boolean)
+          .join('; '),
+        do_not_treat: vitals.doNotTreat,
         allergy: vitals.drugAllergy, pain_score: vitals.painScore, sentiment: vitals.sentiment,
       },
       timestamp: new Date().toISOString(),
@@ -607,26 +613,31 @@ function App() {
               });
 
               // 填入生命徵象
-              setVitals({
-                temperature: record.temperature?.toString() ?? '',
-                heartRate: record.heart_rate?.toString() ?? '',
-                spo2: record.spo2?.toString() ?? '',
-                respRate: record.respiratory_rate?.toString() ?? '',
-                weight: record.weight?.toString() ?? '',
-                systolicBP: record.blood_pressure_sys?.toString() ?? '',
-                diastolicBP: record.blood_pressure_dia?.toString() ?? '',
-                bloodSugar: record.blood_sugar?.toString() ?? '',
-                bloodSugarLevel: null,
-                gcsEye: record.gcs_eye?.toString() ?? null,
-                gcsVerbal: record.gcs_verbal?.toString() ?? null,
-                gcsMotor: record.gcs_motor?.toString() ?? null,
-                obHistory: null,
-                pastHistory: record.past_medical_history ? record.past_medical_history.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
-                drugAllergy: record.allergy ?? null,
-                painScore: record.pain_score ?? null,
-                doNotTreat: record.do_not_treat?.toString() ?? '',
-                sentiment: record.sentiment ?? null,
-              });
+              {
+                const rawPastMedicalHistory = record.past_medical_history ?? '';
+                const [historyItemsPart, otherHistoryPart] = rawPastMedicalHistory.split(/\s*;\s*/);
+                setVitals({
+                  temperature: record.temperature?.toString() ?? '',
+                  heartRate: record.heart_rate?.toString() ?? '',
+                  spo2: record.spo2?.toString() ?? '',
+                  respRate: record.respiratory_rate?.toString() ?? '',
+                  weight: record.weight?.toString() ?? '',
+                  systolicBP: record.blood_pressure_sys?.toString() ?? '',
+                  diastolicBP: record.blood_pressure_dia?.toString() ?? '',
+                  bloodSugar: record.blood_sugar?.toString() ?? '',
+                  bloodSugarLevel: null,
+                  gcsEye: record.gcs_eye?.toString() ?? null,
+                  gcsVerbal: record.gcs_verbal?.toString() ?? null,
+                  gcsMotor: record.gcs_motor?.toString() ?? null,
+                  obHistory: null,
+                  pastHistory: historyItemsPart ? historyItemsPart.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+                  otherHistoryDetails: otherHistoryPart?.trim() ?? '',
+                  drugAllergy: record.allergy ?? null,
+                  painScore: record.pain_score ?? null,
+                  doNotTreat: record.do_not_treat?.toString() ?? '',
+                  sentiment: record.sentiment ?? null,
+                });
+              }
 
               // 填入主訴
               setInputText(record.chief_complaint ?? '');

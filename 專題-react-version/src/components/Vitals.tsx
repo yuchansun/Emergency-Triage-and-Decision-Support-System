@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 
 export type VitalsState = {
   temperature: string;
@@ -15,6 +15,7 @@ export type VitalsState = {
   gcsMotor: string | null;
   obHistory: string | null;
   pastHistory: string[];
+  otherHistoryDetails: string;
   drugAllergy: string | null;
   painScore: number | null;
   doNotTreat: string;
@@ -44,6 +45,7 @@ const Vitals: React.FC<VitalsProps> = ({
     gcsMotor: null,
     obHistory: null,
     pastHistory: [],
+    otherHistoryDetails: '',
     drugAllergy: null,
     painScore: null,
     doNotTreat: '',
@@ -100,6 +102,8 @@ const Vitals: React.FC<VitalsProps> = ({
   const setObHistory = (val: string | null) => setVitals({ ...vitals, obHistory: val });
 
   const pastHistory = vitals.pastHistory || [];
+  const otherHistoryDetails = vitals.otherHistoryDetails || '';
+  const setOtherHistoryDetails = (val: string) => setVitals({ ...vitals, otherHistoryDetails: val });
 
   const drugAllergy = vitals.drugAllergy;
   const parseDrugAllergy = (raw: string | null): { status: string | null; detail: string } => {
@@ -211,9 +215,13 @@ const Vitals: React.FC<VitalsProps> = ({
 
   // === 新增：其他病史詳情的 state（如果需要存到 vitals，可以加到 vitals 物件中）
   // 這裡先用 local state，因為資料庫沒有這個欄位
-  const [otherHistoryDetails, setOtherHistoryDetails] = useState<string>('');
   const [painExpanded, setPainExpanded] = useState(false);
   const [sentimentExpanded, setSentimentExpanded] = useState(false);
+
+  // GCS auto-advance refs
+  const gcsEyeRef = useRef<HTMLInputElement | null>(null);
+  const gcsVerbalRef = useRef<HTMLInputElement | null>(null);
+  const gcsMotorRef = useRef<HTMLInputElement | null>(null);
 
   // 藥物過敏詳情由 vitals.drugAllergy 解析，不再使用 local state，避免未儲存
   const allergyDetails = allergyParsed.detail;
@@ -360,12 +368,17 @@ const Vitals: React.FC<VitalsProps> = ({
                   E<span className="text-xs font-normal text-subtext-light dark:text-subtext-dark">(1~4)</span>
                 </span>
                 <input
+                  ref={gcsEyeRef}
                   type="number"
                   min={1}
                   max={4}
                   title="E：1~4"
                   value={gcsEye ?? ""}
-                  onChange={(e) => setGcsEye(e.target.value === "" ? null : e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value === "" ? null : e.target.value;
+                    setGcsEye(v);
+                    if (v) gcsVerbalRef.current?.focus();
+                  }}
                   className={gcsInputClass}
                 />
               </div>
@@ -374,12 +387,17 @@ const Vitals: React.FC<VitalsProps> = ({
                   V<span className="text-xs font-normal text-subtext-light dark:text-subtext-dark">(1~5)</span>
                 </span>
                 <input
+                  ref={gcsVerbalRef}
                   type="number"
                   min={1}
                   max={5}
                   title="V：1~5"
                   value={gcsVerbal ?? ""}
-                  onChange={(e) => setGcsVerbal(e.target.value === "" ? null : e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value === "" ? null : e.target.value;
+                    setGcsVerbal(v);
+                    if (v) gcsMotorRef.current?.focus();
+                  }}
                   className={gcsInputClass}
                 />
               </div>
@@ -388,12 +406,16 @@ const Vitals: React.FC<VitalsProps> = ({
                   M<span className="text-xs font-normal text-subtext-light dark:text-subtext-dark">(1~6)</span>
                 </span>
                 <input
+                  ref={gcsMotorRef}
                   type="number"
                   min={1}
                   max={6}
                   title="M：1~6"
                   value={gcsMotor ?? ""}
-                  onChange={(e) => setGcsMotor(e.target.value === "" ? null : e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value === "" ? null : e.target.value;
+                    setGcsMotor(v);
+                  }}
                   className={gcsInputClass}
                 />
               </div>
@@ -468,7 +490,7 @@ const Vitals: React.FC<VitalsProps> = ({
         <fieldset className="col-span-1 md:col-span-2">
           <legend className="block text-sm font-medium pb-1">過去病史</legend>
           <div className="flex flex-wrap gap-2 z-10 relative">
-            {['無', '高血壓', '糖尿病', '心臟病', '肺部疾病', '癌症', '禁治療', '其他'].map(label => {
+            {['無', '高血壓', '糖尿病', '心臟病', '肺部疾病', '癌症'].map(label => {
               const isSelected = pastHistory.includes(label);
               return (
                 <button
@@ -487,62 +509,48 @@ const Vitals: React.FC<VitalsProps> = ({
               );
             })}
           </div>
-          {(pastHistory.includes('禁治療') || pastHistory.includes('其他')) && (
-            <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-              {pastHistory.includes('禁治療') && (
-                <input
-                  value={doNotTreat}
-                  onChange={(e) => setDoNotTreat(e.target.value)}
-                  placeholder="禁治療詳情（如：DNR、DNI 等）"
-                  type="text"
-                  className="form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary"
-                />
-              )}
-              {pastHistory.includes('其他') && (
-                <input
-                  value={otherHistoryDetails}
-                  onChange={(e) => setOtherHistoryDetails(e.target.value)}
-                  placeholder="其他病史詳情"
-                  type="text"
-                  className="form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary"
-                />
-              )}
-            </div>
-          )}
+          <div className="mt-2 flex flex-row gap-2 items-center flex-wrap">
+            <input
+              value={doNotTreat}
+              onChange={(e) => setDoNotTreat(e.target.value)}
+              placeholder="禁治療詳情（如：DNR、DNI 等）"
+              type="text"
+              className="form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary"
+            />
+            <input
+              value={otherHistoryDetails}
+              onChange={(e) => setOtherHistoryDetails(e.target.value)}
+              placeholder="其他病史詳情"
+              type="text"
+              className="form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary"
+            />
+          </div>
         </fieldset>
 
         {/* 藥物過敏 */}
         <fieldset className="col-span-1 md:col-span-2">
           <legend className="block text-sm font-medium pb-1">藥物過敏</legend>
-          <div className="flex flex-wrap gap-2 z-10 relative">
-            {['無', '不詳', '有'].map(label => {
-              const isSelected = allergyParsed.status === label;
-              return (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => setDrugAllergy(label)}
-                  className={
-                    "px-3 py-1 rounded-full text-sm transition-colors border " +
-                    (isSelected
-                      ? "bg-primary text-white border-primary"
-                      : "bg-white dark:bg-background-dark text-primary border-primary/30 hover:bg-primary/10")
-                  }
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-          {allergyParsed.status === '有' && (
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setDrugAllergy(allergyParsed.status === '不詳' ? null : '不詳')}
+              className={
+                "px-3 py-1 rounded-full text-sm transition-colors border " +
+                (allergyParsed.status === '不詳'
+                  ? "bg-primary text-white border-primary"
+                  : "bg-white dark:bg-background-dark text-primary border-primary/30 hover:bg-primary/10")
+              }
+            >
+              不詳
+            </button>
             <input
               value={allergyDetails}
               onChange={(e) => setAllergyDetails(e.target.value)}
               placeholder="藥物過敏詳情（如：盤尼西林、阿斯匹靈等）"
               type="text"
-              className="form-input w-full rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary mt-2"
+              className="form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary"
             />
-          )}
+          </div>
         </fieldset>
 
         {/* 疼痛指數 + 心理/情緒狀態 同行 */}
