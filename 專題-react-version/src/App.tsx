@@ -200,6 +200,10 @@ function App() {
       triageId: patientData?.triage_id ? patientData.triage_id : null,
       patientId: patientData?.patient_id ?? null,
       patient_id: patientData?.patient_id ?? null,
+      name: patientData?.name ?? null,
+      id_number: patientData?.idNumber ?? null,
+      gender: patientData?.gender === "男" ? "M" : patientData?.gender === "女" ? "F" : "U",
+      birth_date: patientData?.birthDate ?? null,
       nurseId: currentUser?.nurseId ?? null,
       nurse_id: currentUser?.nurseId ?? null,
       demoMode: isDemoMode,
@@ -534,6 +538,9 @@ function App() {
                     setMajorIncident={setMajorIncident}
                     onToccChange={setTocc}
                     requireTOCC={globalConfig.requireTOCC}
+                    onPatientChange={(updated) => {
+                      setPatientData(prev => prev ? { ...prev, ...updated } as PatientData : prev);
+                    }}
                   />
                 </div>
                 <div className="col-span-5">
@@ -584,6 +591,62 @@ function App() {
             initialKeyword={historyKeyword}
             initialSelectedTriageId={historySelectedId}
             onViewNurse={openNursePage}
+            onGoToMain={(record: any) => {
+              // 填入病患基本資料
+              setPatientData({
+                patient_id: record.patient_id,
+                triage_id: record.triage_id,
+                name: record.name,
+                gender: record.gender === 'M' ? '男' : record.gender === 'F' ? '女' : '不詳',
+                age: record.age,
+                birthDate: record.birth_date,
+                idNumber: record.id_number,
+                medicalId: record.medical_id,
+                drugAllergy: record.allergy,
+                icCard: false,
+              });
+
+              // 填入生命徵象
+              setVitals({
+                temperature: record.temperature?.toString() ?? '',
+                heartRate: record.heart_rate?.toString() ?? '',
+                spo2: record.spo2?.toString() ?? '',
+                respRate: record.respiratory_rate?.toString() ?? '',
+                weight: record.weight?.toString() ?? '',
+                systolicBP: record.blood_pressure_sys?.toString() ?? '',
+                diastolicBP: record.blood_pressure_dia?.toString() ?? '',
+                bloodSugar: record.blood_sugar?.toString() ?? '',
+                bloodSugarLevel: null,
+                gcsEye: record.gcs_eye?.toString() ?? null,
+                gcsVerbal: record.gcs_verbal?.toString() ?? null,
+                gcsMotor: record.gcs_motor?.toString() ?? null,
+                obHistory: null,
+                pastHistory: record.past_medical_history ? record.past_medical_history.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+                drugAllergy: record.allergy ?? null,
+                painScore: record.pain_score ?? null,
+                doNotTreat: record.do_not_treat?.toString() ?? '',
+                sentiment: record.sentiment ?? null,
+              });
+
+              // 填入主訴
+              setInputText(record.chief_complaint ?? '');
+
+              // 填入 TOCC
+              setTocc({
+                travel: record.tocc_travel ?? '',
+                travelStart: record.tocc_travel_start ?? '',
+                travelEnd: record.tocc_travel_end ?? '',
+                occupation: record.tocc_occupation ?? '',
+                occupationOther: record.tocc_occupation_other ?? '',
+                contactItems: [],
+                clusterItems: record.tocc_cluster_items ? record.tocc_cluster_items.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+                clusterOther: record.tocc_cluster_other ?? '',
+                symptoms: record.tocc_symptoms ? record.tocc_symptoms.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+              });
+
+              setVisitTime(record.visit_time ?? new Date().toISOString());
+              setStage("main");
+            }}
           />
         )}
 

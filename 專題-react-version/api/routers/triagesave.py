@@ -399,6 +399,36 @@ async def create_triagesave(triagesave_data: dict):
                     """,
                     (allergy, patient_id)
                 )
+
+            # 更新 patients 基本資料（如果有傳入）
+            name = triagesave_data.get("name")
+            id_number = triagesave_data.get("id_number")
+            gender = triagesave_data.get("gender")
+            age = triagesave_data.get("age")
+            birth_date = triagesave_data.get("birth_date")
+
+            if patient_id and any(v is not None for v in [name, id_number, gender, age, birth_date]):
+                update_fields = []
+                update_values = []
+                if name is not None:
+                    update_fields.append("name = %s")
+                    update_values.append(name)
+                if id_number is not None:
+                    update_fields.append("id_number = %s")
+                    update_values.append(id_number)
+                if gender is not None:
+                    update_fields.append("gender = %s")
+                    update_values.append(gender)
+                if birth_date is not None:
+                    update_fields.append("birth_date = %s")
+                    update_values.append(birth_date)
+                if update_fields:
+                    update_values.append(patient_id)
+                    cur.execute(
+                        f"UPDATE patients SET {', '.join(update_fields)} WHERE patient_id = %s",
+                        tuple(update_values)
+                    )
+
             conn.commit()
 
         return {"success": True, "message": "檢傷資料已儲存", "triageId": triage_id}

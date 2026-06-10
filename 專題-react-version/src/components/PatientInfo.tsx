@@ -25,6 +25,7 @@ interface PatientInfoProps {
   // ← 新增這個
   onToccChange?: (toccData: ToccState) => void;
   requireTOCC?: boolean;
+  onPatientChange?: (updated: Partial<PatientData>) => void;
 }
 
 interface ToccState {
@@ -50,6 +51,7 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
   setMajorIncident,
   onToccChange,  // ← 新增解構
   requireTOCC,
+  onPatientChange,
 }) => {
 
   // ===== 標籤狀態 =====
@@ -160,11 +162,31 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
         {/* 基礎資料 */}
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-0.5">
           <span className="font-medium text-text-light dark:text-text-dark">
-            {patient.name || "【未接收病患姓名】"}
+            <input
+              value={patient.name || ""}
+              onChange={(e) => onPatientChange?.({ name: e.target.value })}
+              placeholder="未接收病患姓名"
+              className="font-medium text-text-light dark:text-text-dark bg-blue-50 rounded-md px-1.5 py-0.5 border border-blue-200 focus:outline-none focus:border-blue-400 w-20 text-sm hover:bg-blue-100 transition-colors"
+            />
           </span>
 
           <span>
-            ({patient.gender || "無性別資料"}, {patient.age ?? "無年齡資料"} 歲)
+            (<select
+              value={patient.gender || ""}
+              onChange={(e) => onPatientChange?.({ gender: e.target.value })}
+              className="bg-blue-50 rounded-md px-1 py-0.5 border border-blue-200 focus:outline-none focus:border-blue-400 text-sm hover:bg-blue-100 transition-colors cursor-pointer"
+            >
+              <option value="">無性別資料</option>
+              <option value="男">男</option>
+              <option value="女">女</option>
+              <option value="不詳">不詳</option>
+            </select>, <input
+              type="number"
+              value={patient.age ?? ""}
+              onChange={(e) => onPatientChange?.({ age: e.target.value === "" ? undefined : Number(e.target.value) })}
+              placeholder="無年齡"
+              className="bg-blue-50 rounded-md px-1 py-0.5 border border-blue-200 focus:outline-none focus:border-blue-400 w-10 text-sm hover:bg-blue-100 transition-colors text-center"
+            /> 歲)
           </span>
 
           <span className="h-4 w-px bg-content-dark"></span>
@@ -174,10 +196,12 @@ const PatientInfo: React.FC<PatientInfoProps> = ({
             : <span className="text-gray-400">病歷號:(測試帶入)</span>
           }
 
-          {patient.idNumber
-            ? <span>身分證號: {patient.idNumber}</span>
-            : <span>身分證號: 不詳</span>
-          }
+          <span>身分證號: <input
+            value={patient.idNumber || ""}
+            onChange={(e) => onPatientChange?.({ idNumber: e.target.value })}
+            placeholder="不詳"
+            className="bg-blue-50 rounded-md px-1.5 py-0.5 border border-blue-200 focus:outline-none focus:border-blue-400 w-20 text-sm hover:bg-blue-100 transition-colors"
+          /></span>
 
           {patient.visitNumber
             ? <span>就診號: {patient.visitNumber}</span>
