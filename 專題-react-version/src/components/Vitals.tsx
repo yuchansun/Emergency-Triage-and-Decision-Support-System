@@ -203,7 +203,7 @@ const Vitals: React.FC<VitalsProps> = ({
 
   /** GCS 數字欄（ring-inset：在 overflow-x-auto 內 focus 不會被裁切） */
   const gcsInputClass =
-    "form-input w-[5.75rem] min-w-[5.75rem] shrink-0 rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary/50 focus:border-primary";
+    "form-input w-[4.75rem] min-w-[4.75rem] shrink-0 rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary/50 focus:border-primary";
 
   const weightInputClass =
     "form-input w-full rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary";
@@ -327,7 +327,7 @@ const Vitals: React.FC<VitalsProps> = ({
                   type="number"
                   value={bloodSugar}
                   onChange={(e) => setBloodSugar(e.target.value)}
-                  className={`${baseInputClass} w-full max-w-[7rem] shrink-0${isBloodSugarAbnormal ? errorInputClass : ""}`}
+                  className={`${baseInputClass} !w-[5.75rem] min-w-[5.75rem] shrink-0${isBloodSugarAbnormal ? errorInputClass : ""}`}
                 />
                 <button
                   className={

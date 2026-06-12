@@ -515,7 +515,7 @@ function App() {
         )}
 
         {stage === "main" && (
-          <div className="px-6 pt-2 pb-6 mx-auto max-w-screen-2xl grid grid-cols-10 gap-x-6 gap-y-4">
+          <div className="px-6 pt-2 pb-6 mx-auto max-w-screen-2xl grid grid-cols-[4.5fr_5.5fr] gap-x-6 gap-y-4">
             <ChiefComplaintProvider
               selectedSymptoms={selectedSymptoms}
               setSelectedSymptoms={setSelectedSymptoms}
@@ -533,7 +533,7 @@ function App() {
               llmMode={llmMode}
             >
               <>
-                <div className="col-span-10">
+                <div className="col-span-full">
                   <PatientInfo
                     patient={patientData}
                     bed={bed}
@@ -549,7 +549,7 @@ function App() {
                     }}
                   />
                 </div>
-                <div className="col-span-5">
+                <div className="min-w-0">
                   <LeftPanel
                     selectedSymptoms={selectedSymptoms}
                     setSelectedSymptoms={setSelectedSymptoms}
@@ -561,7 +561,7 @@ function App() {
                     highlightDrugAllergy={Boolean(patientData?.drugAllergy)}
                   />
                 </div>
-                <div className="col-span-5 flex flex-col gap-4">
+                <div className="min-w-0 flex flex-col gap-4">
                   <ChiefComplaintRecommendationsPanel />
                   <SystemRecommendation
                     selectedSymptoms={selectedSymptoms}
