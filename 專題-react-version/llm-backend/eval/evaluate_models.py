@@ -306,7 +306,7 @@ def evaluate_case(base_url: str, api_base_url: str, rec: dict, llm_mode: str, ti
     data, t, err = _post(
         base_url, "/api/recommend-rules",
         {"selected_symptoms": selected, "chief_complaint": summary,
-         "vitals": vitals, "llm_mode": llm_mode}, timeout,
+         "vitals": vitals, "llm_mode": llm_mode, "age": rec.get("age")}, timeout,
     )
     timings["recommend_rules"] = t
     rules = (data or {}).get("recommended_rules", []) if not err else []

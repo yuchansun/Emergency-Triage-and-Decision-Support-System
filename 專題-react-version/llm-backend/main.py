@@ -6,6 +6,7 @@ import os
 import re
 import time
 import requests
+from typing import Optional
 from collections import defaultdict
 from database import fetch_all
 from rag_pipeline import (
@@ -703,6 +704,27 @@ class RecommendRulesRequest(BaseModel):
     chief_complaint: str = ""
     vitals: dict = None
     llm_mode: str = "local"
+    age: Optional[int] = None
+
+
+def _is_adult_from_age(age) -> bool:
+    """與前端 symptomCriteriaIndex 一致：未提供年齡時視為成人。"""
+    if age is None:
+        return True
+    try:
+        return int(age) >= 18
+    except (TypeError, ValueError):
+        return True
+
+
+def _rule_allowed_for_patient_age(system_code: str, rule_code: str, is_adult: bool) -> bool:
+    """成人保留 A*/T*/E*；兒童保留 P*/T*/E*（與前端 ChiefComplaint 相同）。"""
+    prefix = ((system_code or "").strip() or (rule_code or "").strip())[:1]
+    if prefix == "A" and not is_adult:
+        return False
+    if prefix == "P" and is_adult:
+        return False
+    return True
 
 class RecommendRulesResponse(BaseModel):
     recommended_rules: list[dict]
@@ -743,11 +765,12 @@ async def recommend_rules(body: RecommendRulesRequest):
         chief_complaint = str(body.chief_complaint or "").strip()
         vitals = body.vitals or {}
         llm_mode = body.llm_mode
+        is_adult = _is_adult_from_age(body.age)
         if not selected_symptoms:
             return RecommendRulesResponse(recommended_rules=[])
 
         query = """
-        SELECT DISTINCT symptom_name, rule_code, judge_name, ttas_degree
+        SELECT DISTINCT symptom_name, rule_code, judge_name, ttas_degree, system_code
         FROM triage_hierarchy
         WHERE symptom_name IS NOT NULL
           AND rule_code IS NOT NULL
@@ -760,9 +783,13 @@ async def recommend_rules(body: RecommendRulesRequest):
 
         symptom_rules_map = {}
         for rule in all_rules:
+            system_code = str(rule.get("system_code") or "")
+            rule_code = str(rule.get("rule_code") or "")
+            if not _rule_allowed_for_patient_age(system_code, rule_code, is_adult):
+                continue
             symptom = rule["symptom_name"]
             symptom_rules_map.setdefault(symptom, []).append({
-                "rule_code": rule["rule_code"],
+                "rule_code": rule_code,
                 "judge_name": rule["judge_name"],
                 "ttas_degree": int(rule["ttas_degree"]),
             })
@@ -830,8 +857,13 @@ async def recommend_rules(body: RecommendRulesRequest):
             """
             依生命徵象給規則評分；若明顯矛盾回傳極低分（過濾）。
             """
-            # TTAS 資料常見全形小於號「＜」，與程式比對用「<」不一致時會漏判 SpO2 門檻（例如漏掉第一級＜90%）
-            j = str(judge_name or "").replace("＜", "<")
+            # TTAS 資料常見全形符號，統一後再比對門檻
+            j = (
+                str(judge_name or "")
+                .replace("＜", "<")
+                .replace("＞", ">")
+                .replace("℃", "°C")
+            )
             score = 0
 
             # SpO2 規則一致性
@@ -872,18 +904,25 @@ async def recommend_rules(body: RecommendRulesRequest):
                     else:
                         score -= 8
 
-            # 體溫規則一致性
+            # 體溫規則一致性（>41°C 須優先於一般「發燒」判斷）
             if temp_val is not None:
-                if "高燒" in j:
+                if ">41" in j or ("中樞體溫" in j and "41" in j):
+                    if temp_val > 41:
+                        score += 50
+                    else:
+                        return -999
+                elif "高燒" in j:
                     if temp_val >= 39:
                         score += 28
                     else:
                         return -999
-                if "發燒" in j and "高燒" not in j:
+                elif "發燒" in j:
                     if temp_val >= 38:
                         score += 18
                     else:
                         return -999
+                elif ("<35" in j or "低體溫" in j) and temp_val >= 35:
+                    return -999
 
             # 血糖規則一致性
             if bs_val is not None:
@@ -959,10 +998,19 @@ async def recommend_rules(body: RecommendRulesRequest):
             """先採用 LLM 排序之規則，不足 K 則依後端分數補滿；資料以 DB 為準。"""
             scored_full = [r for _, r in scored_list_for_symptom(symptom)]
             valid_codes = {r["rule_code"] for r in scored_full}
+            # 生命徵象明確命中門檻（如體溫>41、SpO2<90）的規則強制優先，避免 LLM 略過第一級
+            vital_must = [
+                r for r in scored_full
+                if vitals_rule_score(r["judge_name"]) >= 45
+            ]
+            merged_prefer = vital_must + [
+                r for r in prefer
+                if r.get("rule_code") not in {x["rule_code"] for x in vital_must}
+            ]
             out = []
             seen_code = set()
             seen_fp = set()
-            for r in prefer:
+            for r in merged_prefer:
                 if len(out) >= RULES_TOP_K_PER_SYMPTOM:
                     break
                 code = r.get("rule_code")
