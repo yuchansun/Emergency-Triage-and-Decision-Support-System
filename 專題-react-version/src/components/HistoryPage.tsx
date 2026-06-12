@@ -896,7 +896,7 @@ td, th {
         id_number: editDraft.idNumber,
         gender: editDraft.gender,
         age: editDraft.age,
-        birth_date: editDraft.birthday,
+        birth_date: editDraft.birthday?.trim() || null,
         nurseId: editDraft.nurseId || selected.nurseId || selectedRaw?.nurse_id || null,
         nurse_id: editDraft.nurseId || selected.nurseId || selectedRaw?.nurse_id || null,
         bed: selectedRaw?.bed ?? "",

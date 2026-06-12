@@ -406,6 +406,8 @@ async def create_triagesave(triagesave_data: dict):
             gender = triagesave_data.get("gender")
             age = triagesave_data.get("age")
             birth_date = triagesave_data.get("birth_date")
+            if birth_date is not None and str(birth_date).strip() == "":
+                birth_date = None
 
             if patient_id and any(v is not None for v in [name, id_number, gender, age, birth_date]):
                 update_fields = []

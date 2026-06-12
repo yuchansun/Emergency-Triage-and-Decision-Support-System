@@ -203,7 +203,7 @@ function App() {
       name: patientData?.name ?? null,
       id_number: patientData?.idNumber ?? null,
       gender: patientData?.gender === "男" ? "M" : patientData?.gender === "女" ? "F" : "U",
-      birth_date: patientData?.birthDate ?? null,
+      birth_date: patientData?.birthDate?.trim() || null,
       nurseId: currentUser?.nurseId ?? null,
       nurse_id: currentUser?.nurseId ?? null,
       demoMode: isDemoMode,
