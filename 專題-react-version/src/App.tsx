@@ -69,7 +69,7 @@ function App() {
   );
 
   const [selectedSymptoms, setSelectedSymptoms] = useState<Set<string>>(new Set());
-  const [triageActiveTab, setTriageActiveTab] = useState<'t' | 'a'>('t');
+  const [triageActiveTab, setTriageActiveTab] = useState<'t' | 'a'>('a');
   const [inputText, setInputText] = useState<string>('');
   const [worstSelectedDegree, setWorstSelectedDegree] = useState<number | null>(null);
   const [forceLevel1, setForceLevel1] = useState<boolean>(false);
@@ -123,7 +123,7 @@ function App() {
       selectedRules: {},
       supplementText: '',
     });
-    setTriageActiveTab('t');
+    setTriageActiveTab('a');
   };
 
   const resetMainScreen = () => {
@@ -132,7 +132,7 @@ function App() {
     setWorstSelectedDegree(null);
     setForceLevel1(false);
     setDirectToERSelected(false);
-    setTriageActiveTab('t');
+    setTriageActiveTab('a');
   };
 
   const handleLogout = () => {

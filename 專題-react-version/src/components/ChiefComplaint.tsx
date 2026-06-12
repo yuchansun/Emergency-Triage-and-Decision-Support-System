@@ -2001,16 +2001,6 @@ export const ChiefComplaintRecommendationsPanel: React.FC = () => {
         <div className="inline-flex gap-1.5 bg-background-light dark:bg-background-dark/60 px-2 py-1.5 rounded-2xl border border-primary/30">
           <button
             type="button"
-            onClick={() => c.setActiveTab('t')}
-            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-colors sm:px-5 sm:py-2 sm:text-base ${c.activeTab === 't'
-              ? 'bg-primary text-white'
-              : 'bg-transparent text-primary hover:bg-primary/10'
-              }`}
-          >
-            T 外傷
-          </button>
-          <button
-            type="button"
             onClick={() => c.setActiveTab('a')}
             className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-colors sm:px-5 sm:py-2 sm:text-base ${c.activeTab === 'a'
               ? 'bg-primary text-white'
@@ -2018,6 +2008,16 @@ export const ChiefComplaintRecommendationsPanel: React.FC = () => {
               }`}
           >
             {(c.age !== undefined ? (c.age >= 18 ? 'A' : 'P') : 'A')} 非外傷
+          </button>
+          <button
+            type="button"
+            onClick={() => c.setActiveTab('t')}
+            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-colors sm:px-5 sm:py-2 sm:text-base ${c.activeTab === 't'
+              ? 'bg-primary text-white'
+              : 'bg-transparent text-primary hover:bg-primary/10'
+              }`}
+          >
+            T 外傷
           </button>
         </div>
       </div>
