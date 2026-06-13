@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Editor } from "@tinymce/tinymce-react";
+import { getApiBaseUrl } from "../config/serviceUrls";
 
 //這個檔案負責從後端抓檢傷報告資料，然後套用到 Word 模板的 HTML 結構，提供列印和下載功能。
 //外部的功能
@@ -301,7 +302,7 @@ export default function EmergencyTriageReport({ patientData, onBack }: Props) {
 
     const fetchReport = async () => {
       try {
-        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:9000";
+        const API_BASE_URL = getApiBaseUrl();
         const url = `${API_BASE_URL}/triage-report/${patientData.triage_id}`;
         console.log("[triage-report] request:", url);
 

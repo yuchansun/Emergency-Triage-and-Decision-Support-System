@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# 啟動 iPad 區域網路存取所需服務（請在各終端機分別執行，或使用 tmux）
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+HOSTNAME="$(scutil --get LocalHostName 2>/dev/null || hostname -s).local"
+
+echo "=============================================="
+echo "  iPad 存取網址（書籤此網址，換 Wi‑Fi 仍可用）"
+echo "  https://${HOSTNAME}:5173"
+echo "=============================================="
+echo ""
+echo "請確認以下服務皆已啟動："
+echo ""
+echo "1) XAMPP MySQL"
+echo "2) 資料庫 API (port 8000):"
+echo "   cd \"${ROOT}/api\" && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+echo ""
+echo "3) LLM 後端 (port 8001):"
+echo "   cd \"${ROOT}/llm-backend\" && uvicorn main:app --host 0.0.0.0 --port 8001 --reload"
+echo ""
+echo "4) Ollama:"
+echo "   ollama serve"
+echo ""
+echo "5) 健保卡讀卡 (port 8002，讀卡機接在 Mac 上):"
+echo "   nhicard -p 8002"
+echo "   （經 Vite 代理轉發，維持 127.0.0.1 即可）"
+echo ""
+echo "6) 前端 HTTPS (port 5173):"
+echo "   cd \"${ROOT}\" && npm run dev:ipad"
+echo ""
+echo "iPad 首次連線：Safari 會提示憑證不受信任，點「顯示詳細資料」→「造訪此網站」。"
+echo "語音辨識需 HTTPS，請務必用 https:// 開啟，不要用 http://。"

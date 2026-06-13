@@ -1,11 +1,8 @@
 import { useState } from "react";
+import { getApiBaseUrl, getNhicardBaseUrl } from "../config/serviceUrls";
 
-/** FastAPI；與專案根目錄 .env 的 VITE_API_BASE_URL 一致 */
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
-/** 健保卡讀卡服務（tw-nhi-icc-service）；啟動: nhicard -p 8002 */
-const NHICARD_BASE =
-  import.meta.env.VITE_NHICARD_URL || "http://127.0.0.1:8002";
+const API_BASE = getApiBaseUrl();
+const NHICARD_BASE = getNhicardBaseUrl();
 
 //定義病人資料結構
 export interface PatientData {

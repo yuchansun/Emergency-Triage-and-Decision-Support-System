@@ -12,8 +12,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { getApiBaseUrl } from "../config/serviceUrls";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const API_BASE_URL = getApiBaseUrl();
 
 const LEVEL_COLORS: Record<1 | 2 | 3 | 4 | 5, string> = {
   1: "#dc2626",

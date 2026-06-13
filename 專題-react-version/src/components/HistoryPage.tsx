@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { getApiBaseUrl } from "../config/serviceUrls";
 
 type HistoryPageProps = {
   patientData?: any;
@@ -191,7 +192,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, in
   const [errorMsg, setErrorMsg] = useState("");
   const [dateInputResetKey, setDateInputResetKey] = useState(0);
 
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+  const API_BASE_URL = getApiBaseUrl();
 
   const isDemoRecord = (triageId: string) => triageId.startsWith("DEMO-");
 

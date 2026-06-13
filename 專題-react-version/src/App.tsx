@@ -14,6 +14,7 @@ import StatsPage from './components/StatsPage';
 import StaffProfile from './components/StaffProfile';
 import { openVoiceConsentPopup } from './components/VoiceConsentModal';
 import type { VitalsProps } from './components/Vitals';
+import { getApiBaseUrl } from './config/serviceUrls';
 
 type VitalsForm = NonNullable<VitalsProps['vitals']>;
 
@@ -147,7 +148,7 @@ function App() {
 
   const handleLogin = async (username: string, password: string) => {
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+      const API_BASE_URL = getApiBaseUrl();
       const res = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -237,7 +238,7 @@ function App() {
       timestamp: new Date().toISOString(),
     };
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+      const API_BASE_URL = getApiBaseUrl();
       const res = await fetch(`${API_BASE_URL}/triagesave`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -343,7 +344,7 @@ function App() {
 
     const fetchPatientDetail = async () => {
       try {
-        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+        const API_BASE_URL = getApiBaseUrl();
         const res = await fetch(`${API_BASE_URL}/patients/${patientData.patient_id}`);
         const result = await res.json();
 

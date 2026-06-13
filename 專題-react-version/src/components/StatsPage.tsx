@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import StatsHourlySection from "./StatsHourlySection";
+import { getApiBaseUrl } from "../config/serviceUrls";
 
 type RangeKey = "today" | "week" | "month";
 
@@ -63,7 +64,7 @@ const StatsPage: React.FC = () => {
 
   useEffect(() => {
     if (viewMode !== "overview") return;
-    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+    const API_BASE_URL = getApiBaseUrl();
 
     const fetchStats = async () => {
       setLoading(true);

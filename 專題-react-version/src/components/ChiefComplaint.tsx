@@ -7,6 +7,7 @@ import {
   sleep,
   type PresentationScenario,
 } from '../config/presentationScenarios';
+import { getApiBaseUrl, getLlmBaseUrl } from '../config/serviceUrls';
 
 interface ChiefComplaintProps {
   selectedSymptoms: Set<string>;
@@ -188,7 +189,7 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     ttas_degree: string;
     nhi_degree: string;
   }
-  const LLM_BASE_URL = import.meta.env.VITE_LLM_BASE_URL || 'http://localhost:8001';
+  const LLM_BASE_URL = getLlmBaseUrl();
 
 
   const [triageRows, setTriageRows] = useState<TriageRow[] | null>(null);
@@ -208,8 +209,8 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
 
     const loadFromDb = async () => {
       try {
-        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-        console.log('[DB] VITE_API_BASE_URL =', API_BASE_URL);
+        const API_BASE_URL = getApiBaseUrl();
+        console.log('[DB] API_BASE_URL =', API_BASE_URL);
 
         const res = await fetch(`${API_BASE_URL}/triage_hierarchy`);
         console.log('[DB] fetch triage_hierarchy status =', res.status);
@@ -1192,7 +1193,7 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
   const startSpeechRecognition = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('此瀏覽器不支援語音輸入 (SpeechRecognition)。請改用 Chrome 等支援的瀏覽器。');
+      alert('此瀏覽器不支援語音輸入。iPad 請用 Safari 並以 https:// 開啟（區域網路需 HTTPS 才能使用麥克風）。');
       return;
     }
 
@@ -1344,7 +1345,7 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
   const handleVoiceInputClick = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('此瀏覽器不支援語音輸入 (SpeechRecognition)。請改用 Chrome 等支援的瀏覽器。');
+      alert('此瀏覽器不支援語音輸入。iPad 請用 Safari 並以 https:// 開啟（區域網路需 HTTPS 才能使用麥克風）。');
       return;
     }
 
