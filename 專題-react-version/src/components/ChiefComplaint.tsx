@@ -2043,16 +2043,11 @@ export const ChiefComplaintRecommendationsPanel: React.FC = () => {
                           {symptom}：
                         </span>
                         {(() => {
-                          return rules.map((rule, idx) => {
+                          return rules.map(rule => {
                             const colors = c.getRuleColors(rule.ttas_degree);
                             const isSelected = !!c.selectedRules[rule.rule_code];
-                            const prevDegree = idx > 0 ? Number(rules[idx - 1].ttas_degree) : null;
-                            const renderSeparatorAbove = idx > 0 && Number(rule.ttas_degree) !== prevDegree;
                             return (
                               <React.Fragment key={`${rule.symptom_name}__${rule.rule_code}`}>
-                                {renderSeparatorAbove && (
-                                  <div className="w-full border-t-2 border-dashed border-primary/80 dark:border-primary/70 my-3" aria-hidden />
-                                )}
                                 <button
                                   type="button"
                                   onClick={() =>
