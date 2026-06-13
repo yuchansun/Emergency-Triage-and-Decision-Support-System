@@ -31,6 +31,7 @@ llm-backend/chroma_db/
 .env
 __pycache__/
 *.pyc
+.env.example
 
 # ChromaDB and Database files
 **/chroma_db/
