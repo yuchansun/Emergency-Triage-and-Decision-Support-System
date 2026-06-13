@@ -54,11 +54,15 @@ async def save_patient(data: dict):
                 gender=VALUES(gender),
                 drug_allergy=COALESCE(VALUES(drug_allergy), drug_allergy)
             """
+            birth_date = data.get("birth_date")
+            if birth_date is not None and str(birth_date).strip() == "":
+                birth_date = None
+
             cur.execute(sql, (
                 p_id,
                 data.get("name") or "匿名",
                 id_num if id_num and id_num.strip() else None,
-                data.get("birth_date"),
+                birth_date,
                 data.get("gender"),
                 data.get("drug_allergy")
             ))

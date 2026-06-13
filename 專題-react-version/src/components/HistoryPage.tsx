@@ -5,6 +5,7 @@ type HistoryPageProps = {
   initialKeyword?: string;
   initialSelectedTriageId?: string | null;
   onViewNurse?: (nurseId: string) => void;
+  onGoToMain?: (record: any) => void;
 };
 
 type TriageRecord = {
@@ -167,7 +168,7 @@ const levelColor = (level: number | null | undefined) => {
   return colors[level ?? -1] || "text-gray-700 bg-gray-50 border-gray-200";
 };
 
-const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, initialKeyword, initialSelectedTriageId, onViewNurse }) => {
+const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, initialKeyword, initialSelectedTriageId, onViewNurse, onGoToMain }) => {
   const [form, setForm] = useState<FilterForm>(createDefaultFilter());
   const [applied, setApplied] = useState<FilterForm>(createDefaultFilter());
   const [page, setPage] = useState(1);
@@ -891,6 +892,11 @@ td, th {
         triageId: selected.triageId,
         patientId: selected.patientId,
         patient_id: selected.patientId,
+        name: editDraft.name,
+        id_number: editDraft.idNumber,
+        gender: editDraft.gender,
+        age: editDraft.age,
+        birth_date: editDraft.birthday?.trim() || null,
         nurseId: editDraft.nurseId || selected.nurseId || selectedRaw?.nurse_id || null,
         nurse_id: editDraft.nurseId || selected.nurseId || selectedRaw?.nurse_id || null,
         bed: selectedRaw?.bed ?? "",
@@ -1163,6 +1169,15 @@ td, th {
                   修改
                 </button>
               )}
+              {!isEditing && onGoToMain && (
+                <button
+                  type="button"
+                  onClick={() => selectedRaw && onGoToMain?.(selectedRaw)}
+                  className="px-4 py-2 rounded-xl border border-yellow-300 bg-yellow-50 text-yellow-700 text-sm font-medium hover:bg-yellow-100"
+                >
+                  返回主頁編輯
+                </button>
+              )}
               {selected && isDemoRecord(selected.triageId) && (
                 <button
                   type="button"
@@ -1206,10 +1221,53 @@ td, th {
             <div className="mt-5 grid grid-cols-2 gap-4 text-sm">
               <div><div className="text-gray-500">檢傷號</div><div className="font-semibold">{selected.triageId}</div></div>
               <div><div className="text-gray-500">病歷號</div><div className="font-semibold">{selected.patientId}</div></div>
-              <div><div className="text-gray-500">姓名</div><div className="font-semibold">{selected.name}</div></div>
-              <div><div className="text-gray-500">身分證號</div><div className="font-semibold">{selected.idNumber}</div></div>
-              <div><div className="text-gray-500">性別 / 年齡</div><div className="font-semibold">{selected.gender === "M" ? "男" : selected.gender === "F" ? "女" : "不詳"} / {selected.age}</div></div>
-              <div><div className="text-gray-500">生日</div><div className="font-semibold">{selected.birthday}</div></div>
+              <div>
+                <div className="text-gray-500">姓名</div>
+                {isEditing ? (
+                  <input value={editDraft.name} onChange={(e) => setDraftField("name", e.target.value)}
+                    className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm" />
+                ) : (
+                  <div className="font-semibold">{selected.name}</div>
+                )}
+              </div>
+
+              <div>
+                <div className="text-gray-500">身分證號</div>
+                {isEditing ? (
+                  <input value={editDraft.idNumber} onChange={(e) => setDraftField("idNumber", e.target.value)}
+                    className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm" />
+                ) : (
+                  <div className="font-semibold">{selected.idNumber}</div>
+                )}
+              </div>
+
+              <div>
+                <div className="text-gray-500">性別 / 年齡</div>
+                {isEditing ? (
+                  <div className="mt-1 flex gap-2">
+                    <select value={editDraft.gender} onChange={(e) => setDraftField("gender", e.target.value as "M" | "F" | "U")}
+                      className="rounded border border-gray-300 px-2 py-1 text-sm bg-white">
+                      <option value="M">男</option>
+                      <option value="F">女</option>
+                      <option value="U">不詳</option>
+                    </select>
+                    <input type="number" value={editDraft.age} onChange={(e) => setDraftField("age", Number(e.target.value))}
+                      className="w-16 rounded border border-gray-300 px-2 py-1 text-sm" />
+                  </div>
+                ) : (
+                  <div className="font-semibold">{selected.gender === "M" ? "男" : selected.gender === "F" ? "女" : "不詳"} / {selected.age}</div>
+                )}
+              </div>
+
+              <div>
+                <div className="text-gray-500">生日</div>
+                {isEditing ? (
+                  <input type="date" value={editDraft.birthday} onChange={(e) => setDraftField("birthday", e.target.value)}
+                    className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm" />
+                ) : (
+                  <div className="font-semibold">{selected.birthday}</div>
+                )}
+              </div>
               <div><div className="text-gray-500">到院時間</div><div className="font-semibold">{editDraft.arrivalAt}</div></div>
               <div>
                 <div className="text-gray-500">檢傷人員</div>

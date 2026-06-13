@@ -69,7 +69,7 @@ function App() {
   );
 
   const [selectedSymptoms, setSelectedSymptoms] = useState<Set<string>>(new Set());
-  const [triageActiveTab, setTriageActiveTab] = useState<'t' | 'a'>('t');
+  const [triageActiveTab, setTriageActiveTab] = useState<'t' | 'a'>('a');
   const [inputText, setInputText] = useState<string>('');
   const [worstSelectedDegree, setWorstSelectedDegree] = useState<number | null>(null);
   const [forceLevel1, setForceLevel1] = useState<boolean>(false);
@@ -86,7 +86,7 @@ function App() {
     temperature: '', heartRate: '', spo2: '', respRate: '', weight: '',
     systolicBP: '', diastolicBP: '', bloodSugar: '', bloodSugarLevel: null,
     gcsEye: null, gcsVerbal: null, gcsMotor: null, obHistory: null,
-    pastHistory: [], drugAllergy: null, painScore: null, doNotTreat: '', sentiment: null,
+    pastHistory: [], otherHistoryDetails: '', drugAllergy: null, painScore: null, doNotTreat: '', sentiment: null,
   });
 
   const getInitialTocc = (): ToccState => ({
@@ -123,7 +123,7 @@ function App() {
       selectedRules: {},
       supplementText: '',
     });
-    setTriageActiveTab('t');
+    setTriageActiveTab('a');
   };
 
   const resetMainScreen = () => {
@@ -132,7 +132,7 @@ function App() {
     setWorstSelectedDegree(null);
     setForceLevel1(false);
     setDirectToERSelected(false);
-    setTriageActiveTab('t');
+    setTriageActiveTab('a');
   };
 
   const handleLogout = () => {
@@ -200,6 +200,10 @@ function App() {
       triageId: patientData?.triage_id ? patientData.triage_id : null,
       patientId: patientData?.patient_id ?? null,
       patient_id: patientData?.patient_id ?? null,
+      name: patientData?.name ?? null,
+      id_number: patientData?.idNumber ?? null,
+      gender: patientData?.gender === "男" ? "M" : patientData?.gender === "女" ? "F" : "U",
+      birth_date: patientData?.birthDate?.trim() || null,
       nurseId: currentUser?.nurseId ?? null,
       nurse_id: currentUser?.nurseId ?? null,
       demoMode: isDemoMode,
@@ -221,7 +225,13 @@ function App() {
         weight: parseFloat(vitals.weight), blood_pressure_sys: parseInt(vitals.systolicBP),
         blood_pressure_dia: parseInt(vitals.diastolicBP), blood_sugar: parseInt(vitals.bloodSugar),
         gcs_eye: vitals.gcsEye, gcs_verbal: vitals.gcsVerbal, gcs_motor: vitals.gcsMotor,
-        past_medical_history: vitals.pastHistory.join(', '), do_not_treat: vitals.doNotTreat,
+        past_medical_history: [
+          vitals.pastHistory.join(', '),
+          vitals.otherHistoryDetails?.trim(),
+        ]
+          .filter(Boolean)
+          .join('; '),
+        do_not_treat: vitals.doNotTreat,
         allergy: vitals.drugAllergy, pain_score: vitals.painScore, sentiment: vitals.sentiment,
       },
       timestamp: new Date().toISOString(),
@@ -505,7 +515,7 @@ function App() {
         )}
 
         {stage === "main" && (
-          <div className="px-6 pt-2 pb-6 mx-auto max-w-screen-2xl grid grid-cols-10 gap-x-6 gap-y-4">
+          <div className="px-6 pt-2 pb-6 mx-auto max-w-screen-2xl grid grid-cols-[4.5fr_5.5fr] gap-x-6 gap-y-4">
             <ChiefComplaintProvider
               selectedSymptoms={selectedSymptoms}
               setSelectedSymptoms={setSelectedSymptoms}
@@ -523,7 +533,7 @@ function App() {
               llmMode={llmMode}
             >
               <>
-                <div className="col-span-10">
+                <div className="col-span-full">
                   <PatientInfo
                     patient={patientData}
                     bed={bed}
@@ -534,9 +544,12 @@ function App() {
                     setMajorIncident={setMajorIncident}
                     onToccChange={setTocc}
                     requireTOCC={globalConfig.requireTOCC}
+                    onPatientChange={(updated) => {
+                      setPatientData(prev => prev ? { ...prev, ...updated } as PatientData : prev);
+                    }}
                   />
                 </div>
-                <div className="col-span-5">
+                <div className="min-w-0">
                   <LeftPanel
                     selectedSymptoms={selectedSymptoms}
                     setSelectedSymptoms={setSelectedSymptoms}
@@ -548,7 +561,7 @@ function App() {
                     highlightDrugAllergy={Boolean(patientData?.drugAllergy)}
                   />
                 </div>
-                <div className="col-span-5 flex flex-col gap-4">
+                <div className="min-w-0 flex flex-col gap-4">
                   <ChiefComplaintRecommendationsPanel />
                   <SystemRecommendation
                     selectedSymptoms={selectedSymptoms}
@@ -584,6 +597,67 @@ function App() {
             initialKeyword={historyKeyword}
             initialSelectedTriageId={historySelectedId}
             onViewNurse={openNursePage}
+            onGoToMain={(record: any) => {
+              // 填入病患基本資料
+              setPatientData({
+                patient_id: record.patient_id,
+                triage_id: record.triage_id,
+                name: record.name,
+                gender: record.gender === 'M' ? '男' : record.gender === 'F' ? '女' : '不詳',
+                age: record.age,
+                birthDate: record.birth_date,
+                idNumber: record.id_number,
+                medicalId: record.medical_id,
+                drugAllergy: record.allergy,
+                icCard: false,
+              });
+
+              // 填入生命徵象
+              {
+                const rawPastMedicalHistory = record.past_medical_history ?? '';
+                const [historyItemsPart, otherHistoryPart] = rawPastMedicalHistory.split(/\s*;\s*/);
+                setVitals({
+                  temperature: record.temperature?.toString() ?? '',
+                  heartRate: record.heart_rate?.toString() ?? '',
+                  spo2: record.spo2?.toString() ?? '',
+                  respRate: record.respiratory_rate?.toString() ?? '',
+                  weight: record.weight?.toString() ?? '',
+                  systolicBP: record.blood_pressure_sys?.toString() ?? '',
+                  diastolicBP: record.blood_pressure_dia?.toString() ?? '',
+                  bloodSugar: record.blood_sugar?.toString() ?? '',
+                  bloodSugarLevel: null,
+                  gcsEye: record.gcs_eye?.toString() ?? null,
+                  gcsVerbal: record.gcs_verbal?.toString() ?? null,
+                  gcsMotor: record.gcs_motor?.toString() ?? null,
+                  obHistory: null,
+                  pastHistory: historyItemsPart ? historyItemsPart.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+                  otherHistoryDetails: otherHistoryPart?.trim() ?? '',
+                  drugAllergy: record.allergy ?? null,
+                  painScore: record.pain_score ?? null,
+                  doNotTreat: record.do_not_treat?.toString() ?? '',
+                  sentiment: record.sentiment ?? null,
+                });
+              }
+
+              // 填入主訴
+              setInputText(record.chief_complaint ?? '');
+
+              // 填入 TOCC
+              setTocc({
+                travel: record.tocc_travel ?? '',
+                travelStart: record.tocc_travel_start ?? '',
+                travelEnd: record.tocc_travel_end ?? '',
+                occupation: record.tocc_occupation ?? '',
+                occupationOther: record.tocc_occupation_other ?? '',
+                contactItems: [],
+                clusterItems: record.tocc_cluster_items ? record.tocc_cluster_items.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+                clusterOther: record.tocc_cluster_other ?? '',
+                symptoms: record.tocc_symptoms ? record.tocc_symptoms.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+              });
+
+              setVisitTime(record.visit_time ?? new Date().toISOString());
+              setStage("main");
+            }}
           />
         )}
 

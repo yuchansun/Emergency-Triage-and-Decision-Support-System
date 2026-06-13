@@ -1,5 +1,12 @@
 import React, { useState, useMemo, useEffect, useRef, createContext, useContext } from 'react';
 import { toTaiwanTraditional } from '../utils/toTaiwanTraditional';
+import {
+  buildPresentationRules,
+  buildPresentationSymptomList,
+  detectPresentationScenario,
+  sleep,
+  type PresentationScenario,
+} from '../config/presentationScenarios';
 
 interface ChiefComplaintProps {
   selectedSymptoms: Set<string>;
@@ -356,6 +363,8 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
   const preservedTextSourceRef = useRef<string>('');
   const integrateRequestIdRef = useRef(0);
   const prevVitalsSignatureRef = useRef<string>('');
+  /** 發表模式：命中預設情境時保存，供症狀/規則保底使用 */
+  const activePresentationScenarioRef = useRef<PresentationScenario | null>(null);
 
   const vitalsSignature = useMemo(() => JSON.stringify(vitals ?? {}), [vitals]);
 
@@ -395,9 +404,7 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     setRecommendationSource('none');
     setRecommendedSymptoms([]);
     lastIntegrateSignatureRef.current = '';
-    rulesPrefetchCacheRef.current = null;
-    rulesPrefetchInFlightRef.current = new Set();
-    rulesPrefetchGenerationRef.current += 1;
+    activePresentationScenarioRef.current = null;
   };
 
   // 生命徵象變更後：上次自動統整的主訴與推薦一律失效
@@ -425,17 +432,6 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       clearIntegrateArtifacts();
     }
   }, [vitalsSignature, inputText]);
-  const [rulesRefreshNonce, setRulesRefreshNonce] = useState(0);
-  const rulesPrefetchCacheRef = useRef<{
-    chiefComplaint: string;
-    vitalsSignature: string;
-    llmMode: string;
-    rulesBySymptom: Map<string, RecommendedRuleItem[]>;
-  } | null>(null);
-  const rulesPrefetchInFlightRef = useRef<Set<string>>(new Set());
-  const rulesPrefetchGenerationRef = useRef(0);
-  const selectedSymptomNamesRef = useRef<string[]>([]);
-  const prefetchRulesForSymptomsRef = useRef<(symptoms: string[]) => void>(() => {});
   const [isSupplementOpen, setIsSupplementOpen] = useState<boolean>(false);
   const [supplementText, setSupplementText] = useState<string>('');
 
@@ -1010,6 +1006,53 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
         preservedTextSourceRef.current = source;
       }
 
+      const presentationScenario = detectPresentationScenario(source || '');
+      if (presentationScenario) {
+        activePresentationScenarioRef.current = presentationScenario;
+        console.log('[PRESENTATION] 命中展示情境:', presentationScenario.id);
+
+        await sleep(presentationScenario.summarizeDelayMs);
+        if (requestId !== integrateRequestIdRef.current) {
+          console.log('[PRESENTATION] 略過過期的展示結果');
+          return;
+        }
+
+        const summary = presentationScenario.summary;
+        setLastLlmSummary(summary);
+        lastLlmSummaryRef.current = summary;
+        setInputText(summary);
+        lastIntegrateSignatureRef.current = integrateSignature;
+        lastIntegrateVitalsSignatureRef.current = vitalsSignature;
+        setActiveTab(presentationScenario.activeTab);
+
+        flashAiHighlight('chief');
+
+        const picked = new Set(
+          Array.from(selectedSymptoms).map(s =>
+            s.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '')
+          )
+        );
+        const symptomList = buildPresentationSymptomList(presentationScenario, picked);
+
+        // 主訴已出現；推薦症狀區維持「分析中」直到下方延遲結束
+        await sleep(presentationScenario.symptomsDelayAfterSummaryMs);
+        if (requestId !== integrateRequestIdRef.current) {
+          console.log('[PRESENTATION] 略過過期的推薦症狀結果');
+          return;
+        }
+
+        setLlmTraumaSymptoms([]);
+        setLlmNonTraumaSymptoms(symptomList);
+        setRecommendationSource('llm');
+        setRecommendedSymptoms(symptomList);
+
+        flashAiHighlight('symptoms');
+
+        return;
+      }
+
+      activePresentationScenarioRef.current = null;
+
       const summary = (await summarizeChiefComplaint(source)).trim();
       if (requestId !== integrateRequestIdRef.current) {
         console.log('[LLM] 略過過期的統整結果（已有較新的請求）');
@@ -1074,14 +1117,6 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       } else {
         setRecommendedSymptoms(filteredNonTrauma);
       }
-      // 畫面上推薦症狀出現後，背景逐症狀預取判斷規則
-      const displayRecommendations =
-        traumaMechanism || activeTab === 't' ? filteredTrauma : filteredNonTrauma;
-      prefetchRulesForSymptomsRef.current(displayRecommendations);
-
-      // 若已有選取症狀，強制重跑顯示邏輯
-      setRulesRefreshNonce(prev => prev + 1);
-
       // 推薦症狀完成後再閃 2 下（等主訴高亮結束，避免兩區同時閃）
       const shouldFlashSymptoms =
         llmHasResult && (filteredTrauma.length > 0 || filteredNonTrauma.length > 0);
@@ -1408,26 +1443,19 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     llmMode,
   });
 
-  const isSameRulesPrefetchContext = (ctx: ReturnType<typeof getRulesPrefetchContext>) => {
-    const cache = rulesPrefetchCacheRef.current;
-    if (!cache) return false;
-    return (
-      cache.chiefComplaint === ctx.chiefComplaint &&
-      cache.vitalsSignature === ctx.vitalsSignature &&
-      cache.llmMode === ctx.llmMode
-    );
-  };
-
-  const ensureRulesPrefetchCache = (ctx: ReturnType<typeof getRulesPrefetchContext>) => {
-    if (!isSameRulesPrefetchContext(ctx)) {
-      rulesPrefetchGenerationRef.current += 1;
-      rulesPrefetchInFlightRef.current = new Set();
-      rulesPrefetchCacheRef.current = {
-        ...ctx,
-        rulesBySymptom: new Map(),
-      };
+  /** 只保留下方 TTAS 列表也會顯示的 rule_code（與 symptomCriteriaIndex 一致） */
+  const filterRulesToCriteriaIndex = (
+    rules: RecommendedRuleItem[],
+    selectedSymptomNames: string[]
+  ): RecommendedRuleItem[] => {
+    const allowed = new Set<string>();
+    for (const symptom of selectedSymptomNames) {
+      for (const item of symptomCriteriaIndex.get(symptom) ?? []) {
+        allowed.add(item.rule_code);
+      }
     }
-    return rulesPrefetchCacheRef.current!;
+    if (!allowed.size) return rules;
+    return rules.filter(rule => allowed.has(rule.rule_code));
   };
 
   const normalizeRecommendRulesResponse = (data: unknown): RecommendedRuleItem[] => {
@@ -1455,6 +1483,26 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
   ): Promise<RecommendedRuleItem[]> => {
     if (!symptomNames.length) return [];
     const ctx = context ?? getRulesPrefetchContext();
+
+    const presentationScenario = activePresentationScenarioRef.current;
+    const hasPresentationRuleTarget =
+      presentationScenario &&
+      symptomNames.some(name =>
+        presentationScenario.ruleTargets.some(target => target.symptomName === name)
+      );
+    if (hasPresentationRuleTarget && presentationScenario && triageRows) {
+      await sleep(presentationScenario.rulesDelayMs);
+      return filterRulesToCriteriaIndex(
+        buildPresentationRules(
+          presentationScenario,
+          symptomNames,
+          triageRows,
+          age
+        ),
+        symptomNames
+      );
+    }
+
     const res = await fetch(`${LLM_BASE_URL}/api/recommend-rules`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1463,102 +1511,18 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
         chief_complaint: ctx.chiefComplaint,
         vitals: vitals || {},
         llm_mode: ctx.llmMode,
+        age: age ?? null,
       }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    return normalizeRecommendRulesResponse(data);
+    return filterRulesToCriteriaIndex(
+      normalizeRecommendRulesResponse(data),
+      symptomNames
+    );
   };
 
-  const collectCachedRulesForSymptoms = (symptomNames: string[]): RecommendedRuleItem[] | null => {
-    if (!isSameRulesPrefetchContext(getRulesPrefetchContext())) return null;
-    const cache = rulesPrefetchCacheRef.current;
-    if (!cache) return null;
-    if (!symptomNames.every(name => cache.rulesBySymptom.has(name))) return null;
-    const result: RecommendedRuleItem[] = [];
-    for (const name of symptomNames) {
-      result.push(...(cache.rulesBySymptom.get(name) ?? []));
-    }
-    return result;
-  };
-
-  const applySelectedRulesFromCache = (symptomNames: string[]): boolean => {
-    const cached = collectCachedRulesForSymptoms(symptomNames);
-    if (cached === null) return false;
-    setRecommendedRules(cached);
-    setIsRecommendRulesLoading(false);
-    return true;
-  };
-
-  const prefetchRulesForSymptoms = (symptomNames: string[]) => {
-    const ctx = getRulesPrefetchContext();
-    const generation = rulesPrefetchGenerationRef.current;
-    const cache = ensureRulesPrefetchCache(ctx);
-    const unique = [...new Set(symptomNames)].filter(Boolean);
-    if (!unique.length) return;
-
-    for (const symptom of unique) {
-      if (cache.rulesBySymptom.has(symptom)) continue;
-      if (rulesPrefetchInFlightRef.current.has(symptom)) continue;
-
-      rulesPrefetchInFlightRef.current.add(symptom);
-      console.log('[RULES] prefetch start (1 symptom):', symptom);
-
-      void (async () => {
-        try {
-          const rules = await fetchRecommendRulesFromApi([symptom], ctx);
-          if (generation !== rulesPrefetchGenerationRef.current) return;
-          if (!isSameRulesPrefetchContext(ctx)) return;
-
-          const currentCache = rulesPrefetchCacheRef.current;
-          if (!currentCache) return;
-          currentCache.rulesBySymptom.set(
-            symptom,
-            rules.filter(rule => rule.symptom_name === symptom)
-          );
-          console.log('[RULES] prefetch done:', symptom, rules.length, 'rules');
-
-          const selected = selectedSymptomNamesRef.current;
-          if (selected.length > 0) {
-            applySelectedRulesFromCache(selected);
-          }
-        } catch (err) {
-          console.error('[RULES] prefetch failed:', symptom, err);
-          if (generation !== rulesPrefetchGenerationRef.current) return;
-          if (!isSameRulesPrefetchContext(ctx)) return;
-          rulesPrefetchCacheRef.current?.rulesBySymptom.set(symptom, []);
-        } finally {
-          rulesPrefetchInFlightRef.current.delete(symptom);
-          if (generation === rulesPrefetchGenerationRef.current) {
-            const selected = selectedSymptomNamesRef.current;
-            if (selected.length > 0) {
-              applySelectedRulesFromCache(selected);
-            }
-          }
-        }
-      })();
-    }
-  };
-
-  prefetchRulesForSymptomsRef.current = prefetchRulesForSymptoms;
-
-  // 畫面上推薦症狀變動時，背景逐症狀預取規則
-  useEffect(() => {
-    if (isLlmIntegrating || !recommendedSymptoms.length) return;
-
-    const debounceMs = recommendationSource !== 'none' ? 200 : 600;
-    const timer = setTimeout(() => {
-      prefetchRulesForSymptoms(recommendedSymptoms);
-    }, debounceMs);
-
-    return () => clearTimeout(timer);
-  }, [recommendedSymptoms, recommendationSource, inputText, vitalsSignature, llmMode, isLlmIntegrating]);
-
-  useEffect(() => {
-    selectedSymptomNamesRef.current = symptomTags.map(tag => tag.display);
-  }, [symptomTags]);
-
-  // 點選症狀後顯示規則：優先讀預取快取
+  // 點選症狀後才請求推薦判斷規則（不做背景預取，避免 Ollama 排隊多筆 LLM）
   useEffect(() => {
     const selectedSymptomNames = symptomTags.map(tag => tag.display);
     if (selectedSymptomNames.length === 0) {
@@ -1567,41 +1531,14 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       return;
     }
 
-    if (applySelectedRulesFromCache(selectedSymptomNames)) {
-      return;
-    }
-
-    const missing = selectedSymptomNames.filter(name => {
-      const cache = rulesPrefetchCacheRef.current;
-      return !cache?.rulesBySymptom.has(name);
-    });
-    const waitingPrefetch = missing.some(name => rulesPrefetchInFlightRef.current.has(name));
-
-    if (missing.length > 0) {
-      prefetchRulesForSymptoms(missing);
-    }
-
-    if (waitingPrefetch || missing.length > 0) {
-      setIsRecommendRulesLoading(true);
-      return;
-    }
-
     let cancelled = false;
     const timer = setTimeout(async () => {
       setIsRecommendRulesLoading(true);
       try {
+        console.log('[RULES] 依已選症狀請求規則:', selectedSymptomNames);
         const rules = await fetchRecommendRulesFromApi(selectedSymptomNames);
         if (cancelled) return;
         setRecommendedRules(rules);
-
-        const ctx = getRulesPrefetchContext();
-        const cache = ensureRulesPrefetchCache(ctx);
-        for (const name of selectedSymptomNames) {
-          cache.rulesBySymptom.set(
-            name,
-            rules.filter(rule => rule.symptom_name === name)
-          );
-        }
       } catch (err) {
         console.error('[RULES] 推薦判斷規則失敗', err);
         if (!cancelled) setRecommendedRules([]);
@@ -1614,7 +1551,7 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [symptomTags, vitalsSignature, inputText, llmMode, LLM_BASE_URL, rulesRefreshNonce]);
+  }, [symptomTags, vitalsSignature, inputText, llmMode, age, LLM_BASE_URL]);
 
   const wasRecommendRulesLoadingRef = useRef(false);
   useEffect(() => {
@@ -1686,16 +1623,16 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
   const getRuleColors = (degree: number) => {
     switch (degree) {
       case 1:
-        return { border: 'border-red-500', bg: 'bg-red-500/20 hover:bg-red-500/30', text: 'text-red-500' };
+        return { border: 'border-red-500', bg: 'bg-red-500/30 hover:bg-red-500/40', text: 'text-red-600' };
       case 2:
-        return { border: 'border-orange-500', bg: 'bg-orange-500/20 hover:bg-orange-500/30', text: 'text-orange-500' };
+        return { border: 'border-orange-500', bg: 'bg-orange-500/30 hover:bg-orange-500/40', text: 'text-orange-600' };
       case 3:
-        return { border: 'border-yellow-500', bg: 'bg-yellow-500/20 hover:bg-yellow-500/30', text: 'text-yellow-500' };
+        return { border: 'border-yellow-500', bg: 'bg-yellow-500/30 hover:bg-yellow-500/40', text: 'text-yellow-600' };
       case 4:
-        return { border: 'border-green-500', bg: 'bg-green-500/20 hover:bg-green-500/30', text: 'text-green-500' };
+        return { border: 'border-green-500', bg: 'bg-green-500/30 hover:bg-green-500/40', text: 'text-green-600' };
       case 5:
       default:
-        return { border: 'border-blue-500', bg: 'bg-blue-500/20 hover:bg-blue-500/30', text: 'text-blue-500' };
+        return { border: 'border-blue-500', bg: 'bg-blue-500/30 hover:bg-blue-500/40', text: 'text-blue-600' };
     }
   };
 
@@ -2001,16 +1938,6 @@ export const ChiefComplaintRecommendationsPanel: React.FC = () => {
         <div className="inline-flex gap-1.5 bg-background-light dark:bg-background-dark/60 px-2 py-1.5 rounded-2xl border border-primary/30">
           <button
             type="button"
-            onClick={() => c.setActiveTab('t')}
-            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-colors sm:px-5 sm:py-2 sm:text-base ${c.activeTab === 't'
-              ? 'bg-primary text-white'
-              : 'bg-transparent text-primary hover:bg-primary/10'
-              }`}
-          >
-            T 外傷
-          </button>
-          <button
-            type="button"
             onClick={() => c.setActiveTab('a')}
             className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-colors sm:px-5 sm:py-2 sm:text-base ${c.activeTab === 'a'
               ? 'bg-primary text-white'
@@ -2018,6 +1945,16 @@ export const ChiefComplaintRecommendationsPanel: React.FC = () => {
               }`}
           >
             {(c.age !== undefined ? (c.age >= 18 ? 'A' : 'P') : 'A')} 非外傷
+          </button>
+          <button
+            type="button"
+            onClick={() => c.setActiveTab('t')}
+            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-colors sm:px-5 sm:py-2 sm:text-base ${c.activeTab === 't'
+              ? 'bg-primary text-white'
+              : 'bg-transparent text-primary hover:bg-primary/10'
+              }`}
+          >
+            T 外傷
           </button>
         </div>
       </div>
@@ -2105,38 +2042,41 @@ export const ChiefComplaintRecommendationsPanel: React.FC = () => {
                         <span className="text-xs font-semibold text-subtext-light dark:text-subtext-dark shrink-0">
                           {symptom}：
                         </span>
-                        {rules.map(rule => {
-                          const colors = c.getRuleColors(rule.ttas_degree);
-                          const isSelected = !!c.selectedRules[rule.rule_code];
-                          return (
-                            <button
-                              key={`${rule.symptom_name}__${rule.rule_code}`}
-                              type="button"
-                              onClick={() =>
-                                c.setSelectedRules(prev => {
-                                  const next = { ...prev };
-                                  Object.keys(next).forEach(ruleCode => {
-                                    if (next[ruleCode].symptom_name === rule.symptom_name) {
-                                      delete next[ruleCode];
-                                    }
-                                  });
-                                  if (prev[rule.rule_code]) return next;
-                                  next[rule.rule_code] = {
-                                    degree: rule.ttas_degree,
-                                    judge: rule.judge_name,
-                                    rule_code: rule.rule_code,
-                                    symptom_name: rule.symptom_name,
-                                  };
-                                  return next;
-                                })
-                              }
-                              className={`px-3 py-1.5 rounded-full border text-xs leading-snug text-left max-w-full ${colors.border} ${isSelected ? `${colors.bg.replace('20', '90')} text-white ring-2 ring-offset-1 ring-primary` : `${colors.bg} text-black`}`}
-                              title={`${rule.symptom_name}｜第${rule.ttas_degree}級：${rule.judge_name}`}
-                            >
-                              第{rule.ttas_degree}級：{rule.judge_name}
-                            </button>
-                          );
-                        })}
+                        {(() => {
+                          return rules.map(rule => {
+                            const colors = c.getRuleColors(rule.ttas_degree);
+                            const isSelected = !!c.selectedRules[rule.rule_code];
+                            return (
+                              <React.Fragment key={`${rule.symptom_name}__${rule.rule_code}`}>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    c.setSelectedRules(prev => {
+                                      const next = { ...prev };
+                                      Object.keys(next).forEach(ruleCode => {
+                                        if (next[ruleCode].symptom_name === rule.symptom_name) {
+                                          delete next[ruleCode];
+                                        }
+                                      });
+                                      if (prev[rule.rule_code]) return next;
+                                      next[rule.rule_code] = {
+                                        degree: rule.ttas_degree,
+                                        judge: rule.judge_name,
+                                        rule_code: rule.rule_code,
+                                        symptom_name: rule.symptom_name,
+                                      };
+                                      return next;
+                                    })
+                                  }
+                                  className={`px-3 py-1.5 rounded-full border font-semibold text-xs leading-snug text-left max-w-full transition duration-200 ease-out transform ${colors.border} ${isSelected ? `${colors.bg.replace('30', '95')} text-white ring-2 ring-offset-1 ring-primary shadow-lg` : `${colors.bg} ${colors.text} hover:scale-105 active:scale-95`}`}
+                                  title={`${rule.symptom_name}｜第${rule.ttas_degree}級：${rule.judge_name}`}
+                                >
+                                  第{rule.ttas_degree}級：{rule.judge_name}
+                                </button>
+                              </React.Fragment>
+                            );
+                          });
+                        })()}
                       </div>
                       ))}
                     </div>
@@ -2160,49 +2100,58 @@ export const ChiefComplaintRecommendationsPanel: React.FC = () => {
                       }, new Map<number, typeof criteria>())
                     )
                       .sort((a, b) => a[0] - b[0])
-                      .map(([degree, items]) => (
-                        <div key={`${display}-degree-${degree}`} className="flex flex-wrap gap-2 min-w-0">
-                          {items.map(item => {
-                            const colors = c.getRuleColors(item.degree);
-                            const isSelected = !!c.selectedRules[item.rule_code];
-                            return (
-                              <button
-                                key={item.rule_code}
-                                type="button"
-                                onClick={() =>
-                                  c.setSelectedRules(prev => {
-                                    const next = { ...prev };
-                                    const existing = prev[item.rule_code];
+                      .map(([degree, items], idx) => {
+                        const showSeparatorAbove = idx > 0;
+                        return (
+                          <React.Fragment key={`${display}-degree-${degree}`}>
+                            {showSeparatorAbove && (
+                              <div className="w-full border-t-2 border-dashed border-primary/80 dark:border-primary/60 my-3" aria-hidden />
+                            )}
+                            <div className="flex flex-wrap gap-2 min-w-0">
+                              {items.map(item => {
+                                const colors = c.getRuleColors(item.degree);
+                                const isSelected = !!c.selectedRules[item.rule_code];
+                                return (
+                                  <React.Fragment key={item.rule_code}>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        c.setSelectedRules(prev => {
+                                          const next = { ...prev };
+                                          const existing = prev[item.rule_code];
 
-                                    Object.keys(next).forEach(ruleCode => {
-                                      if (next[ruleCode].symptom_name === display) {
-                                        delete next[ruleCode];
+                                          Object.keys(next).forEach(ruleCode => {
+                                            if (next[ruleCode].symptom_name === display) {
+                                              delete next[ruleCode];
+                                            }
+                                          });
+
+                                          if (existing) {
+                                            return next;
+                                          }
+
+                                          next[item.rule_code] = {
+                                            degree: item.degree,
+                                            judge: item.judge,
+                                            rule_code: item.rule_code,
+                                            symptom_name: display,
+                                          };
+
+                                          return next;
+                                        })
                                       }
-                                    });
-
-                                    if (existing) {
-                                      return next;
-                                    }
-
-                                    next[item.rule_code] = {
-                                      degree: item.degree,
-                                      judge: item.judge,
-                                      rule_code: item.rule_code,
-                                      symptom_name: display,
-                                    };
-
-                                    return next;
-                                  })
-                                }
-                                className={`px-3 py-1.5 rounded-full border text-xs leading-snug text-left max-w-full ${colors.border} ${isSelected ? `${colors.bg.replace('20', '90')} text-white ring-2 ring-offset-1 ring-primary` : `${colors.bg} text-black`}`}
-                                title={`第${item.degree}級：${item.judge}`}
-                              >
-                                第{item.degree}級：{item.judge}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ))}
+                                      className={`px-3 py-1.5 rounded-full border font-semibold text-xs leading-snug text-left max-w-full transition duration-200 ease-out transform ${colors.border} ${isSelected ? `${colors.bg.replace('30', '95')} text-white ring-2 ring-offset-1 ring-primary shadow-lg` : `${colors.bg} ${colors.text} hover:scale-105 active:scale-95`}`}
+                                      title={`第${item.degree}級：${item.judge}`}
+                                    >
+                                      第{item.degree}級：{item.judge}
+                                    </button>
+                                  </React.Fragment>
+                                );
+                              })}
+                            </div>
+                          </React.Fragment>
+                        );
+                      })}
                   </div>
                 )
               ))}

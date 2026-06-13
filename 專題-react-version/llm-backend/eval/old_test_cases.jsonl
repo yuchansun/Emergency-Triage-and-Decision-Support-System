@@ -30,7 +30,7 @@
   "allergy": "無",
   "past_medical_history": "高血壓, 糖尿病, 心臟病",
   "chief_complaint": "咳嗽、痰多一週，2天前開始呼吸喘",
-  "rule_code": "A010101",
+  "rule_code": "A010104",
   "triage_level": 2,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -48,48 +48,7 @@
   "tocc_cluster_items": "無",
   "tocc_cluster_other": ""
 }
-{
-  "triage_id": "20260506140-54",
-  "patient_id": "P_19491202_076M",
-  "medical_id": "P_19491202_076M",
-  "id_number": "",
-  "name": "",
-  "gender": "M",
-  "age": 76,
-  "birth_date": "1958-07-21",
-  "nurse_id": null,
-  "nurse_name": "",
-  "bed": "000",
-  "patient_source": "自行進入",
-  "major_incident": "否",
-  "do_not_treat": 0,
-  "created_at": "2026-05-06T21:14:00",
-  "visit_time": "2026-05-06T21:14:23",
-  "temperature": 36.3,
-  "heart_rate": 100,
-  "respiratory_rate": 20,
-  "blood_pressure_sys": 164,
-  "blood_pressure_dia": 69,
-  "spo2": 85,
-  "blood_sugar": null,
-  "weight": null,
-  "gcs_eye": 4,
-  "gcs_verbal": 5,
-  "gcs_motor": 6,
-  "pain_score": null,
-  "allergy": "無",
-  "past_medical_history": "高血壓,糖尿病,癌症（肺癌）,高血脂",
-  "chief_complaint": "今日洗腎完後洗腎診所醫師建議來急診輸血(Hct 20%),昨日剛從本院出院",
-  "rule_code": "A131504",
-  "triage_level": 2,
-  "sentiment": null,
-  "symptom_rule_pairs": [
-    {
-      "symptom_name": "蒼白/貧血",
-      "judge_name": "中度呼吸窘迫（<92%）"
-    }
-  ]
-}
+
 {
   "triage_id": "MRN-20260425-004159-55JD",
   "patient_id": "P_19640305_062F",
@@ -280,8 +239,8 @@
   "sentiment": null,
   "symptom_rule_pairs": [
     {
-      "symptom_name": "泌尿道感染相關症狀泌尿道感染相關症狀（頻尿、解尿疼痛）",
-      "judge_name": "發燒疑似敗血症，伴隨任一徵象(中度呼吸窘迫、血行動力循環不足或意識程度改變)及SIRS的條件≧3"
+      "symptom_name": "泌尿道感染相關症狀",
+      "judge_name": "發燒疑似敗血症且符合SIRS"
     }
   ],
   "tocc_travel": "越南",
@@ -332,7 +291,7 @@
   "symptom_rule_pairs": [
     {
       "symptom_name": "發燒/畏寒",
-      "judge_name": "發燒疑似敗血症伴隨意識程度改變發燒疑似敗血症，伴隨任一徵象(中度呼吸窘迫、血行動力循環不足或意識程度改變)及SIRS的條件≧3"
+      "judge_name": "發燒疑似敗血症伴隨意識程度改變"
     }
   ],
   "tocc_travel": "無",
@@ -434,7 +393,7 @@
   "symptom_rule_pairs": [
     {
       "symptom_name": "意識程度改變",
-      "judge_name": "無意識(GCS3-8)"
+      "judge_name": "GCS評分為3-8分"
     }
   ],
   "tocc_travel": "-",
@@ -479,7 +438,7 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "G2P1 LMP:115.03.25 AP5W 昨天開始出血，有至馬偕求診安胎針，剛睡前又開始腹痛、鮮紅色出血16cm護墊全滿",
-  "rule_code": "A100917",
+  "rule_code": "O030141",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -530,7 +489,7 @@
   "allergy": "無",
   "past_medical_history": "糖尿病",
   "chief_complaint": "訴躺下的時候覺得胸口有東西壓住，坐著就沒有，打嗝有酸味",
-  "rule_code": "A020215",
+  "rule_code": "C030104",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -581,13 +540,13 @@
   "allergy": "無",
   "past_medical_history": "其他(高血脂, APP S/P)",
   "chief_complaint": "晚餐吃魚後疑似喉嚨卡魚刺，診所就醫表無看到異物故建議轉入",
-  "rule_code": "A070915",
+  "rule_code": "E030122",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "吞嚥困難",
-      "judge_name": "可能有異物"
+      "judge_name": "可能局部的異物"
     }
   ],
   "tocc_travel": "無",
@@ -632,7 +591,7 @@
   "allergy": "無",
   "past_medical_history": "氣喘, 癌症, 其他(APP S/P)",
   "chief_complaint": "昨天始腹瀉1、今早始頭暈、變換姿勢加劇、惡心嘔吐5-6",
-  "rule_code": "A040313",
+  "rule_code": "N030141",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -683,7 +642,7 @@
   "allergy": "無",
   "past_medical_history": "氣喘",
   "chief_complaint": "近一週始咳嗽、呼吸喘、有聽到咻咻聲、帶黃痰，OPD就醫過，現因症狀無改善入",
-  "rule_code": "A010110",
+  "rule_code": "A030103",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -734,7 +693,7 @@
   "allergy": "BAKTAR, VOREN",
   "past_medical_history": "高血壓, 其他(甲狀腺低下)",
   "chief_complaint": "腹部紅腫三天",
-  "rule_code": "A091104",
+  "rule_code": "S030191",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -785,7 +744,7 @@
   "allergy": "無",
   "past_medical_history": "其他(痛風)",
   "chief_complaint": "訴右腰痛、解尿困難21點始",
-  "rule_code": "A060113",
+  "rule_code": "P030142",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -836,7 +795,7 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "剛剛開始眩暈症發作入",
-  "rule_code": "A040311",
+  "rule_code": "N030181",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -887,13 +846,13 @@
   "allergy": "不詳",
   "past_medical_history": "不詳",
   "chief_complaint": "家屬表示11點發現叫不醒 11:41 119車上給4支bosmine 病患身上已出現屍斑 牙關緊閉",
-  "rule_code": "A020101",
+  "rule_code": "C010101",
   "triage_level": 1,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "心跳停止",
-      "judge_name": "心跳停止"
+      "judge_name": "內科到院前死亡(OHCA)"
     }
   ],
   "tocc_travel": "無",
@@ -938,13 +897,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "12:50叫喚病人無反應",
-  "rule_code": "A020101",
+  "rule_code": "C010101",
   "triage_level": 1,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "心跳停止",
-      "judge_name": "心跳停止"
+      "judge_name": "內科到院前死亡(OHCA)"
     }
   ],
   "tocc_travel": "-",
@@ -989,13 +948,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "119推入，家屬表早上叫喚不醒，91抵現場內科OHCA入",
-  "rule_code": "A020101",
+  "rule_code": "C010101",
   "triage_level": 1,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "心跳停止",
-      "judge_name": "心跳停止"
+      "judge_name": "內科到院前死亡(OHCA)"
     }
   ],
   "tocc_travel": "-",
@@ -1040,13 +999,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "內科OHCA",
-  "rule_code": "A020101",
+  "rule_code": "C010101",
   "triage_level": 1,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "心跳停止",
-      "judge_name": "心跳停止"
+      "judge_name": "內科到院前死亡(OHCA)"
     }
   ],
   "tocc_travel": "無",
@@ -1091,13 +1050,13 @@
   "allergy": "無",
   "past_medical_history": "其他(HBV, 高血脂)",
   "chief_complaint": "119送入，表示晚上開始感胸痛、院外OHCA、電擊過一次、已恢復心跳入",
-  "rule_code": "A020101",
+  "rule_code": "C010103",
   "triage_level": 1,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "心跳停止",
-      "judge_name": "心跳停止"
+      "judge_name": "院外OHCA經電擊後ROSC入院"
     }
   ],
   "tocc_travel": "-",
@@ -1110,6 +1069,56 @@
   "tocc_cluster_other": ""
 }
 
+{
+  "triage_id": "MRN-20260423-084802-10JD",
+  "patient_id": "P_19710914_054F",
+  "medical_id": "P_19710914_054F",
+  "id_number": "123456789",
+  "name": "無名氏",
+  "gender": "F",
+  "age": 54,
+  "birth_date": "1971-09-14",
+  "nurse_id": 1,
+  "nurse_name": "黃曉萱",
+  "bed": "",
+  "patient_source": "119送入",
+  "major_incident": "是",
+  "do_not_treat": 0,
+  "created_at": "2026-04-23T08:48:00",
+  "visit_time": "2026-04-23T08:48:02",
+  "temperature": 37.0,
+  "heart_rate": null,
+  "respiratory_rate": null,
+  "blood_pressure_sys": null,
+  "blood_pressure_dia": null,
+  "spo2": null,
+  "blood_sugar": null,
+  "weight": null,
+  "gcs_eye": 2,
+  "gcs_verbal": 2,
+  "gcs_motor": 5,
+  "pain_score": null,
+  "allergy": "無",
+  "past_medical_history": "無",
+  "chief_complaint": "洗腎過程中OHCA、院外電擊兩次後ROSC",
+  "rule_code": "C010103",
+  "triage_level": 1,
+  "sentiment": null,
+  "symptom_rule_pairs": [
+    {
+      "symptom_name": "心跳停止",
+      "judge_name": "洗腎中OHCA經電擊電復ROSC"
+    }
+  ],
+  "tocc_travel": "-",
+  "tocc_travel_start": null,
+  "tocc_travel_end": null,
+  "tocc_occupation": "",
+  "tocc_occupation_other": "",
+  "tocc_symptoms": "無",
+  "tocc_cluster_items": "無",
+  "tocc_cluster_other": ""
+}
 
 {
   "triage_id": "MRN-20260214-190213-18JD",
@@ -1143,13 +1152,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "據同居女友表示患者下午兩點為清醒狀態，後來患者於客廳脫光衣服在沙發睡覺，患者女友於房間睡覺，剛剛要叫患者起床叫不醒才打電話給119 119車上予一 bunk bosmine",
-  "rule_code": "A020101",
+  "rule_code": "C010101",
   "triage_level": 1,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "心跳停止",
-      "judge_name": "心跳停止"
+      "judge_name": "到院前心肺功能停止(OHCA)"
     }
   ],
   "tocc_travel": "無",
@@ -1194,13 +1203,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "被陌生人用球棒打左上臂",
-  "rule_code": "T120114",
+  "rule_code": "T030191",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "上肢鈍傷",
-      "judge_name": "急性周邊邊重度疼痛(8-10)"
+      "judge_name": "急性周邊邊重度疼痛(8-10分)"
     }
   ],
   "tocc_travel": "無",
@@ -1245,13 +1254,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "119帶入，表剛機車-機車車禍，安全帽無掉落、無意識喪失，現表左小腿痛、擦傷",
-  "rule_code": "T120808",
+  "rule_code": "T030182",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "下肢撕裂傷、擦傷",
-      "judge_name": "血壓或心跳有異於病人之平常數值，但血行動力穩定"
+      "judge_name": "血壓或心跳有異於平常數值但血流動力穩定"
     }
   ],
   "tocc_travel": "無",
@@ -1296,7 +1305,7 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "4/29中午發生被網友手指進入陰道",
-  "rule_code": "T140101",
+  "rule_code": "V010101",
   "triage_level": 1,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -1347,7 +1356,7 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "訴機車車禍先去仁愛醫院，CT無明顯異常，出院返家在家門口樓梯前暈倒5分，醒來時完全忘記去醫院後的事",
-  "rule_code": "T020302",
+  "rule_code": "T010101",
   "triage_level": 1,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -1366,7 +1375,56 @@
   "tocc_cluster_other": ""
 }
 
-
+{
+  "triage_id": "MRN-20260411-163934-12JD",
+  "patient_id": "無名氏1639",
+  "medical_id": "無名氏1639",
+  "id_number": "123456789",
+  "name": "無名氏",
+  "gender": "M",
+  "age": null,
+  "birth_date": "",
+  "nurse_id": 1,
+  "nurse_name": "黃曉萱",
+  "bed": "",
+  "patient_source": "119送入",
+  "major_incident": "是",
+  "do_not_treat": 0,
+  "created_at": "2026-04-11T16:39:00",
+  "visit_time": "2026-04-11T16:39:34",
+  "temperature": null,
+  "heart_rate": null,
+  "respiratory_rate": null,
+  "blood_pressure_sys": null,
+  "blood_pressure_dia": null,
+  "spo2": null,
+  "blood_sugar": null,
+  "weight": null,
+  "gcs_eye": 1,
+  "gcs_verbal": 1,
+  "gcs_motor": 1,
+  "pain_score": null,
+  "allergy": "無",
+  "past_medical_history": "無",
+  "chief_complaint": "外科OHCA",
+  "rule_code": "M010101",
+  "triage_level": 1,
+  "sentiment": null,
+  "symptom_rule_pairs": [
+    {
+      "symptom_name": "多重鈍傷/穿刺傷",
+      "judge_name": "心跳/呼吸停止"
+    }
+  ],
+  "tocc_travel": "無",
+  "tocc_travel_start": null,
+  "tocc_travel_end": null,
+  "tocc_occupation": "其他",
+  "tocc_occupation_other": "",
+  "tocc_symptoms": "無",
+  "tocc_cluster_items": "無",
+  "tocc_cluster_other": ""
+}
 
 {
   "triage_id": "MRN-20260302-040917-13JD",
@@ -1400,13 +1458,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "119送入，跟女友吵架分手從8樓跳落、外科OHCA、MCPR入",
-  "rule_code": "T010101",
+  "rule_code": "M010101",
   "triage_level": 1,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "多重鈍傷/穿刺傷",
-      "judge_name": "心跳/呼吸停止"
+      "judge_name": "高處墜落外科OHCA"
     }
   ],
   "tocc_travel": "-",
@@ -1451,13 +1509,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "119推入，北海通報高處墜落幾樓不確定，外科OHCA入",
-  "rule_code": "T010101",
+  "rule_code": "M010101",
   "triage_level": 1,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "多重鈍傷/穿刺傷",
-      "judge_name": "心跳/呼吸停止"
+      "judge_name": "外科到院前死亡(OHCA)"
     }
   ],
   "tocc_travel": "無",
@@ -1502,13 +1560,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "家屬表從7樓開窗跳下",
-  "rule_code": "T010101",
+  "rule_code": "M010101",
   "triage_level": 1,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "多重鈍傷/穿刺傷",
-      "judge_name": "心跳/呼吸停止"
+      "judge_name": "高空墜落致死性外科OHCA"
     }
   ],
   "tocc_travel": "-",
@@ -1553,13 +1611,13 @@
   "allergy": "無",
   "past_medical_history": "高血壓, 糖尿病, 肺部疾病, 其他(心臟支架4)",
   "chief_complaint": "19推入，家屬表聽到聲響發現病患倒臥房門，叫喚時眼睛還有打開，喘氣後失去意識，現雙眼瘀青腫脹、前額撕裂傷存",
-  "rule_code": "A020101",
+  "rule_code": "C010101",
   "triage_level": 1,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "心跳停止",
-      "judge_name": "心跳停止"
+      "judge_name": "內科到院前死亡(OHCA)"
     }
   ],
   "tocc_travel": "-",
@@ -1604,13 +1662,13 @@
   "allergy": "無",
   "past_medical_history": "不詳",
   "chief_complaint": "外科OHCA，右手明顯變形",
-  "rule_code": "T010101",
+  "rule_code": "M010101",
   "triage_level": 1,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "多重鈍傷/穿刺傷",
-      "judge_name": "心跳/呼吸停止"
+      "judge_name": "車禍重大外傷外科OHCA"
     }
   ],
   "tocc_travel": "-",
@@ -1655,13 +1713,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "119推入 外科OHCA 13:30發現上吊 直入急救室",
-  "rule_code": "T010101",
+  "rule_code": "M010101",
   "triage_level": 1,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "多重鈍傷/穿刺傷",
-      "judge_name": "心跳/呼吸停止"
+      "judge_name": "窒息致外科OHCA"
     }
   ],
   "tocc_travel": "-",
@@ -1706,13 +1764,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "報案異物哽塞，救護車到場OHCA給予CPR兩分鐘後ROSC並取出大塊東坡肉",
-  "rule_code": "A070912",
+  "rule_code": "E030181",
   "triage_level": 1,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "吞嚥困難",
-      "judge_name": "血壓或心跳有異於病人之平常數值，但血行動力穩定"
+      "judge_name": "異物哽塞經急救復甦後ROSC"
     }
   ],
   "tocc_travel": "-",
@@ -1757,7 +1815,7 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "由四樓掉一樓、外科OHCA入",
-  "rule_code": "T010101",
+  "rule_code": "M010101",
   "triage_level": 1,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -1808,13 +1866,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "吃飽飯後開始下腹痛，上吐下瀉各一次",
-  "rule_code": "A030113",
+  "rule_code": "G030142",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "腹痛",
-      "judge_name": "急性中樞中度疼痛(4-7)"
+      "judge_name": "中度疼痛(4-7分)"
     }
   ],
   "tocc_travel": "無",
@@ -1859,13 +1917,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "下午開始腹瀉3次且有尿布疹，哥哥班上有腸病毒",
-  "rule_code": "A030415",
+  "rule_code": "G050105",
   "triage_level": 5,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "腹瀉",
-      "judge_name": "輕微腹瀉，無脫水現象，生命徵象正常，無發燒，無疼痛不適"
+      "judge_name": "輕微腹瀉且無脫水現象"
     }
   ],
   "tocc_travel": "無",
@@ -1910,7 +1968,7 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "訴發燒、頭痛、噁心前天始，昨天台北醫院求診表泌尿道感染，有開退燒藥跟抗生素，但今天還是燒怕有問題故入",
-  "rule_code": "A130212",
+  "rule_code": "F030181",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -1961,7 +2019,7 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "早上11點開始心悸",
-  "rule_code": "A020313",
+  "rule_code": "C030181",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -2012,7 +2070,7 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "呼吸道症狀兩週，發燒五天",
-  "rule_code": "P071410",
+  "rule_code": "E030141",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -2063,13 +2121,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "訴腹痛、嘔吐5次晚上8點始",
-  "rule_code": "A030113",
+  "rule_code": "G030142",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "腹痛",
-      "judge_name": "中度疼痛(4-7)"
+      "judge_name": "中度疼痛(4-7分)"
     }
   ],
   "tocc_travel": "無",
@@ -2114,7 +2172,7 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "家屬表晚上10點左右開始哮吼發作",
-  "rule_code": "A010112",
+  "rule_code": "A030181",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -2165,13 +2223,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "週六有發燒過，後續開始有上呼吸道症狀、活動力及食慾下降故入",
-  "rule_code": "P5728058",
+  "rule_code": "F040101",
   "triage_level": 4,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "發燒/畏寒",
-      "judge_name": "年齡>3Y，體溫>38℃，看起來有病容(活動力不佳)"
+      "judge_name": "看起來無病容且活動力佳"
     }
   ],
   "tocc_travel": "無",
@@ -2216,7 +2274,7 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "早上開始感覺精神很恍惚",
-  "rule_code": "A110105",
+  "rule_code": "M040102",
   "triage_level": 4,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -2267,7 +2325,7 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "家屬表4/5開始咳嗽、流鼻水，今天開始發燒",
-  "rule_code": "A130212",
+  "rule_code": "F030181",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -2318,13 +2376,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "早上執行攝護腺切片後開始解尿困難、尿不出來",
-  "rule_code": "A060610",
+  "rule_code": "U030142",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "尿滯留",
-      "judge_name": "急性中樞中度疼痛(4-7)"
+      "judge_name": "急性中樞中度疼痛(4-7分)"
     }
   ],
   "tocc_travel": "無",
@@ -2369,13 +2427,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "訴忽冷忽熱、頭暈、噁心晚上始",
-  "rule_code": "A130212",
+  "rule_code": "F030181",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "發燒/畏寒",
-      "judge_name": "血壓或心跳有異於病人之平常數值，但血行動力穩定"
+      "judge_name": "血壓或心跳有異於平常數值但血流穩定"
     }
   ],
   "tocc_travel": "無",
@@ -2420,7 +2478,7 @@
   "allergy": "無",
   "past_medical_history": "高血壓, 其他(甲亢)",
   "chief_complaint": "女兒代訴早上10點開車自撞電線桿，自訴當下感一陣暈眩，下午5.6點返家時發現反應有些微遲鈍，三重醫院求診表中風，因他院僅能給予藥物治療，後續若病情加重無法給予適當照護且家屬為本院員工故轉入",
-  "rule_code": "A130514",
+  "rule_code": "T030142",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -2471,7 +2529,7 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "訴今天下班後發現左頸紅疹癢",
-  "rule_code": "A090315",
+  "rule_code": "S040111",
   "triage_level": 4,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -2522,13 +2580,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "因雙腳甲溝炎昨天早上沒站好頭去撞牆，當下無意識喪失，現表頭暈、噁心嘔吐*2入",
-  "rule_code": "T020114",
+  "rule_code": "T030142",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "頭部鈍傷",
-      "judge_name": "急性中樞中度疼痛(4-7)"
+      "judge_name": "急性中樞中度疼痛(4-7分)"
     }
   ],
   "tocc_travel": "無",
@@ -2573,7 +2631,7 @@
   "allergy": "無",
   "past_medical_history": "糖尿病",
   "chief_complaint": "119推入，表路人報案看到病患騎機車自撞路旁，現場血糖:547，GCS:E3V4M6，現表左側胸痛、左手背、左臉頰血腫",
-  "rule_code": "T080105",
+  "rule_code": "T020102",
   "triage_level": 2,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -2624,13 +2682,13 @@
   "allergy": "無",
   "past_medical_history": "其他(帕金森、cata)",
   "chief_complaint": "本身因帕金森行動不便，2天前走路不慎跌倒，屁股著地，現表右臀及右下肢疼痛入",
-  "rule_code": "T090113",
+  "rule_code": "T030142",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "腹部(含骨盆)鈍傷",
-      "judge_name": "急性中樞中度疼痛(4-7)"
+      "judge_name": "急性中樞中度疼痛(4-7分)"
     }
   ],
   "tocc_travel": "無",
@@ -2675,13 +2733,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "訴汽機車車禍機車騎士，現後頭、左手、右腳疼痛 iloc-",
-  "rule_code": "T020114",
+  "rule_code": "T030142",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "頭部鈍傷",
-      "judge_name": "急性中樞中度疼痛(4-7)"
+      "judge_name": "急性中樞中度疼痛(4-7分)"
     }
   ],
   "tocc_travel": "無",
@@ -2726,7 +2784,7 @@
   "allergy": "無",
   "past_medical_history": "其他(Metal retard)",
   "chief_complaint": "訴今天被鄰居徒手攻擊頭跟肚子",
-  "rule_code": "T020114",
+  "rule_code": "T030142",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -2745,6 +2803,56 @@
   "tocc_cluster_other": ""
 }
 
+{
+  "triage_id": "MRN-20260504-045250-36JD2",
+  "patient_id": "P_19990113_027M",
+  "medical_id": "P_19990113_027M",
+  "id_number": "123456789",
+  "name": "張為舜",
+  "gender": "M",
+  "age": 27,
+  "birth_date": "1999-01-13",
+  "nurse_id": 1,
+  "nurse_name": "黃曉萱",
+  "bed": "",
+  "patient_source": "119送入",
+  "major_incident": "否",
+  "do_not_treat": 0,
+  "created_at": "2026-05-04T04:52:00",
+  "visit_time": "2026-05-04T04:52:50",
+  "temperature": 36.3,
+  "heart_rate": 95,
+  "respiratory_rate": 18,
+  "blood_pressure_sys": 143,
+  "blood_pressure_dia": 94,
+  "spo2": 98,
+  "blood_sugar": null,
+  "weight": null,
+  "gcs_eye": 4,
+  "gcs_verbal": 5,
+  "gcs_motor": 6,
+  "pain_score": 8,
+  "allergy": "無",
+  "past_medical_history": "無",
+  "chief_complaint": "被陌生人用球棒打左上臂",
+  "rule_code": "T030191",
+  "triage_level": 3,
+  "sentiment": null,
+  "symptom_rule_pairs": [
+    {
+      "symptom_name": "上肢鈍傷",
+      "judge_name": "急性周邊重度疼痛(8-10分)"
+    }
+  ],
+  "tocc_travel": "無",
+  "tocc_travel_start": null,
+  "tocc_travel_end": null,
+  "tocc_occupation": "其他",
+  "tocc_occupation_other": "服務業",
+  "tocc_symptoms": "無",
+  "tocc_cluster_items": "無",
+  "tocc_cluster_other": ""
+}
 
 {
   "triage_id": "MRN-20260504-000825-37JD",
@@ -2778,7 +2886,7 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "左小腿疑似被蜱蟲咬傷",
-  "rule_code": "E010110",
+  "rule_code": "V030181",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -2829,7 +2937,7 @@
   "allergy": "無",
   "past_medical_history": "其他(躁鬱症、憂鬱症)",
   "chief_complaint": "朋友在面前把酒精倒入菸灰缸裡，菸灰缸點燃，人剛好在面前，右手掌水泡、右腹紅，頭髮、眉毛有燒灼到、鼻腔有碳粒",
-  "rule_code": "T130109",
+  "rule_code": "S020102",
   "triage_level": 2,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -2880,13 +2988,13 @@
   "allergy": "無",
   "past_medical_history": "其他(左腎切除、APP S/P)",
   "chief_complaint": "今早左足不慎踢到東西，現表左足大拇趾痛、趾甲裂開 入",
-  "rule_code": "T120812",
+  "rule_code": "T040142",
   "triage_level": 4,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "下肢撕裂傷、擦傷",
-      "judge_name": "急性周邊中度疼痛(4-7)"
+      "judge_name": "急性周邊中度疼痛(4-7分)"
     }
   ],
   "tocc_travel": "無",
@@ -2931,13 +3039,13 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "一小時前遭女友毆打、呼巴掌、現表雙側臉頰、雙眼窩、左手背疼痛、左手背多處零星抓痕",
-  "rule_code": "T140213",
+  "rule_code": "V040142",
   "triage_level": 4,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
       "symptom_name": "家庭暴力",
-      "judge_name": "急性周邊中度疼痛(4-7)"
+      "judge_name": "急性周邊中度疼痛(4-7分)"
     }
   ],
   "tocc_travel": "無",
@@ -2950,6 +3058,56 @@
   "tocc_cluster_other": ""
 }
 
+{
+  "triage_id": "MRN-20260430-112134-11JD2",
+  "patient_id": "P_19710916_054M",
+  "medical_id": "P_19710916_054M",
+  "id_number": "123456789",
+  "name": "楊美瓊",
+  "gender": "M",
+  "age": 54,
+  "birth_date": "1971-09-16",
+  "nurse_id": 1,
+  "nurse_name": "黃曉萱",
+  "bed": "",
+  "patient_source": "119送入",
+  "major_incident": "是",
+  "do_not_treat": 0,
+  "created_at": "2026-04-30T11:21:00",
+  "visit_time": "2026-04-30T11:21:34",
+  "temperature": null,
+  "heart_rate": null,
+  "respiratory_rate": null,
+  "blood_pressure_sys": null,
+  "blood_pressure_dia": null,
+  "spo2": null,
+  "blood_sugar": null,
+  "weight": null,
+  "gcs_eye": 1,
+  "gcs_verbal": 1,
+  "gcs_motor": 1,
+  "pain_score": null,
+  "allergy": "無",
+  "past_medical_history": "無",
+  "chief_complaint": "由四樓掉一樓、外科OHCA入",
+  "rule_code": "M010101",
+  "triage_level": 1,
+  "sentiment": null,
+  "symptom_rule_pairs": [
+    {
+      "symptom_name": "多重鈍傷/穿刺傷",
+      "judge_name": "坠落致死性外科OHCA"
+    }
+  ],
+  "tocc_travel": "-",
+  "tocc_travel_start": null,
+  "tocc_travel_end": null,
+  "tocc_occupation": "",
+  "tocc_occupation_other": "",
+  "tocc_symptoms": "無",
+  "tocc_cluster_items": "無",
+  "tocc_cluster_other": ""
+}
 
 {
   "triage_id": "MRN-20260502-025056-46JD",
@@ -2983,7 +3141,7 @@
   "allergy": "無",
   "past_medical_history": "無",
   "chief_complaint": "晚上開始上腹痛、嘔吐",
-  "rule_code": "A030113",
+  "rule_code": "G030142",
   "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
@@ -3002,47 +3160,104 @@
   "tocc_cluster_other": ""
 }
 
-
-
 {
-  "triage_id": "20260425120-53",
-  "patient_id": null,
-  "medical_id": null,
-  "id_number": null,
-  "name": null,
+  "triage_id": "MRN-20260502-011233-47JD2",
+  "patient_id": "P_20110104_015M2",
+  "medical_id": "P_20110104_015M2",
+  "id_number": "123456789",
+  "name": "無名氏",
   "gender": "M",
-  "age": 45,
-  "birth_date": "1981-03-25",
-  "nurse_id": null,
-  "nurse_name": null,
-  "bed": "000",
+  "age": 15,
+  "birth_date": "2011-01-04",
+  "nurse_id": 1,
+  "nurse_name": "黃曉萱",
+  "bed": "",
   "patient_source": "自行進入",
   "major_incident": "否",
   "do_not_treat": 0,
-  "created_at": "2026-04-25T20:42:00",
-  "visit_time": "2026-04-25T20:41:47",
-  "temperature": 37.0,
-  "heart_rate": 149,
-  "respiratory_rate": 20,
-  "blood_pressure_sys": 172,
-  "blood_pressure_dia": 118,
+  "created_at": "2026-05-02T01:12:00",
+  "visit_time": "2026-05-02T01:12:33",
+  "temperature": 37.2,
+  "heart_rate": 106,
+  "respiratory_rate": 18,
+  "blood_pressure_sys": 96,
+  "blood_pressure_dia": 67,
   "spo2": 99,
   "blood_sugar": null,
-  "weight": null,
+  "weight": 50.0,
   "gcs_eye": 4,
   "gcs_verbal": 5,
   "gcs_motor": 6,
   "pain_score": null,
   "allergy": "無",
   "past_medical_history": "無",
-  "chief_complaint": "訴跟女友吵架後徒手打玻璃桌，玻璃桌破裂，至新泰求診表無法處理，協助包紮，病人離院後持續出血故叫119入",
-  "rule_code": "T120306",
-  "triage_level": 2,
+  "chief_complaint": "吃飽飯後開始下腹痛，上吐下瀉各一次",
+  "rule_code": "G030142",
+  "triage_level": 3,
   "sentiment": null,
   "symptom_rule_pairs": [
     {
-      "symptom_name": "上肢撕裂傷、擦傷",
-      "judge_name": "無法控制的出血"
+      "symptom_name": "腹痛",
+      "judge_name": "中度疼痛(4-7分)"
     }
-  ]
+  ],
+  "tocc_travel": "無",
+  "tocc_travel_start": null,
+  "tocc_travel_end": null,
+  "tocc_occupation": "學生",
+  "tocc_occupation_other": "",
+  "tocc_symptoms": "咳嗽、發燒",
+  "tocc_cluster_items": "無",
+  "tocc_cluster_other": ""
+}
+
+{
+  "triage_id": "MRN-20260501-225325-48JD2",
+  "patient_id": "P_20250722_000F2",
+  "medical_id": "P_20250722_000F2",
+  "id_number": "123456789",
+  "name": "無名氏",
+  "gender": "F",
+  "age": 0,
+  "birth_date": "2025-07-22",
+  "nurse_id": 1,
+  "nurse_name": "黃曉萱",
+  "bed": "",
+  "patient_source": "自行進入",
+  "major_incident": "否",
+  "do_not_treat": 0,
+  "created_at": "2026-05-01T22:53:00",
+  "visit_time": "2026-05-01T22:53:25",
+  "temperature": 36.0,
+  "heart_rate": null,
+  "respiratory_rate": 25,
+  "blood_pressure_sys": null,
+  "blood_pressure_dia": null,
+  "spo2": null,
+  "blood_sugar": null,
+  "weight": 10.0,
+  "gcs_eye": 4,
+  "gcs_verbal": 5,
+  "gcs_motor": 6,
+  "pain_score": null,
+  "allergy": "無",
+  "past_medical_history": "無",
+  "chief_complaint": "下午開始腹瀉3次且有尿布疹，哥哥班上有腸病毒",
+  "rule_code": "G050105",
+  "triage_level": 5,
+  "sentiment": null,
+  "symptom_rule_pairs": [
+    {
+      "symptom_name": "腹瀉",
+      "judge_name": "輕微腹瀉且無脫水現象"
+    }
+  ],
+  "tocc_travel": "無",
+  "tocc_travel_start": null,
+  "tocc_travel_end": null,
+  "tocc_occupation": "無",
+  "tocc_occupation_other": "",
+  "tocc_symptoms": "咳嗽、發燒",
+  "tocc_cluster_items": "無",
+  "tocc_cluster_other": ""
 }
