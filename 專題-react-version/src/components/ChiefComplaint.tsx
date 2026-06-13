@@ -1041,8 +1041,13 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
           return;
         }
 
-        setLlmTraumaSymptoms([]);
-        setLlmNonTraumaSymptoms(symptomList);
+        if (presentationScenario.activeTab === 't') {
+          setLlmTraumaSymptoms(symptomList);
+          setLlmNonTraumaSymptoms([]);
+        } else {
+          setLlmTraumaSymptoms([]);
+          setLlmNonTraumaSymptoms(symptomList);
+        }
         setRecommendationSource('llm');
         setRecommendedSymptoms(symptomList);
 
