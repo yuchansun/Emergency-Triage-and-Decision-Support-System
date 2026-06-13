@@ -64,21 +64,21 @@ export const PRESENTATION_SCENARIOS: PresentationScenario[] = [
   {
     id: 'cough_dyspnea',
     match: matchesCoughDyspnea,
-    summary: '咳嗽、痰多一週，2天前開始呼吸喘',
+    summary: '咳嗽、痰多一週，這兩天呼吸越來越喘',
     activeTab: 'a',
     mustSymptoms: ['呼吸短促'],
     decoySymptoms: ['咳嗽', '發燒/畏寒', '咳血'],
     ruleTargets: [
       {
         symptomName: '呼吸短促',
-        mustRuleCode: 'A010101',
-        mustJudgeIncludes: '重度呼吸窘迫',
+        mustRuleCode: 'A010110',
+        mustJudgeIncludes: '輕度呼吸窘迫',
         decoyRuleCodes: ['A010104', 'A010112'],
       },
     ],
-    summarizeDelayMs: 6000,
-    symptomsDelayAfterSummaryMs: 4000,
-    rulesDelayMs: 5000,
+    summarizeDelayMs: 7000,
+    symptomsDelayAfterSummaryMs: 5000,
+    rulesDelayMs: 6000,
   },
   {
     id: 'flank_pain',
@@ -99,9 +99,9 @@ export const PRESENTATION_SCENARIOS: PresentationScenario[] = [
         decoyRuleCodes: ['A060111', 'A060115'],
       },
     ],
-    summarizeDelayMs: 6000,
-    symptomsDelayAfterSummaryMs: 4000,
-    rulesDelayMs: 5000,
+    summarizeDelayMs: 7000,
+    symptomsDelayAfterSummaryMs: 5000,
+    rulesDelayMs: 6000,
   },
 ];
 
