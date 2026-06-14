@@ -39,15 +39,15 @@ else:
 # 預設為 qwen2.5:7b-instruct（繁中表現遠優於 llama3）；
 # 若要切回舊模型或升 14B，在 .env 設 OLLAMA_MODEL 即可，不需動程式碼。
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
 try:
     OLLAMA_NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "200"))
 except (TypeError, ValueError):
     OLLAMA_NUM_PREDICT = 200
 try:
-    OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "30"))
+    OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "200"))
 except (TypeError, ValueError):
-    OLLAMA_TIMEOUT = 30
+    OLLAMA_TIMEOUT = 200
 print(
     "✅ Ollama 設定："
     f"base_url={OLLAMA_BASE_URL}, model={OLLAMA_MODEL}, "
@@ -600,7 +600,9 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
         
     except Exception as e:
         print(f"❌ 推薦症狀時發生錯誤: {e}")
+        traceback.print_exc()
         return RecommendSymptomsResponse(recommended_symptoms=[])
+
 
 # 新增一個 API，用來抓取那 5 個隨機病患 (誒這是啥呀)
 @app.get("/api/patients")
