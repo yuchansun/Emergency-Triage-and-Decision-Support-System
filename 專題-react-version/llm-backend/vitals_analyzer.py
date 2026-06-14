@@ -61,14 +61,18 @@ def match_vital_labels_to_symptom_candidates(
 
 
 class VitalsAnalyzer:
-    def parse_vital_value(self, value: str) -> Optional[float]:
+    def parse_vital_value(self, value) -> Optional[float]:
         """將字串轉換為數值，處理空值和無效輸入"""
-        if not value or value.strip() == '':
+        if value is None:
             return None
-        try:
-            return float(value.strip())
-        except (ValueError, TypeError):
-            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str) and value.strip() != '':
+            try:
+                return float(value.strip())
+            except (ValueError, TypeError):
+                return None
+        return None
 
     def format_vitals_for_llm(self, vitals: Dict[str, any]) -> str:
         """將生命徵象格式化成客觀數值描述，供 LLM+RAG 參考（不含臆測性症狀標籤）。"""

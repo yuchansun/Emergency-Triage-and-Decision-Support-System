@@ -179,6 +179,7 @@ async def get_triage_report(triage_id: str):
 
             rule_codes = []
             chief_complaints = []
+            supplement_text = ""
 
             for item in result_rows:
                 if not isinstance(item, dict):
@@ -188,6 +189,8 @@ async def get_triage_report(triage_id: str):
                     rule_codes.append(item["rule_code"])
                 if item.get("chief_complaint"):
                     chief_complaints.append(item["chief_complaint"])
+                if not supplement_text and item.get("original_transcript"):
+                    supplement_text = str(item["original_transcript"]).strip()
 
             # 4-1) 由 rule_code -> triage_hierarchy.ttas_degree 取得檢傷級數（最嚴重取 MIN）
             triage_level = None
@@ -346,6 +349,8 @@ async def get_triage_report(triage_id: str):
 
                 "rule_code": ";".join(rule_codes),
                 "chief_complaint": "\n".join(dict.fromkeys(chief_complaints)),
+                "original_transcript": supplement_text or None,
+                "supplement_text": supplement_text or None,
                 "symptom_rule_pairs": symptom_rule_pairs,
                 "modification_logs": modification_logs,
                 "nurse_name": base_row.get("nurse_name"),

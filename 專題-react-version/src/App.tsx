@@ -101,8 +101,146 @@ function App() {
     selectedRules: {} as Record<string, { degree: number; judge: string; rule_code: string; symptom_name: string }>,
     supplementText: '',
   });
+  const [sessionRestore, setSessionRestore] = useState<{
+    token: number;
+    selectedRules: Record<string, { degree: number; judge: string; rule_code: string; symptom_name: string }>;
+    recommendedSymptoms: string[];
+    supplementText: string;
+  } | null>(null);
+  const [pendingHistoryRulesKey, setPendingHistoryRulesKey] = useState<number | null>(null);
 
   const isAdmin = (currentUser?.role || "").toLowerCase() === "admin";
+
+  const handleSessionRestoreApplied = useCallback(() => {
+    setSessionRestore(null);
+  }, []);
+
+  const restoreTriageFromHistoryRecord = useCallback(async (record: any) => {
+    setPatientData({
+      patient_id: record.patient_id,
+      triage_id: record.triage_id,
+      name: record.name,
+      gender: record.gender === 'M' ? '男' : record.gender === 'F' ? '女' : '不詳',
+      age: record.age,
+      birthDate: record.birth_date,
+      idNumber: record.id_number,
+      medicalId: record.medical_id,
+      drugAllergy: record.allergy,
+      icCard: false,
+    });
+
+    setVitals({
+      temperature: record.temperature?.toString() ?? '',
+      heartRate: record.heart_rate?.toString() ?? '',
+      spo2: record.spo2?.toString() ?? '',
+      respRate: record.respiratory_rate?.toString() ?? '',
+      weight: record.weight?.toString() ?? '',
+      systolicBP: record.blood_pressure_sys?.toString() ?? '',
+      diastolicBP: record.blood_pressure_dia?.toString() ?? '',
+      bloodSugar: record.blood_sugar?.toString() ?? '',
+      bloodSugarLevel: null,
+      gcsEye: record.gcs_eye?.toString() ?? null,
+      gcsVerbal: record.gcs_verbal?.toString() ?? null,
+      gcsMotor: record.gcs_motor?.toString() ?? null,
+      obHistory: null,
+      pastHistory: (() => {
+        const rawPastMedicalHistory = record.past_medical_history ?? '';
+        const [historyItemsPart] = rawPastMedicalHistory.split(/\s*;\s*/);
+        return historyItemsPart
+          ? historyItemsPart.split(',').map((s: string) => s.trim()).filter(Boolean)
+          : [];
+      })(),
+      otherHistoryDetails: (() => {
+        const rawPastMedicalHistory = record.past_medical_history ?? '';
+        const [, otherHistoryPart] = rawPastMedicalHistory.split(/\s*;\s*/);
+        return otherHistoryPart?.trim() ?? '';
+      })(),
+      drugAllergy: record.allergy ?? null,
+      painScore: record.pain_score ?? null,
+      doNotTreat: record.do_not_treat?.toString() ?? '',
+      sentiment: record.sentiment ?? null,
+    });
+
+    setInputText(record.chief_complaint ?? '');
+
+    setTocc({
+      travel: record.tocc_travel ?? '',
+      travelStart: record.tocc_travel_start ?? '',
+      travelEnd: record.tocc_travel_end ?? '',
+      occupation: record.tocc_occupation ?? '',
+      occupationOther: record.tocc_occupation_other ?? '',
+      contactItems: [],
+      clusterItems: record.tocc_cluster_items ? record.tocc_cluster_items.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+      clusterOther: record.tocc_cluster_other ?? '',
+      symptoms: record.tocc_symptoms ? record.tocc_symptoms.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+    });
+
+    setVisitTime(record.visit_time ?? new Date().toISOString());
+    setBed(record.bed ?? '');
+    setPatientSource(record.patient_source ?? '');
+    setMajorIncident(record.major_incident ?? '');
+
+    const pairs = Array.isArray(record.symptom_rule_pairs) ? record.symptom_rule_pairs : [];
+    const symptomKeys = new Set<string>();
+    const recommendedSymptoms: string[] = [];
+    const seenSymptoms = new Set<string>();
+    for (const pair of pairs) {
+      const name = String(pair?.symptom_name || '').trim();
+      if (!name) continue;
+      symptomKeys.add(`manual:${name}`);
+      if (!seenSymptoms.has(name)) {
+        seenSymptoms.add(name);
+        recommendedSymptoms.push(name);
+      }
+    }
+    setSelectedSymptoms(symptomKeys);
+
+    const ruleCodes = String(record.rule_code || '')
+      .split(';')
+      .map((code: string) => code.trim())
+      .filter(Boolean);
+
+    const restoredRules: Record<string, { degree: number; judge: string; rule_code: string; symptom_name: string }> = {};
+    if (ruleCodes.length > 0) {
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+        const res = await fetch(`${API_BASE_URL}/triage_hierarchy`);
+        if (res.ok) {
+          const rows = await res.json();
+          for (const code of ruleCodes) {
+            const row = (rows as Array<{ rule_code: string; judge_name: string; symptom_name: string; ttas_degree: string }>)
+              .find((item) => item.rule_code === code);
+            if (!row) continue;
+            restoredRules[code] = {
+              degree: Number(row.ttas_degree),
+              judge: row.judge_name,
+              rule_code: code,
+              symptom_name: row.symptom_name,
+            };
+          }
+        }
+      } catch (err) {
+        console.error('[HISTORY] restore selectedRules failed', err);
+      }
+    }
+
+    const restoredDegrees = Object.values(restoredRules).map((rule) => rule.degree).filter(Number.isFinite);
+    const supplementText = String(record.supplement_text || record.original_transcript || '').trim();
+    setWorstSelectedDegree(restoredDegrees.length > 0 ? Math.min(...restoredDegrees) : null);
+    setChiefComplaintData({
+      selectedRules: restoredRules,
+      supplementText,
+    });
+    const restoreToken = Date.now();
+    setSessionRestore({
+      token: restoreToken,
+      selectedRules: restoredRules,
+      recommendedSymptoms,
+      supplementText,
+    });
+    setPendingHistoryRulesKey(restoreToken);
+    setStage('main');
+  }, []);
 
 
   const resetAllTriageState = () => {
@@ -123,6 +261,7 @@ function App() {
       selectedRules: {},
       supplementText: '',
     });
+    setPendingHistoryRulesKey(null);
     setTriageActiveTab('a');
   };
 
@@ -530,6 +669,10 @@ function App() {
               voiceConsented={voiceConsented}
               vitals={vitals}
               onChiefComplaintChange={handleChiefComplaintChange}
+              sessionRestore={sessionRestore}
+              restoredSelectedRules={pendingHistoryRulesKey ? chiefComplaintData.selectedRules : undefined}
+              restoredSelectedRulesKey={pendingHistoryRulesKey}
+              onSessionRestoreApplied={handleSessionRestoreApplied}
               llmMode={llmMode}
             >
               <>
@@ -598,65 +741,7 @@ function App() {
             initialSelectedTriageId={historySelectedId}
             onViewNurse={openNursePage}
             onGoToMain={(record: any) => {
-              // 填入病患基本資料
-              setPatientData({
-                patient_id: record.patient_id,
-                triage_id: record.triage_id,
-                name: record.name,
-                gender: record.gender === 'M' ? '男' : record.gender === 'F' ? '女' : '不詳',
-                age: record.age,
-                birthDate: record.birth_date,
-                idNumber: record.id_number,
-                medicalId: record.medical_id,
-                drugAllergy: record.allergy,
-                icCard: false,
-              });
-
-              // 填入生命徵象
-              {
-                const rawPastMedicalHistory = record.past_medical_history ?? '';
-                const [historyItemsPart, otherHistoryPart] = rawPastMedicalHistory.split(/\s*;\s*/);
-                setVitals({
-                  temperature: record.temperature?.toString() ?? '',
-                  heartRate: record.heart_rate?.toString() ?? '',
-                  spo2: record.spo2?.toString() ?? '',
-                  respRate: record.respiratory_rate?.toString() ?? '',
-                  weight: record.weight?.toString() ?? '',
-                  systolicBP: record.blood_pressure_sys?.toString() ?? '',
-                  diastolicBP: record.blood_pressure_dia?.toString() ?? '',
-                  bloodSugar: record.blood_sugar?.toString() ?? '',
-                  bloodSugarLevel: null,
-                  gcsEye: record.gcs_eye?.toString() ?? null,
-                  gcsVerbal: record.gcs_verbal?.toString() ?? null,
-                  gcsMotor: record.gcs_motor?.toString() ?? null,
-                  obHistory: null,
-                  pastHistory: historyItemsPart ? historyItemsPart.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
-                  otherHistoryDetails: otherHistoryPart?.trim() ?? '',
-                  drugAllergy: record.allergy ?? null,
-                  painScore: record.pain_score ?? null,
-                  doNotTreat: record.do_not_treat?.toString() ?? '',
-                  sentiment: record.sentiment ?? null,
-                });
-              }
-
-              // 填入主訴
-              setInputText(record.chief_complaint ?? '');
-
-              // 填入 TOCC
-              setTocc({
-                travel: record.tocc_travel ?? '',
-                travelStart: record.tocc_travel_start ?? '',
-                travelEnd: record.tocc_travel_end ?? '',
-                occupation: record.tocc_occupation ?? '',
-                occupationOther: record.tocc_occupation_other ?? '',
-                contactItems: [],
-                clusterItems: record.tocc_cluster_items ? record.tocc_cluster_items.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
-                clusterOther: record.tocc_cluster_other ?? '',
-                symptoms: record.tocc_symptoms ? record.tocc_symptoms.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
-              });
-
-              setVisitTime(record.visit_time ?? new Date().toISOString());
-              setStage("main");
+              void restoreTriageFromHistoryRecord(record);
             }}
           />
         )}

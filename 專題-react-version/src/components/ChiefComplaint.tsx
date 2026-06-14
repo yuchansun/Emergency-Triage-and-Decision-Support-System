@@ -50,6 +50,25 @@ interface ChiefComplaintProps {
     }>;
     supplementText: string;
   }) => void;
+  sessionRestore?: {
+    token: number;
+    selectedRules: Record<string, {
+      degree: number;
+      judge: string;
+      rule_code: string;
+      symptom_name: string;
+    }>;
+    recommendedSymptoms: string[];
+    supplementText: string;
+  } | null;
+  restoredSelectedRules?: Record<string, {
+    degree: number;
+    judge: string;
+    rule_code: string;
+    symptom_name: string;
+  }>;
+  restoredSelectedRulesKey?: number | null;
+  onSessionRestoreApplied?: () => void;
 }
 
 type SpeechLang = 'zh-TW' | 'en-US' | 'ja-JP' | 'vi-VN' | 'id-ID';
@@ -172,6 +191,10 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
   voiceConsented = true,
   vitals,
   onChiefComplaintChange,  // ← 新增解構
+  sessionRestore,
+  restoredSelectedRules,
+  restoredSelectedRulesKey,
+  onSessionRestoreApplied,
 }) => {
   // 保留 prop 定義（依需求不刪 interface 與 prop），目前畫面不直接使用
   void onDirectToER;
@@ -193,6 +216,9 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
 
   const [triageRows, setTriageRows] = useState<TriageRow[] | null>(null);
   const [triageError, setTriageError] = useState<string | null>(null);
+  const pendingSessionRestoreRef = useRef<NonNullable<ChiefComplaintProps['sessionRestore']> | null>(null);
+  const sessionRestoreRulesAppliedRef = useRef(false);
+  const lastAppliedRestoreKeyRef = useRef<number | null>(null);
   const recognitionRef = useRef<any | null>(null);
   const [isListening, setIsListening] = useState(false);
   const voiceProcessedRef = useRef(false);
@@ -1571,6 +1597,10 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     // 根據當前已選症狀，自動處理部分規則：
     // 1) 移除已不在 symptomTags 中的規則
     // 2) 若「心跳停止」只對應一條判斷依據，則自動帶入
+    if (pendingSessionRestoreRef.current && !sessionRestoreRulesAppliedRef.current) {
+      return;
+    }
+
     const tagNames = new Set(symptomTags.map(t => t.display));
 
     setSelectedRules(prev => {
@@ -1598,6 +1628,48 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       return next;
     });
   }, [symptomTags, symptomCriteriaIndex]);
+
+  useEffect(() => {
+    if (!sessionRestore) return;
+    pendingSessionRestoreRef.current = sessionRestore;
+    sessionRestoreRulesAppliedRef.current = false;
+    if (sessionRestore.recommendedSymptoms.length > 0) {
+      setRecommendedSymptoms(sessionRestore.recommendedSymptoms);
+    }
+    setSupplementText(sessionRestore.supplementText || '');
+  }, [sessionRestore?.token]);
+
+  useEffect(() => {
+    const restoreKey = sessionRestore?.token ?? restoredSelectedRulesKey ?? null;
+    const pending = pendingSessionRestoreRef.current;
+    if (!restoreKey) return;
+    if (lastAppliedRestoreKeyRef.current === restoreKey && sessionRestoreRulesAppliedRef.current) return;
+
+    const rulesFromPending = pending?.selectedRules;
+    const rulesFromProp =
+      restoredSelectedRules && Object.keys(restoredSelectedRules).length > 0
+        ? restoredSelectedRules
+        : null;
+    const rulesToApply = rulesFromPending ?? rulesFromProp;
+    const hasRulesToRestore = Boolean(rulesToApply && Object.keys(rulesToApply).length > 0);
+
+    if (hasRulesToRestore && !triageRows?.length) return;
+
+    if (hasRulesToRestore && rulesToApply) {
+      setSelectedRules(rulesToApply);
+    }
+
+    sessionRestoreRulesAppliedRef.current = true;
+    lastAppliedRestoreKeyRef.current = restoreKey;
+    pendingSessionRestoreRef.current = null;
+    onSessionRestoreApplied?.();
+  }, [
+    triageRows,
+    sessionRestore?.token,
+    restoredSelectedRules,
+    restoredSelectedRulesKey,
+    onSessionRestoreApplied,
+  ]);
 
   const worstSelectedDegree = useMemo(() => {
     const degrees = Object.values(selectedRules).map(r => r.degree);

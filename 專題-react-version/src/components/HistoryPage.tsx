@@ -18,6 +18,7 @@ type TriageRecord = {
   idNumber: string;
   triageLevel: 1 | 2 | 3 | 4 | 5 | null;
   chiefComplaintNote: string; // 護理師主訴敘述
+  supplementNote: string; // 補充資料
   finalSymptoms: string[]; // 最後症狀
   arrivalAt: string; // YYYY-MM-DD HH:mm
   nurseId: string;
@@ -123,6 +124,8 @@ const CHANGE_LABELS: Record<string, string> = {
   tocc_occupation_other: "職業其他",
   rule_code: "規則代碼",
   chief_complaint: "主訴",
+  original_transcript: "補充資料",
+  supplement_text: "補充資料",
 };
 
 type FilterForm = {
@@ -455,6 +458,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, in
         idNumber: d.id_number || "",
         triageLevel: normalizeTriageLevel(d.triage_level),
         chiefComplaintNote: d.chief_complaint || "",
+        supplementNote: d.supplement_text || d.original_transcript || "",
         finalSymptoms:
           formattedSymptoms.length > 0
             ? formattedSymptoms
@@ -915,7 +919,7 @@ td, th {
         result: {
           rule_code: editRuleCode.trim() || selectedRaw?.rule_code || "",
           chief_complaint: editDraft.chiefComplaintNote || "",
-          original_transcript: selectedRaw?.original_transcript || "",
+          original_transcript: editDraft.supplementNote || "",
         },
         vitals: {
           temperature: Number(editDraft.vitals.temperature || 0),
@@ -1297,6 +1301,19 @@ td, th {
                 />
               ) : (
                 <div className="mt-1 rounded-xl bg-gray-50 border border-gray-200 p-3">{editDraft.chiefComplaintNote}</div>
+              )}
+              <div className="text-gray-500 text-sm mt-3">補充資料</div>
+              {isEditing ? (
+                <textarea
+                  value={editDraft.supplementNote}
+                  onChange={(e) => setDraftField("supplementNote", e.target.value)}
+                  className="mt-1 w-full rounded-xl bg-white border border-gray-300 p-3 min-h-20"
+                  placeholder="可輸入補充說明（例如：既往病史、用藥、家屬提供的額外資訊等）"
+                />
+              ) : (
+                <div className="mt-1 rounded-xl bg-gray-50 border border-gray-200 p-3 whitespace-pre-wrap">
+                  {editDraft.supplementNote || "無"}
+                </div>
               )}
               <div className="text-gray-500 text-sm mt-3">最後症狀</div>
               {isEditing ? (
