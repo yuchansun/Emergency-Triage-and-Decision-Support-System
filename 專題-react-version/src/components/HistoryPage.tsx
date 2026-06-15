@@ -971,7 +971,7 @@ td, th {
     <div className="p-6 md:p-8 min-h-full bg-[#F8FAFC]">
       <div className="max-w-screen-2xl mx-auto space-y-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-800">過去病史查詢</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-800">檢傷紀錄</h1>
           <p className="text-gray-500 mt-1">先設定條件，再按查詢顯示結果（每頁 20 筆）</p>
         </div>
 
