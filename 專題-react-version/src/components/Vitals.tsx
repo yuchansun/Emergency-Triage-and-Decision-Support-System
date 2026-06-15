@@ -1,4 +1,6 @@
 import React, { useState, useRef } from 'react';
+import FieldHelpButton from './FieldHelpModal';
+import { PAST_HISTORY_HELP, DRUG_ALLERGY_HELP } from '../config/medicalHistoryHelp';
 
 export type VitalsState = {
   temperature: string;
@@ -488,7 +490,10 @@ const Vitals: React.FC<VitalsProps> = ({
 
         {/* 過去病史 */}
         <fieldset className="col-span-1 md:col-span-2">
-          <legend className="block text-sm font-medium pb-1">過去病史</legend>
+          <legend className="flex items-center text-sm font-medium pb-1">
+            過去病史
+            <FieldHelpButton content={PAST_HISTORY_HELP} />
+          </legend>
           <div className="flex flex-wrap gap-2 z-10 relative">
             {['無', '高血壓', '糖尿病', '心臟病', '肺部疾病', '癌症'].map(label => {
               const isSelected = pastHistory.includes(label);
@@ -529,7 +534,10 @@ const Vitals: React.FC<VitalsProps> = ({
 
         {/* 藥物過敏 */}
         <fieldset className="col-span-1 md:col-span-2">
-          <legend className="block text-sm font-medium pb-1">藥物過敏</legend>
+          <legend className="flex items-center text-sm font-medium pb-1">
+            藥物過敏
+            <FieldHelpButton content={DRUG_ALLERGY_HELP} />
+          </legend>
           <div className="mt-2 flex items-center gap-2">
             <button
               type="button"
