@@ -3,22 +3,19 @@ import type { FieldHelpContent, MultilingualItem } from '../config/medicalHistor
 
 type FieldHelpButtonProps = {
   content: FieldHelpContent;
+  onSelectItem?: (item: MultilingualItem) => void;
 };
 
 const LANG_KEYS: (keyof MultilingualItem)[] = ['zh', 'en', 'ja', 'ko', 'vi', 'id'];
 
-function copyText(text: string) {
-  void navigator.clipboard?.writeText(text);
-}
-
-const FieldHelpButton: React.FC<FieldHelpButtonProps> = ({ content }) => {
+const FieldHelpButton: React.FC<FieldHelpButtonProps> = ({ content, onSelectItem }) => {
   const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState<string | null>(null);
+  const [applied, setApplied] = useState<string | null>(null);
 
-  const handleCopy = (text: string) => {
-    copyText(text);
-    setCopied(text);
-    window.setTimeout(() => setCopied(null), 1500);
+  const handleSelect = (item: MultilingualItem) => {
+    onSelectItem?.(item);
+    setApplied(item.zh);
+    window.setTimeout(() => setApplied(null), 1500);
   };
 
   return (
@@ -69,19 +66,24 @@ const FieldHelpButton: React.FC<FieldHelpButtonProps> = ({ content }) => {
               <section>
                 <p className="text-sm font-medium text-subtext-light dark:text-subtext-dark mb-3">
                   {content.commonLabel}
-                  <span className="ml-2 text-xs font-normal">（點擊項目可複製中文）</span>
+                  {onSelectItem && (
+                    <span className="ml-2 text-xs font-normal">（點擊項目可直接帶入欄位）</span>
+                  )}
                 </p>
                 <div className="space-y-3">
                   {content.commonItems.map((item) => (
                     <button
                       key={item.zh}
                       type="button"
-                      onClick={() => handleCopy(item.zh)}
+                      onClick={() => handleSelect(item)}
+                      disabled={!onSelectItem}
                       className={
                         'w-full text-left rounded-xl border px-4 py-3 transition-colors ' +
-                        (copied === item.zh
+                        (applied === item.zh
                           ? 'border-primary bg-primary/10'
-                          : 'border-gray-200 dark:border-gray-700 hover:border-primary/40 hover:bg-primary/5')
+                          : onSelectItem
+                            ? 'border-gray-200 dark:border-gray-700 hover:border-primary/40 hover:bg-primary/5 cursor-pointer'
+                            : 'border-gray-200 dark:border-gray-700 cursor-default')
                       }
                     >
                       {LANG_KEYS.map((key) => (
@@ -96,8 +98,8 @@ const FieldHelpButton: React.FC<FieldHelpButtonProps> = ({ content }) => {
                           {item[key]}
                         </p>
                       ))}
-                      {copied === item.zh && (
-                        <p className="text-xs text-primary font-medium mt-1">已複製</p>
+                      {applied === item.zh && (
+                        <p className="text-xs text-primary font-medium mt-1">已帶入</p>
                       )}
                     </button>
                   ))}

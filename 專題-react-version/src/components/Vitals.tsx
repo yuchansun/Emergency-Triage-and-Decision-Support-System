@@ -138,6 +138,28 @@ const Vitals: React.FC<VitalsProps> = ({
   const sentiment = vitals.sentiment;
   const setSentiment = (val: number | null) => setVitals({ ...vitals, sentiment: val });
 
+  const PAST_HISTORY_QUICK = ['無', '高血壓', '糖尿病', '心臟病', '肺部疾病', '癌症'];
+
+  const applyPastHistoryItem = (label: string) => {
+    if (PAST_HISTORY_QUICK.includes(label)) {
+      if (pastHistory.includes(label)) return;
+      setVitals((prev) => {
+        const ph = (prev.pastHistory || []).filter((item) => item !== '無');
+        return { ...prev, pastHistory: [...ph, label] };
+      });
+      return;
+    }
+    const current = otherHistoryDetails.trim();
+    if (current.split(/[、,，]/).map((s) => s.trim()).includes(label)) return;
+    setOtherHistoryDetails(current ? `${current}、${label}` : label);
+  };
+
+  const applyDrugAllergyItem = (label: string) => {
+    const current = allergyParsed.detail.trim();
+    if (current.split(/[、,，]/).map((s) => s.trim()).includes(label)) return;
+    setDrugAllergy('有', current ? `${current}、${label}` : label);
+  };
+
   // === togglePastHistory 改成更新 props ===
   const togglePastHistory = (label: string) => {
     const removing = pastHistory.includes(label);
@@ -492,10 +514,13 @@ const Vitals: React.FC<VitalsProps> = ({
         <fieldset className="col-span-1 md:col-span-2">
           <legend className="flex items-center text-sm font-medium pb-1">
             過去病史
-            <FieldHelpButton content={PAST_HISTORY_HELP} />
+            <FieldHelpButton
+              content={PAST_HISTORY_HELP}
+              onSelectItem={(item) => applyPastHistoryItem(item.zh)}
+            />
           </legend>
           <div className="flex flex-wrap gap-2 z-10 relative">
-            {['無', '高血壓', '糖尿病', '心臟病', '肺部疾病', '癌症'].map(label => {
+            {PAST_HISTORY_QUICK.map(label => {
               const isSelected = pastHistory.includes(label);
               return (
                 <button
@@ -536,7 +561,10 @@ const Vitals: React.FC<VitalsProps> = ({
         <fieldset className="col-span-1 md:col-span-2">
           <legend className="flex items-center text-sm font-medium pb-1">
             藥物過敏
-            <FieldHelpButton content={DRUG_ALLERGY_HELP} />
+            <FieldHelpButton
+              content={DRUG_ALLERGY_HELP}
+              onSelectItem={(item) => applyDrugAllergyItem(item.zh)}
+            />
           </legend>
           <div className="mt-2 flex items-center gap-2">
             <button
