@@ -45,7 +45,12 @@ const matchesCoughDyspnea = (text: string): boolean => {
   const hasDyspnea =
     /喘|呼吸.*急|呼吸越來越|呼吸困難/.test(t) ||
     /dyspnea|shortness of breath|breath.*(worse|difficult|hard)/i.test(t);
-  return hasCough && hasDyspnea;
+  if (hasCough && hasDyspnea) return true;
+  // 發表展示保底：語音常只辨識到後半段（喘＋時間），仍觸發情境一
+  if (PRESENTATION_MODE && hasDyspnea && /two days|past two|getting worse|for a week|一週|week/i.test(t)) {
+    return true;
+  }
+  return false;
 };
 
 /** 情境二：119 機車自撞，救護人員與護理師、病人對話（語音辨識全文） */

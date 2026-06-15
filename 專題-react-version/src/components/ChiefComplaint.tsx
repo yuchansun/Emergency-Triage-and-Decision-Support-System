@@ -224,6 +224,8 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
   const voiceProcessedRef = useRef(false);
   const voiceBufferRef = useRef<string>('');
   const fullVoiceRef = useRef<string>('');
+  /** 已處理過的 SpeechRecognition result 索引，避免 onresult 重複累積或漏段 */
+  const voiceResultsProcessedRef = useRef(0);
   const langSwitchRef = useRef(false);
 
   const speechLangRef = useRef<SpeechLang>('zh-TW');
@@ -1037,6 +1039,18 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
         activePresentationScenarioRef.current = presentationScenario;
         console.log('[PRESENTATION] 命中展示情境:', presentationScenario.id);
 
+        // 展示模式：補充資料保留完整口述（語音逐字稿），主訴欄位才顯示統整結果
+        if (source.trim()) {
+          preservedTextSourceRef.current = source.trim();
+          setSupplementText(prev => {
+            const src = source.trim();
+            if (!prev) return src;
+            if (prev.includes(src)) return prev;
+            if (src.includes(prev)) return src;
+            return `${prev}\n${src}`;
+          });
+        }
+
         await sleep(presentationScenario.summarizeDelayMs);
         if (requestId !== integrateRequestIdRef.current) {
           console.log('[PRESENTATION] 略過過期的展示結果');
@@ -1248,6 +1262,7 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       console.log('[VOICE] start');
       setIsListening(true);
       voiceBufferRef.current = '';
+      voiceResultsProcessedRef.current = 0;
       voiceProcessedRef.current = false;
     };
 
@@ -1335,16 +1350,23 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     };
 
     recognition.onresult = (event: any) => {
-      // 只取最新一個 result，避免每次都從 results[0] 取而造成整句重複累積
-      const lastIndex = event.results.length - 1;
-      const raw = (event.results[lastIndex][0].transcript as string) || '';
-      if (!raw) return;
-      // Web Speech API 即使用 zh-TW 也常回簡體；僅在中文語系時做 cn→台灣繁體（與後端 s2twp 一致）
-      const transcript =
-        speechLangRef.current === 'zh-TW' ? toTaiwanTraditional(raw) : raw;
+      // 只處理「尚未處理過」的 final results，避免重複累積或只取最後一段而漏掉前面
+      let newText = '';
+      for (let i = voiceResultsProcessedRef.current; i < event.results.length; i++) {
+        if (!event.results[i].isFinal) continue;
+        const raw = (event.results[i][0].transcript as string) || '';
+        if (!raw.trim()) continue;
+        const transcript =
+          speechLangRef.current === 'zh-TW' ? toTaiwanTraditional(raw) : raw;
+        newText += (newText ? ' ' : '') + transcript.trim();
+        voiceResultsProcessedRef.current = i + 1;
+      }
+      if (!newText) return;
 
       const base = voiceBufferRef.current || '';
-      voiceBufferRef.current = base ? base + (base.endsWith('\n') ? '' : '\n') + transcript : transcript;
+      voiceBufferRef.current = base
+        ? `${base}${base.endsWith('\n') ? '' : '\n'}${newText}`
+        : newText;
     };
 
     recognition.onerror = (e: any) => {
@@ -1393,6 +1415,7 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     // 開始新的錄音段落時，重置整段累積內容
     fullVoiceRef.current = '';
     voiceBufferRef.current = '';
+    voiceResultsProcessedRef.current = 0;
     voiceProcessedRef.current = false;
     startSpeechRecognition();
   };
