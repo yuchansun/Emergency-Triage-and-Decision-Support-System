@@ -193,7 +193,7 @@ def vitals_for_level(level: int, age: int, gender: str) -> Dict[str, Any]:
         "gcs_motor": gcs_m,
         "pain_score": pick("pain"),
         "past_medical_history": random.choice(PAST_HISTORY),
-        "do_not_treat": 0,
+        "do_not_treat": None,
         "allergy": random.choice(ALLERGIES),
         "sentiment": random.choice(["平穩", "焦慮", "不安", "躁動", None]),
     }
@@ -303,11 +303,13 @@ def seed(count: int, clear: bool) -> None:
 
                 cur.execute(
                     """
-                    INSERT INTO patients (patient_id, name, id_number, birth_date, gender, drug_allergy)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO patients (patient_id, name, id_number, birth_date, gender, drug_allergy, past_medical_history, do_not_treat)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                       name=VALUES(name), birth_date=VALUES(birth_date),
-                      gender=VALUES(gender), drug_allergy=VALUES(drug_allergy)
+                      gender=VALUES(gender), drug_allergy=VALUES(drug_allergy),
+                      past_medical_history=VALUES(past_medical_history),
+                      do_not_treat=VALUES(do_not_treat)
                     """,
                     (
                         patient["patient_id"],
@@ -316,6 +318,8 @@ def seed(count: int, clear: bool) -> None:
                         patient["birth_date"],
                         patient["gender"],
                         patient["drug_allergy"],
+                        vitals["past_medical_history"],
+                        vitals["do_not_treat"],
                     ),
                 )
 

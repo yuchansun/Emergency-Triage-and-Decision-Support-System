@@ -14,6 +14,7 @@ import StatsPage from './components/StatsPage';
 import StaffProfile from './components/StaffProfile';
 import { openVoiceConsentPopup } from './components/VoiceConsentModal';
 import type { VitalsProps } from './components/Vitals';
+import { parsePastMedicalHistory } from './utils/parsePastMedicalHistory';
 
 type VitalsForm = NonNullable<VitalsProps['vitals']>;
 
@@ -177,18 +178,8 @@ function App() {
       gcsVerbal: record.gcs_verbal?.toString() ?? null,
       gcsMotor: record.gcs_motor?.toString() ?? null,
       obHistory: null,
-      pastHistory: (() => {
-        const rawPastMedicalHistory = record.past_medical_history ?? '';
-        const [historyItemsPart] = rawPastMedicalHistory.split(/\s*;\s*/);
-        return historyItemsPart
-          ? historyItemsPart.split(',').map((s: string) => s.trim()).filter(Boolean)
-          : [];
-      })(),
-      otherHistoryDetails: (() => {
-        const rawPastMedicalHistory = record.past_medical_history ?? '';
-        const [, otherHistoryPart] = rawPastMedicalHistory.split(/\s*;\s*/);
-        return otherHistoryPart?.trim() ?? '';
-      })(),
+      pastHistory: parsePastMedicalHistory(record.past_medical_history).pastHistory,
+      otherHistoryDetails: parsePastMedicalHistory(record.past_medical_history).otherHistoryDetails,
       drugAllergy: record.allergy ?? null,
       painScore: record.pain_score ?? null,
       doNotTreat: record.do_not_treat?.toString() ?? '',
@@ -542,12 +533,18 @@ function App() {
             medicalId: p.medical_id ?? prev.medicalId,
             visitNumber: p.visit_number ?? prev.visitNumber,
             drugAllergy: p.drug_allergy ?? prev.drugAllergy,
+            pastMedicalHistory: p.past_medical_history ?? prev.pastMedicalHistory,
+            doNotTreat: p.do_not_treat ?? prev.doNotTreat,
           };
         });
 
+        const parsedPast = parsePastMedicalHistory(p.past_medical_history);
         setVitals(prev => ({
           ...prev,
           drugAllergy: p.drug_allergy ?? prev.drugAllergy,
+          pastHistory: p.past_medical_history != null ? parsedPast.pastHistory : prev.pastHistory,
+          otherHistoryDetails: p.past_medical_history != null ? parsedPast.otherHistoryDetails : prev.otherHistoryDetails,
+          doNotTreat: String(p.do_not_treat ?? ""),
         }));
       } catch (error) {
         console.error("抓病患詳細資料失敗:", error);
@@ -558,12 +555,25 @@ function App() {
   }, [patientData?.patient_id, isDemoMode]);
 
   useEffect(() => {
-    if (patientData?.drugAllergy === undefined) return;
+    if (
+      patientData?.drugAllergy === undefined &&
+      patientData?.pastMedicalHistory === undefined &&
+      patientData?.doNotTreat === undefined
+    ) {
+      return;
+    }
+    const parsedPast = parsePastMedicalHistory(patientData?.pastMedicalHistory);
     setVitals(prev => ({
       ...prev,
-      drugAllergy: patientData.drugAllergy ?? null,
+      drugAllergy: patientData?.drugAllergy ?? prev.drugAllergy,
+      pastHistory: patientData?.pastMedicalHistory != null ? parsedPast.pastHistory : prev.pastHistory,
+      otherHistoryDetails: patientData?.pastMedicalHistory != null ? parsedPast.otherHistoryDetails : prev.otherHistoryDetails,
+      doNotTreat:
+        patientData?.doNotTreat !== undefined
+          ? String(patientData.doNotTreat ?? "")
+          : prev.doNotTreat,
     }));
-  }, [patientData?.drugAllergy]);
+  }, [patientData?.drugAllergy, patientData?.pastMedicalHistory, patientData?.doNotTreat]);
 
   const goToAddPatientClean = () => {
     resetAllTriageState();
@@ -741,6 +751,12 @@ function App() {
                     }
                     highlightHistoricalDrugAllergy={
                       Boolean(patientData?.isReturning && vitals.drugAllergy)
+                    }
+                    highlightHistoricalPastHistory={
+                      Boolean(patientData?.isReturning && patientData?.pastMedicalHistory)
+                    }
+                    highlightHistoricalDoNotTreat={
+                      Boolean(patientData?.isReturning && patientData?.doNotTreat)
                     }
                   />
                 </div>

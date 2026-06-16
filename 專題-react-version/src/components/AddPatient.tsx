@@ -20,6 +20,8 @@ export interface PatientData {
   medicalId?: string;
   visitNumber?: string;
   drugAllergy?: string | null;
+  pastMedicalHistory?: string | null;
+  doNotTreat?: string | null;
   isReturning?: boolean;
 }
 
@@ -75,6 +77,8 @@ export default function AddPatient({
   const [icCard, setIcCard] = useState(false);
   const [existingPatientId, setExistingPatientId] = useState<string | null>(null);
   const [drugAllergy, setDrugAllergy] = useState<string | null>(null);
+  const [pastMedicalHistory, setPastMedicalHistory] = useState<string | null>(null);
+  const [doNotTreat, setDoNotTreat] = useState<string | null>(null);
   const [directErModal, setDirectErModal] = useState<{
     patientId: string;
     wristbandSuffix: string;
@@ -95,9 +99,13 @@ export default function AddPatient({
         setGender(p.gender === "M" ? "男" : p.gender === "F" ? "女" : "不詳");
         setExistingPatientId(p.patient_id);
         setDrugAllergy(p.drug_allergy ?? null);
+        setPastMedicalHistory(p.past_medical_history ?? null);
+        setDoNotTreat(p.do_not_treat ?? null);
       } else {
         setExistingPatientId(null);
         setDrugAllergy(null);
+        setPastMedicalHistory(null);
+        setDoNotTreat(null);
       }
     } catch (e) {
       setExistingPatientId(null);
@@ -141,6 +149,8 @@ export default function AddPatient({
     setIcCard(false);
     setExistingPatientId(null);
     setDrugAllergy(null);
+    setPastMedicalHistory(null);
+    setDoNotTreat(null);
   };
 
   const registerPatient = async (directToER: boolean) => {
@@ -221,6 +231,8 @@ export default function AddPatient({
           icCard,
           patient_id: pResult.patient_id,
           drugAllergy,
+          pastMedicalHistory,
+          doNotTreat,
           isReturning: Boolean(pResult.is_returning),
         });
       } else {

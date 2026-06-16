@@ -15,6 +15,8 @@ interface LeftPanelProps {
   setVitals: React.Dispatch<React.SetStateAction<VitalsForm>>;
   highlightDrugAllergy?: boolean;
   highlightHistoricalDrugAllergy?: boolean;
+  highlightHistoricalPastHistory?: boolean;
+  highlightHistoricalDoNotTreat?: boolean;
 }
 
 const LeftPanel: React.FC<LeftPanelProps> = ({
@@ -27,6 +29,8 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   setVitals,
   highlightDrugAllergy,
   highlightHistoricalDrugAllergy,
+  highlightHistoricalPastHistory,
+  highlightHistoricalDoNotTreat,
 }) => {
   const [symptomBodyOpen, setSymptomBodyOpen] = useState(false);
 
@@ -38,6 +42,8 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
         vitals={vitals}
         setVitals={setVitals}
         highlightHistoricalDrugAllergy={highlightHistoricalDrugAllergy}
+        highlightHistoricalPastHistory={highlightHistoricalPastHistory}
+        highlightHistoricalDoNotTreat={highlightHistoricalDoNotTreat}
       />
       <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/40 shadow-md overflow-hidden">
         <button

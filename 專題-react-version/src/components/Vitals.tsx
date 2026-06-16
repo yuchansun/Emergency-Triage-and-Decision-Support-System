@@ -29,6 +29,8 @@ export type VitalsProps = {
   vitals?: VitalsState;
   setVitals?: React.Dispatch<React.SetStateAction<VitalsState>>;
   highlightHistoricalDrugAllergy?: boolean;
+  highlightHistoricalPastHistory?: boolean;
+  highlightHistoricalDoNotTreat?: boolean;
 };
 
 const Vitals: React.FC<VitalsProps> = ({
@@ -56,6 +58,8 @@ const Vitals: React.FC<VitalsProps> = ({
   },
   setVitals = () => { },
   highlightHistoricalDrugAllergy = false,
+  highlightHistoricalPastHistory = false,
+  highlightHistoricalDoNotTreat = false,
 }) => {
   // === 移除所有 local useState，改成從 props 讀取 ===
   // 例如：原本 const [temperature, setTemperature] = useState<string>('');
@@ -253,6 +257,8 @@ const Vitals: React.FC<VitalsProps> = ({
   const allergyDetails = allergyParsed.detail;
   const setAllergyDetails = (val: string) => setDrugAllergy('有', val);
   const showHistoricalAllergy = highlightHistoricalDrugAllergy && Boolean(drugAllergy);
+  const showHistoricalPastHistory = highlightHistoricalPastHistory && pastHistory.length > 0;
+  const showHistoricalDoNotTreat = highlightHistoricalDoNotTreat && Boolean(doNotTreat.trim());
 
   // === 新增：LMP/EDC 的 local state（如果不需要存到資料庫）
   const [lmp, setLmp] = useState<string>('');
@@ -533,7 +539,9 @@ const Vitals: React.FC<VitalsProps> = ({
                   className={
                     "px-3 py-1 rounded-full text-sm transition-colors border " +
                     (isSelected
-                      ? "bg-primary text-white border-primary"
+                      ? showHistoricalPastHistory
+                        ? "bg-red-50 text-red-600 border-red-400 font-semibold"
+                        : "bg-primary text-white border-primary"
                       : "bg-white dark:bg-background-dark text-primary border-primary/30 hover:bg-primary/10")
                   }
                 >
@@ -548,14 +556,22 @@ const Vitals: React.FC<VitalsProps> = ({
               onChange={(e) => setDoNotTreat(e.target.value)}
               placeholder="禁治療詳情（如：DNR、DNI 等）"
               type="text"
-              className="form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary"
+              className={
+                "form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary" +
+                (showHistoricalDoNotTreat ? " border-red-400 text-red-600 font-semibold" : "")
+              }
             />
             <input
               value={otherHistoryDetails}
               onChange={(e) => setOtherHistoryDetails(e.target.value)}
               placeholder="其他病史詳情"
               type="text"
-              className="form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary"
+              className={
+                "form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary" +
+                (showHistoricalPastHistory && otherHistoryDetails.trim()
+                  ? " border-red-400 text-red-600 font-semibold"
+                  : "")
+              }
             />
           </div>
         </fieldset>
