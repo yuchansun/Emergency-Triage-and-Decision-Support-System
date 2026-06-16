@@ -87,7 +87,7 @@ export const PRESENTATION_SCENARIOS: PresentationScenario[] = [
     id: 'ems_trauma',
     match: matchesEmsTrauma,
     summary:
-      '50歲女性，119機車自撞分隔島送醫。頭部擦傷流血、右手穿刺傷，訴頭痛手痛，伴頭暈',
+      '21歲女性，119機車自撞分隔島送醫。頭部擦傷流血、右手穿刺傷，訴頭痛手痛，伴頭暈',
     activeTab: 't',
     mustSymptoms: ['上肢鈍傷'],
     decoySymptoms: ['頭部鈍傷', '頭部撕裂傷、擦傷', '上肢穿刺傷'],
