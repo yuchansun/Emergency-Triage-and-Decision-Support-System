@@ -14,6 +14,7 @@ interface LeftPanelProps {
   vitals: VitalsForm;
   setVitals: React.Dispatch<React.SetStateAction<VitalsForm>>;
   highlightDrugAllergy?: boolean;
+  highlightHistoricalDrugAllergy?: boolean;
 }
 
 const LeftPanel: React.FC<LeftPanelProps> = ({
@@ -25,13 +26,19 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   vitals,
   setVitals,
   highlightDrugAllergy,
+  highlightHistoricalDrugAllergy,
 }) => {
   const [symptomBodyOpen, setSymptomBodyOpen] = useState(false);
 
   return (
     <div className={`flex flex-col gap-4 ${highlightDrugAllergy ? 'ring-2 ring-red-300' : ''}`}>
       <ChiefComplaintMainPanel />
-      <Vitals gender={gender} vitals={vitals} setVitals={setVitals} />
+      <Vitals
+        gender={gender}
+        vitals={vitals}
+        setVitals={setVitals}
+        highlightHistoricalDrugAllergy={highlightHistoricalDrugAllergy}
+      />
       <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/40 shadow-md overflow-hidden">
         <button
           type="button"

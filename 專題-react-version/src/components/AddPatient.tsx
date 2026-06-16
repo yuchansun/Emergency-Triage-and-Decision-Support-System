@@ -20,6 +20,7 @@ export interface PatientData {
   medicalId?: string;
   visitNumber?: string;
   drugAllergy?: string | null;
+  isReturning?: boolean;
 }
 
 //病人資料輸入與掛號流程
@@ -220,6 +221,7 @@ export default function AddPatient({
           icCard,
           patient_id: pResult.patient_id,
           drugAllergy,
+          isReturning: Boolean(pResult.is_returning),
         });
       } else {
         alert("掛號失敗：" + tResult.detail);

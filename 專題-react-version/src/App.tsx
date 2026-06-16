@@ -17,6 +17,37 @@ import type { VitalsProps } from './components/Vitals';
 
 type VitalsForm = NonNullable<VitalsProps['vitals']>;
 
+const isDirectToERRecord = (record: {
+  patient_source?: string;
+  rule_code?: string;
+  chief_complaint?: string;
+}) => {
+  const source = String(record.patient_source ?? '').trim();
+  const chief = String(record.chief_complaint ?? '').trim();
+  const ruleCodes = String(record.rule_code ?? '')
+    .split(';')
+    .map((code) => code.trim())
+    .filter(Boolean);
+  return (
+    source === '直入急救室' ||
+    chief === '直入急救室' ||
+    ruleCodes.includes('R00000')
+  );
+};
+
+const hasDirectErEditMissingFields = (vitals: VitalsForm) => {
+  if (!vitals.drugAllergy) return true;
+  const coreVitals = [
+    vitals.temperature,
+    vitals.heartRate,
+    vitals.spo2,
+    vitals.respRate,
+    vitals.systolicBP,
+    vitals.diastolicBP,
+  ];
+  return coreVitals.some((value) => !String(value ?? '').trim());
+};
+
 interface ToccState {
   travel: string;
   travelStart: string;
@@ -74,6 +105,7 @@ function App() {
   const [worstSelectedDegree, setWorstSelectedDegree] = useState<number | null>(null);
   const [forceLevel1, setForceLevel1] = useState<boolean>(false);
   const [directToERSelected, setDirectToERSelected] = useState<boolean>(false);
+  const [editingDirectToER, setEditingDirectToER] = useState<boolean>(false);
 
   const [patientData, setPatientData] = useState<PatientData | null>(null);
   const [isDemoMode, setIsDemoMode] = useState(false);
@@ -116,6 +148,8 @@ function App() {
   }, []);
 
   const restoreTriageFromHistoryRecord = useCallback(async (record: any) => {
+    setEditingDirectToER(isDirectToERRecord(record));
+
     setPatientData({
       patient_id: record.patient_id,
       triage_id: record.triage_id,
@@ -249,6 +283,7 @@ function App() {
     setWorstSelectedDegree(null);
     setForceLevel1(false);
     setDirectToERSelected(false);
+    setEditingDirectToER(false);
 
     setBed('');
     setPatientSource('');
@@ -701,7 +736,12 @@ function App() {
                     age={patientData?.age}
                     vitals={vitals}
                     setVitals={setVitals}
-                    highlightDrugAllergy={Boolean(patientData?.drugAllergy)}
+                    highlightDrugAllergy={
+                      editingDirectToER && hasDirectErEditMissingFields(vitals)
+                    }
+                    highlightHistoricalDrugAllergy={
+                      Boolean(patientData?.isReturning && vitals.drugAllergy)
+                    }
                   />
                 </div>
                 <div className="min-w-0 flex flex-col gap-4">

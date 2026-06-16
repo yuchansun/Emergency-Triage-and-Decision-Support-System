@@ -28,6 +28,7 @@ export type VitalsProps = {
   gender?: '男' | '女' | '不詳' | '';
   vitals?: VitalsState;
   setVitals?: React.Dispatch<React.SetStateAction<VitalsState>>;
+  highlightHistoricalDrugAllergy?: boolean;
 };
 
 const Vitals: React.FC<VitalsProps> = ({
@@ -53,7 +54,8 @@ const Vitals: React.FC<VitalsProps> = ({
     doNotTreat: '',
     sentiment: null,
   },
-  setVitals = () => { }
+  setVitals = () => { },
+  highlightHistoricalDrugAllergy = false,
 }) => {
   // === 移除所有 local useState，改成從 props 讀取 ===
   // 例如：原本 const [temperature, setTemperature] = useState<string>('');
@@ -250,6 +252,7 @@ const Vitals: React.FC<VitalsProps> = ({
   // 藥物過敏詳情由 vitals.drugAllergy 解析，不再使用 local state，避免未儲存
   const allergyDetails = allergyParsed.detail;
   const setAllergyDetails = (val: string) => setDrugAllergy('有', val);
+  const showHistoricalAllergy = highlightHistoricalDrugAllergy && Boolean(drugAllergy);
 
   // === 新增：LMP/EDC 的 local state（如果不需要存到資料庫）
   const [lmp, setLmp] = useState<string>('');
@@ -573,18 +576,29 @@ const Vitals: React.FC<VitalsProps> = ({
               className={
                 "px-3 py-1 rounded-full text-sm transition-colors border " +
                 (allergyParsed.status === '不詳'
-                  ? "bg-primary text-white border-primary"
+                  ? showHistoricalAllergy
+                    ? "bg-red-50 text-red-600 border-red-400 font-semibold"
+                    : "bg-primary text-white border-primary"
                   : "bg-white dark:bg-background-dark text-primary border-primary/30 hover:bg-primary/10")
               }
             >
               不詳
             </button>
+            {showHistoricalAllergy && allergyParsed.status === '無' && (
+              <span className="text-red-600 font-semibold text-sm shrink-0">無</span>
+            )}
+            {showHistoricalAllergy && allergyParsed.status === '有' && !allergyDetails && (
+              <span className="text-red-600 font-semibold text-sm shrink-0">有</span>
+            )}
             <input
               value={allergyDetails}
               onChange={(e) => setAllergyDetails(e.target.value)}
               placeholder="藥物過敏詳情（如：盤尼西林、阿斯匹靈等）"
               type="text"
-              className="form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary"
+              className={
+                "form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary" +
+                (showHistoricalAllergy && allergyDetails ? " text-red-600 font-semibold" : "")
+              }
             />
           </div>
         </fieldset>
