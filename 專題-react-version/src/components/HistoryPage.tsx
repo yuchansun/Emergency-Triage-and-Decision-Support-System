@@ -19,6 +19,7 @@ type TriageRecord = {
   idNumber: string;
   triageLevel: 1 | 2 | 3 | 4 | 5 | null;
   chiefComplaintNote: string; // 護理師主訴敘述
+  supplementNote: string; // 補充資料
   finalSymptoms: string[]; // 最後症狀
   arrivalAt: string; // YYYY-MM-DD HH:mm
   nurseId: string;
@@ -124,6 +125,8 @@ const CHANGE_LABELS: Record<string, string> = {
   tocc_occupation_other: "職業其他",
   rule_code: "規則代碼",
   chief_complaint: "主訴",
+  original_transcript: "補充資料",
+  supplement_text: "補充資料",
 };
 
 type FilterForm = {
@@ -188,42 +191,10 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, in
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [dateInputResetKey, setDateInputResetKey] = useState(0);
 
   const API_BASE_URL = getApiBaseUrl();
-
-  const isDemoRecord = (triageId: string) => triageId.startsWith("DEMO-");
-
-  const deleteDemoRecord = async (triageId: string) => {
-    if (!isDemoRecord(triageId)) {
-      alert("僅可刪除教學示範資料。");
-      return;
-    }
-    if (!window.confirm("確定刪除此教學紀錄？此紀錄將從資料庫移除。")) {
-      return;
-    }
-    setDeleting(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/triagesave/${encodeURIComponent(triageId)}`, {
-        method: "DELETE",
-      });
-      const result = await res.json();
-      if (!res.ok || !result.success) {
-        throw new Error(result.detail || "刪除失敗");
-      }
-      setRecords((prev) => prev.filter((r) => r.triageId !== triageId));
-      setTotal((prev) => Math.max(0, prev - 1));
-      setSelected(null);
-      alert("教學紀錄已刪除");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "刪除失敗";
-      alert(message);
-    } finally {
-      setDeleting(false);
-    }
-  };
 
   const parseAllergyValue = (raw: any): { status: "無" | "不詳" | "有"; detail: string } => {
     const value = String(raw || "").trim();
@@ -456,6 +427,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ patientData: _patientData, in
         idNumber: d.id_number || "",
         triageLevel: normalizeTriageLevel(d.triage_level),
         chiefComplaintNote: d.chief_complaint || "",
+        supplementNote: d.supplement_text || d.original_transcript || "",
         finalSymptoms:
           formattedSymptoms.length > 0
             ? formattedSymptoms
@@ -916,7 +888,7 @@ td, th {
         result: {
           rule_code: editRuleCode.trim() || selectedRaw?.rule_code || "",
           chief_complaint: editDraft.chiefComplaintNote || "",
-          original_transcript: selectedRaw?.original_transcript || "",
+          original_transcript: editDraft.supplementNote || "",
         },
         vitals: {
           temperature: Number(editDraft.vitals.temperature || 0),
@@ -968,7 +940,7 @@ td, th {
     <div className="p-6 md:p-8 min-h-full bg-[#F8FAFC]">
       <div className="max-w-screen-2xl mx-auto space-y-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-800">過去病史查詢</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-800">檢傷紀錄</h1>
           <p className="text-gray-500 mt-1">先設定條件，再按查詢顯示結果（每頁 20 筆）</p>
         </div>
 
@@ -1076,14 +1048,7 @@ td, th {
                 {records.map((r) => (
                   <tr key={r.triageId} onClick={() => void openDetail(r.triageId)} className="border-t border-gray-100 hover:bg-blue-50/60 cursor-pointer">
                     <td className="px-4 py-3">{r.arrivalAt}</td>
-                    <td className="px-4 py-3 text-blue-600">
-                      {r.triageId}
-                      {isDemoRecord(r.triageId) && (
-                        <span className="ml-2 inline-flex items-center rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-semibold text-orange-700">
-                          教學
-                        </span>
-                      )}
-                    </td>
+                    <td className="px-4 py-3 text-blue-600">{r.triageId}</td>
                     <td className="px-4 py-3">{r.name}</td>
                     <td className="px-4 py-3">{r.patientId}</td>
                     <td className="px-4 py-3">{r.gender === "M" ? "男" : r.gender === "F" ? "女" : "不詳"} / {r.age}</td>
@@ -1143,11 +1108,6 @@ td, th {
             <div className="flex justify-between items-start">
               <div className="flex items-center gap-3">
                 <h3 className="text-xl font-bold text-gray-800">檢傷紀錄詳情 {loadingDetail ? "（讀取中）" : ""}</h3>
-                {selected && isDemoRecord(selected.triageId) && (
-                  <span className="inline-flex items-center rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
-                    教學資料
-                  </span>
-                )}
               </div>
               <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-700">✕</button>
             </div>
@@ -1177,16 +1137,6 @@ td, th {
                   className="px-4 py-2 rounded-xl border border-yellow-300 bg-yellow-50 text-yellow-700 text-sm font-medium hover:bg-yellow-100"
                 >
                   返回主頁編輯
-                </button>
-              )}
-              {selected && isDemoRecord(selected.triageId) && (
-                <button
-                  type="button"
-                  onClick={() => void deleteDemoRecord(selected.triageId)}
-                  disabled={deleting || saving}
-                  className="px-4 py-2 rounded-xl border border-red-200 bg-red-50 text-red-600 text-sm font-medium hover:bg-red-100"
-                >
-                  {deleting ? "刪除中..." : "刪除教學資料"}
                 </button>
               )}
               {isEditing && (
@@ -1298,6 +1248,19 @@ td, th {
                 />
               ) : (
                 <div className="mt-1 rounded-xl bg-gray-50 border border-gray-200 p-3">{editDraft.chiefComplaintNote}</div>
+              )}
+              <div className="text-gray-500 text-sm mt-3">補充資料</div>
+              {isEditing ? (
+                <textarea
+                  value={editDraft.supplementNote}
+                  onChange={(e) => setDraftField("supplementNote", e.target.value)}
+                  className="mt-1 w-full rounded-xl bg-white border border-gray-300 p-3 min-h-20"
+                  placeholder="可輸入補充說明（例如：既往病史、用藥、家屬提供的額外資訊等）"
+                />
+              ) : (
+                <div className="mt-1 rounded-xl bg-gray-50 border border-gray-200 p-3 whitespace-pre-wrap">
+                  {editDraft.supplementNote || "無"}
+                </div>
               )}
               <div className="text-gray-500 text-sm mt-3">最後症狀</div>
               {isEditing ? (

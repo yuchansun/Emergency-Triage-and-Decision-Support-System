@@ -234,8 +234,10 @@ async def create_triagesave(triagesave_data: dict):
             cur.execute("DELETE FROM vital_signs WHERE triage_id = %s", (triage_id,))
             vitals = triagesave_data.get("vitals", {})
             do_not_treat = vitals.get("do_not_treat")
-            if do_not_treat == '' or do_not_treat is None:
-                do_not_treat = 0
+            if do_not_treat is None or str(do_not_treat).strip() == "":
+                do_not_treat = None
+            else:
+                do_not_treat = str(do_not_treat).strip()
 
             cur.execute(
                 """INSERT INTO vital_signs (
@@ -398,6 +400,29 @@ async def create_triagesave(triagesave_data: dict):
                     WHERE patient_id = %s
                     """,
                     (allergy, patient_id)
+                )
+
+            # 更新病患過去病史（與 vital_signs 相同格式）
+            past_medical_history = vitals.get("past_medical_history")
+            if past_medical_history is not None:
+                cur.execute(
+                    """
+                    UPDATE patients
+                    SET past_medical_history = %s
+                    WHERE patient_id = %s
+                    """,
+                    (past_medical_history, patient_id)
+                )
+
+            # 更新病患禁治療詳情
+            if "do_not_treat" in vitals:
+                cur.execute(
+                    """
+                    UPDATE patients
+                    SET do_not_treat = %s
+                    WHERE patient_id = %s
+                    """,
+                    (do_not_treat, patient_id)
                 )
 
             # 更新 patients 基本資料（如果有傳入）

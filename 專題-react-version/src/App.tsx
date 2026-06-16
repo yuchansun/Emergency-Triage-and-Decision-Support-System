@@ -14,9 +14,44 @@ import StatsPage from './components/StatsPage';
 import StaffProfile from './components/StaffProfile';
 import { openVoiceConsentPopup } from './components/VoiceConsentModal';
 import type { VitalsProps } from './components/Vitals';
+<<<<<<< HEAD
 import { getApiBaseUrl } from './config/serviceUrls';
+=======
+import { parsePastMedicalHistory } from './utils/parsePastMedicalHistory';
+>>>>>>> main
 
 type VitalsForm = NonNullable<VitalsProps['vitals']>;
+
+const isDirectToERRecord = (record: {
+  patient_source?: string;
+  rule_code?: string;
+  chief_complaint?: string;
+}) => {
+  const source = String(record.patient_source ?? '').trim();
+  const chief = String(record.chief_complaint ?? '').trim();
+  const ruleCodes = String(record.rule_code ?? '')
+    .split(';')
+    .map((code) => code.trim())
+    .filter(Boolean);
+  return (
+    source === '直入急救室' ||
+    chief === '直入急救室' ||
+    ruleCodes.includes('R00000')
+  );
+};
+
+const hasDirectErEditMissingFields = (vitals: VitalsForm) => {
+  if (!vitals.drugAllergy) return true;
+  const coreVitals = [
+    vitals.temperature,
+    vitals.heartRate,
+    vitals.spo2,
+    vitals.respRate,
+    vitals.systolicBP,
+    vitals.diastolicBP,
+  ];
+  return coreVitals.some((value) => !String(value ?? '').trim());
+};
 
 interface ToccState {
   travel: string;
@@ -75,6 +110,7 @@ function App() {
   const [worstSelectedDegree, setWorstSelectedDegree] = useState<number | null>(null);
   const [forceLevel1, setForceLevel1] = useState<boolean>(false);
   const [directToERSelected, setDirectToERSelected] = useState<boolean>(false);
+  const [editingDirectToER, setEditingDirectToER] = useState<boolean>(false);
 
   const [patientData, setPatientData] = useState<PatientData | null>(null);
   const [isDemoMode, setIsDemoMode] = useState(false);
@@ -102,8 +138,138 @@ function App() {
     selectedRules: {} as Record<string, { degree: number; judge: string; rule_code: string; symptom_name: string }>,
     supplementText: '',
   });
+  const [sessionRestore, setSessionRestore] = useState<{
+    token: number;
+    selectedRules: Record<string, { degree: number; judge: string; rule_code: string; symptom_name: string }>;
+    recommendedSymptoms: string[];
+    supplementText: string;
+  } | null>(null);
+  const [pendingHistoryRulesKey, setPendingHistoryRulesKey] = useState<number | null>(null);
 
   const isAdmin = (currentUser?.role || "").toLowerCase() === "admin";
+
+  const handleSessionRestoreApplied = useCallback(() => {
+    setSessionRestore(null);
+  }, []);
+
+  const restoreTriageFromHistoryRecord = useCallback(async (record: any) => {
+    setEditingDirectToER(isDirectToERRecord(record));
+
+    setPatientData({
+      patient_id: record.patient_id,
+      triage_id: record.triage_id,
+      name: record.name,
+      gender: record.gender === 'M' ? '男' : record.gender === 'F' ? '女' : '不詳',
+      age: record.age,
+      birthDate: record.birth_date,
+      idNumber: record.id_number,
+      medicalId: record.medical_id,
+      drugAllergy: record.allergy,
+      icCard: false,
+    });
+
+    setVitals({
+      temperature: record.temperature?.toString() ?? '',
+      heartRate: record.heart_rate?.toString() ?? '',
+      spo2: record.spo2?.toString() ?? '',
+      respRate: record.respiratory_rate?.toString() ?? '',
+      weight: record.weight?.toString() ?? '',
+      systolicBP: record.blood_pressure_sys?.toString() ?? '',
+      diastolicBP: record.blood_pressure_dia?.toString() ?? '',
+      bloodSugar: record.blood_sugar?.toString() ?? '',
+      bloodSugarLevel: null,
+      gcsEye: record.gcs_eye?.toString() ?? null,
+      gcsVerbal: record.gcs_verbal?.toString() ?? null,
+      gcsMotor: record.gcs_motor?.toString() ?? null,
+      obHistory: null,
+      pastHistory: parsePastMedicalHistory(record.past_medical_history).pastHistory,
+      otherHistoryDetails: parsePastMedicalHistory(record.past_medical_history).otherHistoryDetails,
+      drugAllergy: record.allergy ?? null,
+      painScore: record.pain_score ?? null,
+      doNotTreat: record.do_not_treat?.toString() ?? '',
+      sentiment: record.sentiment ?? null,
+    });
+
+    setInputText(record.chief_complaint ?? '');
+
+    setTocc({
+      travel: record.tocc_travel ?? '',
+      travelStart: record.tocc_travel_start ?? '',
+      travelEnd: record.tocc_travel_end ?? '',
+      occupation: record.tocc_occupation ?? '',
+      occupationOther: record.tocc_occupation_other ?? '',
+      contactItems: [],
+      clusterItems: record.tocc_cluster_items ? record.tocc_cluster_items.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+      clusterOther: record.tocc_cluster_other ?? '',
+      symptoms: record.tocc_symptoms ? record.tocc_symptoms.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+    });
+
+    setVisitTime(record.visit_time ?? new Date().toISOString());
+    setBed(record.bed ?? '');
+    setPatientSource(record.patient_source ?? '');
+    setMajorIncident(record.major_incident ?? '');
+
+    const pairs = Array.isArray(record.symptom_rule_pairs) ? record.symptom_rule_pairs : [];
+    const symptomKeys = new Set<string>();
+    const recommendedSymptoms: string[] = [];
+    const seenSymptoms = new Set<string>();
+    for (const pair of pairs) {
+      const name = String(pair?.symptom_name || '').trim();
+      if (!name) continue;
+      symptomKeys.add(`manual:${name}`);
+      if (!seenSymptoms.has(name)) {
+        seenSymptoms.add(name);
+        recommendedSymptoms.push(name);
+      }
+    }
+    setSelectedSymptoms(symptomKeys);
+
+    const ruleCodes = String(record.rule_code || '')
+      .split(';')
+      .map((code: string) => code.trim())
+      .filter(Boolean);
+
+    const restoredRules: Record<string, { degree: number; judge: string; rule_code: string; symptom_name: string }> = {};
+    if (ruleCodes.length > 0) {
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+        const res = await fetch(`${API_BASE_URL}/triage_hierarchy`);
+        if (res.ok) {
+          const rows = await res.json();
+          for (const code of ruleCodes) {
+            const row = (rows as Array<{ rule_code: string; judge_name: string; symptom_name: string; ttas_degree: string }>)
+              .find((item) => item.rule_code === code);
+            if (!row) continue;
+            restoredRules[code] = {
+              degree: Number(row.ttas_degree),
+              judge: row.judge_name,
+              rule_code: code,
+              symptom_name: row.symptom_name,
+            };
+          }
+        }
+      } catch (err) {
+        console.error('[HISTORY] restore selectedRules failed', err);
+      }
+    }
+
+    const restoredDegrees = Object.values(restoredRules).map((rule) => rule.degree).filter(Number.isFinite);
+    const supplementText = String(record.supplement_text || record.original_transcript || '').trim();
+    setWorstSelectedDegree(restoredDegrees.length > 0 ? Math.min(...restoredDegrees) : null);
+    setChiefComplaintData({
+      selectedRules: restoredRules,
+      supplementText,
+    });
+    const restoreToken = Date.now();
+    setSessionRestore({
+      token: restoreToken,
+      selectedRules: restoredRules,
+      recommendedSymptoms,
+      supplementText,
+    });
+    setPendingHistoryRulesKey(restoreToken);
+    setStage('main');
+  }, []);
 
 
   const resetAllTriageState = () => {
@@ -112,6 +278,7 @@ function App() {
     setWorstSelectedDegree(null);
     setForceLevel1(false);
     setDirectToERSelected(false);
+    setEditingDirectToER(false);
 
     setBed('');
     setPatientSource('');
@@ -124,6 +291,7 @@ function App() {
       selectedRules: {},
       supplementText: '',
     });
+    setPendingHistoryRulesKey(null);
     setTriageActiveTab('a');
   };
 
@@ -369,12 +537,18 @@ function App() {
             medicalId: p.medical_id ?? prev.medicalId,
             visitNumber: p.visit_number ?? prev.visitNumber,
             drugAllergy: p.drug_allergy ?? prev.drugAllergy,
+            pastMedicalHistory: p.past_medical_history ?? prev.pastMedicalHistory,
+            doNotTreat: p.do_not_treat ?? prev.doNotTreat,
           };
         });
 
+        const parsedPast = parsePastMedicalHistory(p.past_medical_history);
         setVitals(prev => ({
           ...prev,
           drugAllergy: p.drug_allergy ?? prev.drugAllergy,
+          pastHistory: p.past_medical_history != null ? parsedPast.pastHistory : prev.pastHistory,
+          otherHistoryDetails: p.past_medical_history != null ? parsedPast.otherHistoryDetails : prev.otherHistoryDetails,
+          doNotTreat: String(p.do_not_treat ?? ""),
         }));
       } catch (error) {
         console.error("抓病患詳細資料失敗:", error);
@@ -385,12 +559,25 @@ function App() {
   }, [patientData?.patient_id, isDemoMode]);
 
   useEffect(() => {
-    if (patientData?.drugAllergy === undefined) return;
+    if (
+      patientData?.drugAllergy === undefined &&
+      patientData?.pastMedicalHistory === undefined &&
+      patientData?.doNotTreat === undefined
+    ) {
+      return;
+    }
+    const parsedPast = parsePastMedicalHistory(patientData?.pastMedicalHistory);
     setVitals(prev => ({
       ...prev,
-      drugAllergy: patientData.drugAllergy ?? null,
+      drugAllergy: patientData?.drugAllergy ?? prev.drugAllergy,
+      pastHistory: patientData?.pastMedicalHistory != null ? parsedPast.pastHistory : prev.pastHistory,
+      otherHistoryDetails: patientData?.pastMedicalHistory != null ? parsedPast.otherHistoryDetails : prev.otherHistoryDetails,
+      doNotTreat:
+        patientData?.doNotTreat !== undefined
+          ? String(patientData.doNotTreat ?? "")
+          : prev.doNotTreat,
     }));
-  }, [patientData?.drugAllergy]);
+  }, [patientData?.drugAllergy, patientData?.pastMedicalHistory, patientData?.doNotTreat]);
 
   const goToAddPatientClean = () => {
     resetAllTriageState();
@@ -446,7 +633,7 @@ function App() {
         <nav className="flex-1 px-3 space-y-2 mt-4">
           {[
             { id: 'addpatient', label: '新病患掛號', icon: 'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z' },
-            { id: 'history', label: '過去病史查詢', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
+            { id: 'history', label: '檢傷紀錄', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
             ...(isAdmin
               ? [{ id: 'nurses', label: '護理師資訊', icon: 'M17 20h5v-1a4 4 0 00-4-4h-1M9 20H4v-1a4 4 0 014-4h1m6 0a4 4 0 10-8 0 4 4 0 008 0zm6-7a3 3 0 11-6 0 3 3 0 016 0z' }]
               : []),
@@ -531,6 +718,10 @@ function App() {
               voiceConsented={voiceConsented}
               vitals={vitals}
               onChiefComplaintChange={handleChiefComplaintChange}
+              sessionRestore={sessionRestore}
+              restoredSelectedRules={pendingHistoryRulesKey ? chiefComplaintData.selectedRules : undefined}
+              restoredSelectedRulesKey={pendingHistoryRulesKey}
+              onSessionRestoreApplied={handleSessionRestoreApplied}
               llmMode={llmMode}
             >
               <>
@@ -559,7 +750,18 @@ function App() {
                     age={patientData?.age}
                     vitals={vitals}
                     setVitals={setVitals}
-                    highlightDrugAllergy={Boolean(patientData?.drugAllergy)}
+                    highlightDrugAllergy={
+                      editingDirectToER && hasDirectErEditMissingFields(vitals)
+                    }
+                    highlightHistoricalDrugAllergy={
+                      Boolean(patientData?.isReturning && vitals.drugAllergy)
+                    }
+                    highlightHistoricalPastHistory={
+                      Boolean(patientData?.isReturning && patientData?.pastMedicalHistory)
+                    }
+                    highlightHistoricalDoNotTreat={
+                      Boolean(patientData?.isReturning && patientData?.doNotTreat)
+                    }
                   />
                 </div>
                 <div className="min-w-0 flex flex-col gap-4">
@@ -599,65 +801,7 @@ function App() {
             initialSelectedTriageId={historySelectedId}
             onViewNurse={openNursePage}
             onGoToMain={(record: any) => {
-              // 填入病患基本資料
-              setPatientData({
-                patient_id: record.patient_id,
-                triage_id: record.triage_id,
-                name: record.name,
-                gender: record.gender === 'M' ? '男' : record.gender === 'F' ? '女' : '不詳',
-                age: record.age,
-                birthDate: record.birth_date,
-                idNumber: record.id_number,
-                medicalId: record.medical_id,
-                drugAllergy: record.allergy,
-                icCard: false,
-              });
-
-              // 填入生命徵象
-              {
-                const rawPastMedicalHistory = record.past_medical_history ?? '';
-                const [historyItemsPart, otherHistoryPart] = rawPastMedicalHistory.split(/\s*;\s*/);
-                setVitals({
-                  temperature: record.temperature?.toString() ?? '',
-                  heartRate: record.heart_rate?.toString() ?? '',
-                  spo2: record.spo2?.toString() ?? '',
-                  respRate: record.respiratory_rate?.toString() ?? '',
-                  weight: record.weight?.toString() ?? '',
-                  systolicBP: record.blood_pressure_sys?.toString() ?? '',
-                  diastolicBP: record.blood_pressure_dia?.toString() ?? '',
-                  bloodSugar: record.blood_sugar?.toString() ?? '',
-                  bloodSugarLevel: null,
-                  gcsEye: record.gcs_eye?.toString() ?? null,
-                  gcsVerbal: record.gcs_verbal?.toString() ?? null,
-                  gcsMotor: record.gcs_motor?.toString() ?? null,
-                  obHistory: null,
-                  pastHistory: historyItemsPart ? historyItemsPart.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
-                  otherHistoryDetails: otherHistoryPart?.trim() ?? '',
-                  drugAllergy: record.allergy ?? null,
-                  painScore: record.pain_score ?? null,
-                  doNotTreat: record.do_not_treat?.toString() ?? '',
-                  sentiment: record.sentiment ?? null,
-                });
-              }
-
-              // 填入主訴
-              setInputText(record.chief_complaint ?? '');
-
-              // 填入 TOCC
-              setTocc({
-                travel: record.tocc_travel ?? '',
-                travelStart: record.tocc_travel_start ?? '',
-                travelEnd: record.tocc_travel_end ?? '',
-                occupation: record.tocc_occupation ?? '',
-                occupationOther: record.tocc_occupation_other ?? '',
-                contactItems: [],
-                clusterItems: record.tocc_cluster_items ? record.tocc_cluster_items.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
-                clusterOther: record.tocc_cluster_other ?? '',
-                symptoms: record.tocc_symptoms ? record.tocc_symptoms.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
-              });
-
-              setVisitTime(record.visit_time ?? new Date().toISOString());
-              setStage("main");
+              void restoreTriageFromHistoryRecord(record);
             }}
           />
         )}

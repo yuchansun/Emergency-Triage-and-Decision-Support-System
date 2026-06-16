@@ -51,6 +51,25 @@ interface ChiefComplaintProps {
     }>;
     supplementText: string;
   }) => void;
+  sessionRestore?: {
+    token: number;
+    selectedRules: Record<string, {
+      degree: number;
+      judge: string;
+      rule_code: string;
+      symptom_name: string;
+    }>;
+    recommendedSymptoms: string[];
+    supplementText: string;
+  } | null;
+  restoredSelectedRules?: Record<string, {
+    degree: number;
+    judge: string;
+    rule_code: string;
+    symptom_name: string;
+  }>;
+  restoredSelectedRulesKey?: number | null;
+  onSessionRestoreApplied?: () => void;
 }
 
 type SpeechLang = 'zh-TW' | 'en-US' | 'ja-JP' | 'vi-VN' | 'id-ID';
@@ -173,6 +192,10 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
   voiceConsented = true,
   vitals,
   onChiefComplaintChange,  // ← 新增解構
+  sessionRestore,
+  restoredSelectedRules,
+  restoredSelectedRulesKey,
+  onSessionRestoreApplied,
 }) => {
   // 保留 prop 定義（依需求不刪 interface 與 prop），目前畫面不直接使用
   void onDirectToER;
@@ -194,11 +217,16 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
 
   const [triageRows, setTriageRows] = useState<TriageRow[] | null>(null);
   const [triageError, setTriageError] = useState<string | null>(null);
+  const pendingSessionRestoreRef = useRef<NonNullable<ChiefComplaintProps['sessionRestore']> | null>(null);
+  const sessionRestoreRulesAppliedRef = useRef(false);
+  const lastAppliedRestoreKeyRef = useRef<number | null>(null);
   const recognitionRef = useRef<any | null>(null);
   const [isListening, setIsListening] = useState(false);
   const voiceProcessedRef = useRef(false);
   const voiceBufferRef = useRef<string>('');
   const fullVoiceRef = useRef<string>('');
+  /** 已處理過的 SpeechRecognition result 索引，避免 onresult 重複累積或漏段 */
+  const voiceResultsProcessedRef = useRef(0);
   const langSwitchRef = useRef(false);
 
   const speechLangRef = useRef<SpeechLang>('zh-TW');
@@ -1012,6 +1040,18 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
         activePresentationScenarioRef.current = presentationScenario;
         console.log('[PRESENTATION] 命中展示情境:', presentationScenario.id);
 
+        // 展示模式：補充資料保留完整口述（語音逐字稿），主訴欄位才顯示統整結果
+        if (source.trim()) {
+          preservedTextSourceRef.current = source.trim();
+          setSupplementText(prev => {
+            const src = source.trim();
+            if (!prev) return src;
+            if (prev.includes(src)) return prev;
+            if (src.includes(prev)) return src;
+            return `${prev}\n${src}`;
+          });
+        }
+
         await sleep(presentationScenario.summarizeDelayMs);
         if (requestId !== integrateRequestIdRef.current) {
           console.log('[PRESENTATION] 略過過期的展示結果');
@@ -1042,8 +1082,13 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
           return;
         }
 
-        setLlmTraumaSymptoms([]);
-        setLlmNonTraumaSymptoms(symptomList);
+        if (presentationScenario.activeTab === 't') {
+          setLlmTraumaSymptoms(symptomList);
+          setLlmNonTraumaSymptoms([]);
+        } else {
+          setLlmTraumaSymptoms([]);
+          setLlmNonTraumaSymptoms(symptomList);
+        }
         setRecommendationSource('llm');
         setRecommendedSymptoms(symptomList);
 
@@ -1218,6 +1263,7 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       console.log('[VOICE] start');
       setIsListening(true);
       voiceBufferRef.current = '';
+      voiceResultsProcessedRef.current = 0;
       voiceProcessedRef.current = false;
     };
 
@@ -1305,16 +1351,23 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     };
 
     recognition.onresult = (event: any) => {
-      // 只取最新一個 result，避免每次都從 results[0] 取而造成整句重複累積
-      const lastIndex = event.results.length - 1;
-      const raw = (event.results[lastIndex][0].transcript as string) || '';
-      if (!raw) return;
-      // Web Speech API 即使用 zh-TW 也常回簡體；僅在中文語系時做 cn→台灣繁體（與後端 s2twp 一致）
-      const transcript =
-        speechLangRef.current === 'zh-TW' ? toTaiwanTraditional(raw) : raw;
+      // 只處理「尚未處理過」的 final results，避免重複累積或只取最後一段而漏掉前面
+      let newText = '';
+      for (let i = voiceResultsProcessedRef.current; i < event.results.length; i++) {
+        if (!event.results[i].isFinal) continue;
+        const raw = (event.results[i][0].transcript as string) || '';
+        if (!raw.trim()) continue;
+        const transcript =
+          speechLangRef.current === 'zh-TW' ? toTaiwanTraditional(raw) : raw;
+        newText += (newText ? ' ' : '') + transcript.trim();
+        voiceResultsProcessedRef.current = i + 1;
+      }
+      if (!newText) return;
 
       const base = voiceBufferRef.current || '';
-      voiceBufferRef.current = base ? base + (base.endsWith('\n') ? '' : '\n') + transcript : transcript;
+      voiceBufferRef.current = base
+        ? `${base}${base.endsWith('\n') ? '' : '\n'}${newText}`
+        : newText;
     };
 
     recognition.onerror = (e: any) => {
@@ -1363,6 +1416,7 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     // 開始新的錄音段落時，重置整段累積內容
     fullVoiceRef.current = '';
     voiceBufferRef.current = '';
+    voiceResultsProcessedRef.current = 0;
     voiceProcessedRef.current = false;
     startSpeechRecognition();
   };
@@ -1567,6 +1621,10 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     // 根據當前已選症狀，自動處理部分規則：
     // 1) 移除已不在 symptomTags 中的規則
     // 2) 若「心跳停止」只對應一條判斷依據，則自動帶入
+    if (pendingSessionRestoreRef.current && !sessionRestoreRulesAppliedRef.current) {
+      return;
+    }
+
     const tagNames = new Set(symptomTags.map(t => t.display));
 
     setSelectedRules(prev => {
@@ -1594,6 +1652,48 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       return next;
     });
   }, [symptomTags, symptomCriteriaIndex]);
+
+  useEffect(() => {
+    if (!sessionRestore) return;
+    pendingSessionRestoreRef.current = sessionRestore;
+    sessionRestoreRulesAppliedRef.current = false;
+    if (sessionRestore.recommendedSymptoms.length > 0) {
+      setRecommendedSymptoms(sessionRestore.recommendedSymptoms);
+    }
+    setSupplementText(sessionRestore.supplementText || '');
+  }, [sessionRestore?.token]);
+
+  useEffect(() => {
+    const restoreKey = sessionRestore?.token ?? restoredSelectedRulesKey ?? null;
+    const pending = pendingSessionRestoreRef.current;
+    if (!restoreKey) return;
+    if (lastAppliedRestoreKeyRef.current === restoreKey && sessionRestoreRulesAppliedRef.current) return;
+
+    const rulesFromPending = pending?.selectedRules;
+    const rulesFromProp =
+      restoredSelectedRules && Object.keys(restoredSelectedRules).length > 0
+        ? restoredSelectedRules
+        : null;
+    const rulesToApply = rulesFromPending ?? rulesFromProp;
+    const hasRulesToRestore = Boolean(rulesToApply && Object.keys(rulesToApply).length > 0);
+
+    if (hasRulesToRestore && !triageRows?.length) return;
+
+    if (hasRulesToRestore && rulesToApply) {
+      setSelectedRules(rulesToApply);
+    }
+
+    sessionRestoreRulesAppliedRef.current = true;
+    lastAppliedRestoreKeyRef.current = restoreKey;
+    pendingSessionRestoreRef.current = null;
+    onSessionRestoreApplied?.();
+  }, [
+    triageRows,
+    sessionRestore?.token,
+    restoredSelectedRules,
+    restoredSelectedRulesKey,
+    onSessionRestoreApplied,
+  ]);
 
   const worstSelectedDegree = useMemo(() => {
     const degrees = Object.values(selectedRules).map(r => r.degree);

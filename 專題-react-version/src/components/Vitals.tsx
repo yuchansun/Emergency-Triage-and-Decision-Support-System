@@ -1,4 +1,6 @@
 import React, { useState, useRef } from 'react';
+import FieldHelpButton from './FieldHelpModal';
+import { PAST_HISTORY_HELP, DRUG_ALLERGY_HELP } from '../config/medicalHistoryHelp';
 
 export type VitalsState = {
   temperature: string;
@@ -26,6 +28,9 @@ export type VitalsProps = {
   gender?: '男' | '女' | '不詳' | '';
   vitals?: VitalsState;
   setVitals?: React.Dispatch<React.SetStateAction<VitalsState>>;
+  highlightHistoricalDrugAllergy?: boolean;
+  highlightHistoricalPastHistory?: boolean;
+  highlightHistoricalDoNotTreat?: boolean;
 };
 
 const Vitals: React.FC<VitalsProps> = ({
@@ -51,7 +56,10 @@ const Vitals: React.FC<VitalsProps> = ({
     doNotTreat: '',
     sentiment: null,
   },
-  setVitals = () => { }
+  setVitals = () => { },
+  highlightHistoricalDrugAllergy = false,
+  highlightHistoricalPastHistory = false,
+  highlightHistoricalDoNotTreat = false,
 }) => {
   // === 移除所有 local useState，改成從 props 讀取 ===
   // 例如：原本 const [temperature, setTemperature] = useState<string>('');
@@ -135,6 +143,28 @@ const Vitals: React.FC<VitalsProps> = ({
 
   const sentiment = vitals.sentiment;
   const setSentiment = (val: number | null) => setVitals({ ...vitals, sentiment: val });
+
+  const PAST_HISTORY_QUICK = ['無', '高血壓', '糖尿病', '心臟病', '肺部疾病', '癌症'];
+
+  const applyPastHistoryItem = (label: string) => {
+    if (PAST_HISTORY_QUICK.includes(label)) {
+      if (pastHistory.includes(label)) return;
+      setVitals((prev) => {
+        const ph = (prev.pastHistory || []).filter((item) => item !== '無');
+        return { ...prev, pastHistory: [...ph, label] };
+      });
+      return;
+    }
+    const current = otherHistoryDetails.trim();
+    if (current.split(/[、,，]/).map((s) => s.trim()).includes(label)) return;
+    setOtherHistoryDetails(current ? `${current}、${label}` : label);
+  };
+
+  const applyDrugAllergyItem = (label: string) => {
+    const current = allergyParsed.detail.trim();
+    if (current.split(/[、,，]/).map((s) => s.trim()).includes(label)) return;
+    setDrugAllergy('有', current ? `${current}、${label}` : label);
+  };
 
   // === togglePastHistory 改成更新 props ===
   const togglePastHistory = (label: string) => {
@@ -226,6 +256,9 @@ const Vitals: React.FC<VitalsProps> = ({
   // 藥物過敏詳情由 vitals.drugAllergy 解析，不再使用 local state，避免未儲存
   const allergyDetails = allergyParsed.detail;
   const setAllergyDetails = (val: string) => setDrugAllergy('有', val);
+  const showHistoricalAllergy = highlightHistoricalDrugAllergy && Boolean(drugAllergy);
+  const showHistoricalPastHistory = highlightHistoricalPastHistory && pastHistory.length > 0;
+  const showHistoricalDoNotTreat = highlightHistoricalDoNotTreat && Boolean(doNotTreat.trim());
 
   // === 新增：LMP/EDC 的 local state（如果不需要存到資料庫）
   const [lmp, setLmp] = useState<string>('');
@@ -488,9 +521,15 @@ const Vitals: React.FC<VitalsProps> = ({
 
         {/* 過去病史 */}
         <fieldset className="col-span-1 md:col-span-2">
-          <legend className="block text-sm font-medium pb-1">過去病史</legend>
+          <legend className="flex items-center text-sm font-medium pb-1">
+            過去病史
+            <FieldHelpButton
+              content={PAST_HISTORY_HELP}
+              onSelectItem={(item) => applyPastHistoryItem(item.zh)}
+            />
+          </legend>
           <div className="flex flex-wrap gap-2 z-10 relative">
-            {['無', '高血壓', '糖尿病', '心臟病', '肺部疾病', '癌症'].map(label => {
+            {PAST_HISTORY_QUICK.map(label => {
               const isSelected = pastHistory.includes(label);
               return (
                 <button
@@ -500,7 +539,9 @@ const Vitals: React.FC<VitalsProps> = ({
                   className={
                     "px-3 py-1 rounded-full text-sm transition-colors border " +
                     (isSelected
-                      ? "bg-primary text-white border-primary"
+                      ? showHistoricalPastHistory
+                        ? "bg-red-50 text-red-600 border-red-400 font-semibold"
+                        : "bg-primary text-white border-primary"
                       : "bg-white dark:bg-background-dark text-primary border-primary/30 hover:bg-primary/10")
                   }
                 >
@@ -515,21 +556,35 @@ const Vitals: React.FC<VitalsProps> = ({
               onChange={(e) => setDoNotTreat(e.target.value)}
               placeholder="禁治療詳情（如：DNR、DNI 等）"
               type="text"
-              className="form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary"
+              className={
+                "form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary" +
+                (showHistoricalDoNotTreat ? " border-red-400 text-red-600 font-semibold" : "")
+              }
             />
             <input
               value={otherHistoryDetails}
               onChange={(e) => setOtherHistoryDetails(e.target.value)}
               placeholder="其他病史詳情"
               type="text"
-              className="form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary"
+              className={
+                "form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary" +
+                (showHistoricalPastHistory && otherHistoryDetails.trim()
+                  ? " border-red-400 text-red-600 font-semibold"
+                  : "")
+              }
             />
           </div>
         </fieldset>
 
         {/* 藥物過敏 */}
         <fieldset className="col-span-1 md:col-span-2">
-          <legend className="block text-sm font-medium pb-1">藥物過敏</legend>
+          <legend className="flex items-center text-sm font-medium pb-1">
+            藥物過敏
+            <FieldHelpButton
+              content={DRUG_ALLERGY_HELP}
+              onSelectItem={(item) => applyDrugAllergyItem(item.zh)}
+            />
+          </legend>
           <div className="mt-2 flex items-center gap-2">
             <button
               type="button"
@@ -537,18 +592,29 @@ const Vitals: React.FC<VitalsProps> = ({
               className={
                 "px-3 py-1 rounded-full text-sm transition-colors border " +
                 (allergyParsed.status === '不詳'
-                  ? "bg-primary text-white border-primary"
+                  ? showHistoricalAllergy
+                    ? "bg-red-50 text-red-600 border-red-400 font-semibold"
+                    : "bg-primary text-white border-primary"
                   : "bg-white dark:bg-background-dark text-primary border-primary/30 hover:bg-primary/10")
               }
             >
               不詳
             </button>
+            {showHistoricalAllergy && allergyParsed.status === '無' && (
+              <span className="text-red-600 font-semibold text-sm shrink-0">無</span>
+            )}
+            {showHistoricalAllergy && allergyParsed.status === '有' && !allergyDetails && (
+              <span className="text-red-600 font-semibold text-sm shrink-0">有</span>
+            )}
             <input
               value={allergyDetails}
               onChange={(e) => setAllergyDetails(e.target.value)}
               placeholder="藥物過敏詳情（如：盤尼西林、阿斯匹靈等）"
               type="text"
-              className="form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary"
+              className={
+                "form-input w-full sm:flex-1 sm:min-w-[12rem] rounded-lg border-content-light dark:border-subtext-dark bg-white dark:bg-background-dark h-9 px-3 text-sm focus:ring-primary focus:border-primary" +
+                (showHistoricalAllergy && allergyDetails ? " text-red-600 font-semibold" : "")
+              }
             />
           </div>
         </fieldset>

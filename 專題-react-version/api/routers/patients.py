@@ -45,14 +45,16 @@ async def save_patient(data: dict):
 
             # 3. 執行資料存檔 (使用 ON DUPLICATE KEY UPDATE 確保重複時更新資料)
             sql = """
-                INSERT INTO patients (patient_id, name, id_number, birth_date, gender, drug_allergy)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO patients (patient_id, name, id_number, birth_date, gender, drug_allergy, past_medical_history, do_not_treat)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE
                 name=VALUES(name),
                 id_number=VALUES(id_number),
                 birth_date=VALUES(birth_date),
                 gender=VALUES(gender),
-                drug_allergy=COALESCE(VALUES(drug_allergy), drug_allergy)
+                drug_allergy=COALESCE(VALUES(drug_allergy), drug_allergy),
+                past_medical_history=COALESCE(VALUES(past_medical_history), past_medical_history),
+                do_not_treat=COALESCE(VALUES(do_not_treat), do_not_treat)
             """
             birth_date = data.get("birth_date")
             if birth_date is not None and str(birth_date).strip() == "":
@@ -64,7 +66,9 @@ async def save_patient(data: dict):
                 id_num if id_num and id_num.strip() else None,
                 birth_date,
                 data.get("gender"),
-                data.get("drug_allergy")
+                data.get("drug_allergy"),
+                data.get("past_medical_history"),
+                data.get("do_not_treat"),
             ))
             conn.commit()
             
@@ -103,6 +107,8 @@ async def search_patient_by_id_number(id_number: str):
                     p.birth_date,
                     p.gender,
                     p.drug_allergy,
+                    p.past_medical_history,
+                    p.do_not_treat,
                     COALESCE(NULLIF(p.medical_number, ''), p.patient_id) AS medical_id,
                     (
                         SELECT tr.triage_id
@@ -154,6 +160,8 @@ async def get_patient(patient_id: str):
                     p.birth_date,
                     p.gender,
                     p.drug_allergy,
+                    p.past_medical_history,
+                    p.do_not_treat,
                     COALESCE(NULLIF(p.medical_number, ''), p.patient_id) AS medical_id,
                     (
                         SELECT tr.triage_id

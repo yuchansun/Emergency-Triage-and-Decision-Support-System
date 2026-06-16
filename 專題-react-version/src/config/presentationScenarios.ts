@@ -7,7 +7,7 @@ export const PRESENTATION_MODE =
   import.meta.env.VITE_PRESENTATION_MODE === 'true' ||
   import.meta.env.VITE_PRESENTATION_MODE === '1';
 
-export type PresentationScenarioId = 'cough_dyspnea' | 'flank_pain';
+export type PresentationScenarioId = 'cough_dyspnea' | 'ems_trauma';
 
 export interface PresentationRuleTarget {
   symptomName: string;
@@ -34,74 +34,74 @@ export interface PresentationScenario {
   rulesDelayMs: number;
 }
 
-const normalizeMatchText = (text: string): string =>
-  (text || '').toLowerCase().replace(/\s+/g, ' ').trim();
-
-/** 情境一：咳嗽、多痰、呼吸喘 + SpO2 偏低展示 */
+/** 情境一：咳嗽、多痰、呼吸喘（中／英文語音皆可觸發） */
 const matchesCoughDyspnea = (text: string): boolean => {
   const t = text.trim();
   if (!t) return false;
-  const hasCough = /咳嗽|咳痰|很多痰|痰多|有痰/.test(t);
-  const hasDyspnea = /喘|呼吸.*急|呼吸越來越|呼吸困難|dyspnea|shortness of breath/i.test(t);
-  return hasCough && hasDyspnea;
+  const hasCough =
+    /咳嗽|咳痰|很多痰|痰多|有痰/.test(t) ||
+    /\bcough/i.test(t) ||
+    /phlegm|sputum|mucus/i.test(t);
+  const hasDyspnea =
+    /喘|呼吸.*急|呼吸越來越|呼吸困難/.test(t) ||
+    /dyspnea|shortness of breath|breath.*(worse|difficult|hard)/i.test(t);
+  if (hasCough && hasDyspnea) return true;
+  // 發表展示保底：語音常只辨識到後半段（喘＋時間），仍觸發情境一
+  if (PRESENTATION_MODE && hasDyspnea && /two days|past two|getting worse|for a week|一週|week/i.test(t)) {
+    return true;
+  }
+  return false;
 };
 
-/** 情境二：外籍病患右側腰痛、解尿困難 */
-const matchesFlankPain = (text: string): boolean => {
-  const raw = text.trim();
-  if (!raw) return false;
-  const lower = normalizeMatchText(raw);
-  const hasFlank =
-    /right flank|flank.*hurt|flank pain|側腹|右腰|腰痛/.test(lower) ||
-    /腰痛|右腰/.test(raw);
-  const hasUrinary =
-    /urinat|解尿|排尿|小便|strong urge/.test(lower) ||
-    /解尿|排尿|頻尿|小便困難/.test(raw);
-  return hasFlank && hasUrinary;
+/** 情境二：119 機車自撞，救護人員與護理師、病人對話（語音辨識全文） */
+const matchesEmsTrauma = (text: string): boolean => {
+  const t = text.trim();
+  if (!t) return false;
+  const hasEmsContext = /119|救護|分隔島|機車.*撞|自撞/.test(t);
+  const hasInjury =
+    /頭.*(痛|擦傷|流血)|手.*(痛|穿刺|流血)|右手.*穿刺|穿刺傷/.test(t);
+  return hasEmsContext && hasInjury;
 };
 
 export const PRESENTATION_SCENARIOS: PresentationScenario[] = [
   {
     id: 'cough_dyspnea',
     match: matchesCoughDyspnea,
-    summary: '咳嗽、痰多一週，2天前開始呼吸喘',
+    summary: '咳嗽、痰多一週，這兩天呼吸越來越喘',
     activeTab: 'a',
     mustSymptoms: ['呼吸短促'],
     decoySymptoms: ['咳嗽', '發燒/畏寒', '咳血'],
     ruleTargets: [
       {
         symptomName: '呼吸短促',
-        mustRuleCode: 'A010101',
-        mustJudgeIncludes: '重度呼吸窘迫',
+        mustRuleCode: 'A010110',
+        mustJudgeIncludes: '輕度呼吸窘迫',
         decoyRuleCodes: ['A010104', 'A010112'],
       },
     ],
-    summarizeDelayMs: 6000,
-    symptomsDelayAfterSummaryMs: 4000,
-    rulesDelayMs: 5000,
+    summarizeDelayMs: 7000,
+    symptomsDelayAfterSummaryMs: 5000,
+    rulesDelayMs: 6000,
   },
   {
-    id: 'flank_pain',
-    match: matchesFlankPain,
-    summary: '右腰痛、解尿困難',
-    activeTab: 'a',
-    mustSymptoms: ['腰痛'],
-    decoySymptoms: [
-      '泌尿道感染相關症狀（頻尿、解尿疼痛）',
-      '腹痛',
-      '鼠蹊部疼痛/腫塊',
-    ],
+    id: 'ems_trauma',
+    match: matchesEmsTrauma,
+    summary:
+      '21歲女性，機車自撞。頭部擦傷流血、右手穿刺傷，訴頭痛手痛，伴頭暈',
+    activeTab: 't',
+    mustSymptoms: ['上肢鈍傷'],
+    decoySymptoms: ['頭部鈍傷', '頭部撕裂傷、擦傷', '上肢穿刺傷'],
     ruleTargets: [
       {
-        symptomName: '腰痛',
-        mustRuleCode: 'A060113',
-        mustJudgeIncludes: '急性中樞中度疼痛',
-        decoyRuleCodes: ['A060111', 'A060115'],
+        symptomName: '上肢鈍傷',
+        mustRuleCode: 'T120110',
+        mustJudgeIncludes: '開放性骨折',
+        decoyRuleCodes: ['T120114', 'T120116'],
       },
     ],
-    summarizeDelayMs: 6000,
-    symptomsDelayAfterSummaryMs: 4000,
-    rulesDelayMs: 5000,
+    summarizeDelayMs: 7000,
+    symptomsDelayAfterSummaryMs: 5000,
+    rulesDelayMs: 6000,
   },
 ];
 

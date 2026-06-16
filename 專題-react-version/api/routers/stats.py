@@ -27,7 +27,10 @@ def normalize_triage_level(level: Any):
         value = int(level)
     except (TypeError, ValueError):
         return "none"
-    if value <= 0:
+    # 直入急救室在規則表為 0 級，統計時視為第 1 級（與病史查詢一致）
+    if value == 0:
+        return 1
+    if value < 1:
         return "none"
     if value > 5:
         return 5
@@ -58,7 +61,7 @@ async def get_stats_overview(range: str = Query("month", pattern="^(today|week|m
                     p.gender,
                     p.birth_date,
                     COALESCE(e.visit_time, t.created_at) AS arrival_at,
-                    tragg.triage_level
+                    COALESCE(t.final_level, tragg.triage_level) AS triage_level
                 FROM triage_record t
                 LEFT JOIN patients p ON p.patient_id = t.patient_id
                 LEFT JOIN encounter_extra e ON e.triage_id = t.triage_id
@@ -160,7 +163,7 @@ async def get_stats_hourly_today():
                 """
                 SELECT
                     COALESCE(e.visit_time, t.created_at) AS arrival_at,
-                    tragg.triage_level
+                    COALESCE(t.final_level, tragg.triage_level) AS triage_level
                 FROM triage_record t
                 LEFT JOIN encounter_extra e ON e.triage_id = t.triage_id
                 LEFT JOIN (

@@ -8,11 +8,15 @@ LLM 檢傷流程自動化評測腳本（Qwen 7B vs 14B 等模型比較）
 LLM 只負責中間的「症狀抽取 / 症狀推薦 / 規則推薦」。因此本腳本採「分層評測」，
 不會只看一個最終級別數字，而是把每個 LLM 環節都對照標準答案。
 
-評測會完整重現前端的 4 步流程，全部打在 LLM 後端（預設 http://localhost:8001）：
+評測會完整重現前端的 3 步 LLM 流程，全部打在 LLM 後端（預設 http://localhost:8001）：
   1. /api/summarize-chief-complaint   主訴 → 症狀關鍵詞
   2. /api/recommend-symptoms          症狀關鍵詞 + 候選清單 → 推薦症狀
   3. /api/recommend-rules             推薦症狀 + 主訴 + 生命徵象 → 判斷規則(rule_code)
-  4. /api/triage-advice               症狀 + 生命徵象 → 建議 + 規則層最終級別
+
+最終級別（pred_level）依前端 SystemRecommendation 的 worstSelectedDegree 邏輯推算：
+  - 若標準 rule_code 出現在推薦清單 → 取該規則的 ttas_degree（模擬護理師點選正確規則）
+  - 否則若推薦清單非空 → 取所有推薦規則中最嚴重（最小）的 ttas_degree
+  - 不再使用 /api/triage-advice（前端未使用，且其 RAG 規則層會誤降第 1 級）
 
 候選症狀清單（recommend-symptoms 需要）直接從資料庫 triage_hierarchy 取得，
 並依年齡套用與前端相同的 system_code 過濾（成人排除 P*、孩童排除 A*，外傷 T/E 不受年齡影響）。
@@ -42,7 +46,6 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import re
 import sys
 import time
 from pathlib import Path
@@ -82,7 +85,34 @@ VITALS_KEY_MAP = {
     "pain_score": "painScore",
 }
 
-_LEVEL_RE = re.compile(r"建議檢傷級別】\s*第\s*([1-5])\s*級")
+def _safe_ttas_degree(rule: dict) -> int | None:
+    try:
+        deg = int(rule.get("ttas_degree"))
+        return deg if 1 <= deg <= 5 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def compute_pred_level_from_rules(rules: list[dict], gt_rule: str | None) -> tuple[int | None, str | None]:
+    """依前端 worstSelectedDegree 邏輯，從 recommend-rules 回傳推算 pred_level。
+
+    回傳 (級別, 來源說明)；來源為 gt_rule | min_recommended | None。
+    """
+    if not rules:
+        return None, None
+
+    if gt_rule:
+        for rule in rules:
+            if rule.get("rule_code") == gt_rule:
+                deg = _safe_ttas_degree(rule)
+                if deg is not None:
+                    return deg, "gt_rule"
+
+    degrees = [_safe_ttas_degree(r) for r in rules]
+    degrees = [d for d in degrees if d is not None]
+    if not degrees:
+        return None, None
+    return min(degrees), "min_recommended"
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -226,13 +256,6 @@ def _post(base_url: str, path: str, payload: dict, timeout: int):
         return None, time.perf_counter() - start, str(e)
 
 
-def parse_final_level(advice: str):
-    if not advice:
-        return None
-    m = _LEVEL_RE.search(advice)
-    return int(m.group(1)) if m else None
-
-
 # ──────────────────────────────────────────────────────────────────────────
 # 比對工具
 # ──────────────────────────────────────────────────────────────────────────
@@ -314,16 +337,8 @@ def evaluate_case(base_url: str, api_base_url: str, rec: dict, llm_mode: str, ti
         errors["recommend_rules"] = err
     rule_codes = [r.get("rule_code") for r in rules if r.get("rule_code")]
 
-    # Step 4：症狀 + 徵象 → 建議 + 最終級別
-    data, t, err = _post(
-        base_url, "/api/triage-advice",
-        {"symptoms": selected, "vitals": vitals}, timeout,
-    )
-    timings["triage_advice"] = t
-    advice = (data or {}).get("advice", "") if not err else ""
-    if err:
-        errors["triage_advice"] = err
-    pred_level = parse_final_level(advice)
+    # 最終級別：對齊前端 worstSelectedDegree（見 compute_pred_level_from_rules）
+    pred_level, pred_level_source = compute_pred_level_from_rules(rules, gt_rule)
 
     # 指標
     ex_recall, _ = symptom_recall_precision(gt_symptoms, extracted)
@@ -336,6 +351,7 @@ def evaluate_case(base_url: str, api_base_url: str, rec: dict, llm_mode: str, ti
         "age": age,
         "gt_level": gt_level,
         "pred_level": pred_level,
+        "pred_level_source": pred_level_source or "",
         # 註：級別數字越小越嚴重。diff>0 = 低估(under-triage，危險)；diff<0 = 過度升級
         "level_diff": level_diff,
         "gt_symptoms": "、".join(gt_symptoms),
@@ -350,7 +366,6 @@ def evaluate_case(base_url: str, api_base_url: str, rec: dict, llm_mode: str, ti
         "t_summarize": round(timings["summarize"], 2),
         "t_recommend_symptoms": round(timings["recommend_symptoms"], 2),
         "t_recommend_rules": round(timings["recommend_rules"], 2),
-        "t_triage_advice": round(timings["triage_advice"], 2),
         "t_total": round(sum(timings.values()), 2),
         "errors": "; ".join(f"{k}:{v}" for k, v in errors.items()),
     }
@@ -369,6 +384,7 @@ def aggregate(label: str, rows: list[dict]) -> dict:
     level_pairs = [(r["pred_level"], r["gt_level"]) for r in rows
                    if r["pred_level"] and r["gt_level"]]
     exact = sum(1 for p, g in level_pairs if p == g)
+    within_1 = sum(1 for p, g in level_pairs if abs(p - g) <= 1)
     under = sum(1 for p, g in level_pairs if p > g)   # 預測較不嚴重 = 低估
     over = sum(1 for p, g in level_pairs if p < g)    # 預測較嚴重 = 過度升級
     rule_judged = [r for r in rows if r["rule_hit"] is not None]
@@ -379,6 +395,7 @@ def aggregate(label: str, rows: list[dict]) -> dict:
         "label": label,
         "n_cases": n,
         "level_exact_acc": round(exact / len(level_pairs), 3) if level_pairs else None,
+        "level_within_1_acc": round(within_1 / len(level_pairs), 3) if level_pairs else None,
         "under_triage_rate": round(under / len(level_pairs), 3) if level_pairs else None,
         "over_triage_rate": round(over / len(level_pairs), 3) if level_pairs else None,
         "level_mae": _mean_or_none([abs(r["level_diff"]) for r in rows]),
@@ -390,7 +407,6 @@ def aggregate(label: str, rows: list[dict]) -> dict:
         "avg_latency_summarize": _mean_or_none([r["t_summarize"] for r in rows]),
         "avg_latency_recommend_symptoms": _mean_or_none([r["t_recommend_symptoms"] for r in rows]),
         "avg_latency_recommend_rules": _mean_or_none([r["t_recommend_rules"] for r in rows]),
-        "avg_latency_triage_advice": _mean_or_none([r["t_triage_advice"] for r in rows]),
         "cases_with_errors": err_cnt,
     }
 
@@ -446,6 +462,7 @@ def print_summary(summary: dict):
     print("═" * 52)
     label_map = [
         ("level_exact_acc", "最終級別準確率"),
+        ("level_within_1_acc", "級別±1準確率"),
         ("under_triage_rate", "低估率(危險,越低越好)"),
         ("over_triage_rate", "過度升級率"),
         ("level_mae", "級別平均誤差(MAE)"),
@@ -456,9 +473,14 @@ def print_summary(summary: dict):
         ("avg_latency_total", "平均總延遲(秒)"),
         ("cases_with_errors", "發生錯誤的病例數"),
     ]
+    note = (
+        "  pred_level 來源：recommend-rules（對齊前端 worstSelectedDegree），"
+        "非 triage-advice RAG 規則層。"
+    )
     for key, name in label_map:
         print(f"  {name:<22}：{summary.get(key)}")
     print("═" * 52)
+    print(note)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -473,6 +495,7 @@ def build_compare():
     metrics = [
         ("n_cases", "病例數"),
         ("level_exact_acc", "最終級別準確率"),
+        ("level_within_1_acc", "級別±1準確率"),
         ("under_triage_rate", "低估率(危險)"),
         ("over_triage_rate", "過度升級率"),
         ("level_mae", "級別平均誤差MAE"),
