@@ -14,11 +14,8 @@ import StatsPage from './components/StatsPage';
 import StaffProfile from './components/StaffProfile';
 import { openVoiceConsentPopup } from './components/VoiceConsentModal';
 import type { VitalsProps } from './components/Vitals';
-<<<<<<< HEAD
 import { getApiBaseUrl } from './config/serviceUrls';
-=======
 import { parsePastMedicalHistory } from './utils/parsePastMedicalHistory';
->>>>>>> main
 
 type VitalsForm = NonNullable<VitalsProps['vitals']>;
 
