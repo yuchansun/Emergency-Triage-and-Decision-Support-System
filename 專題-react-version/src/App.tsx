@@ -229,7 +229,7 @@ function App() {
     const restoredRules: Record<string, { degree: number; judge: string; rule_code: string; symptom_name: string }> = {};
     if (ruleCodes.length > 0) {
       try {
-        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+        const API_BASE_URL = getApiBaseUrl();
         const res = await fetch(`${API_BASE_URL}/triage_hierarchy`);
         if (res.ok) {
           const rows = await res.json();
