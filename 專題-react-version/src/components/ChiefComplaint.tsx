@@ -151,20 +151,76 @@ type RecommendedRuleItem = {
 
 const AI_HIGHLIGHT_MS = 1150;
 
-const TRAUMA_MECHANISM_KEYWORDS = [
-  '車禍', '车祸', '跌倒', '摔倒', '摔到', '摔傷', '摔伤', '撞到', '碰撞', '撞擊', '撞击',
+const TRAUMA_STRONG_MECHANISM_KEYWORDS = [
+  '車禍', '车祸', '跌倒', '摔倒', '摔到', '摔傷', '摔伤', '撞到', '碰撞', '撞擊', '撞击', '自撞',
   '機車', '机车', '摩托', '汽車', '汽车', '被車', '車撞',
-  '骨折', '脫臼', '脱臼', '扭傷', '扭伤', '外傷', '外伤',
-  '擦傷', '擦伤', '撕裂傷', '撕裂伤', '鈍傷', '钝伤', '穿刺傷', '穿刺伤',
   '刀傷', '刀伤', '刺傷', '刺伤', '燙傷', '烫伤', '燒傷', '烧伤', '燒燙傷',
   '利刃', '切割傷', '槍傷', '枪伤', '爆炸', '墜落', '坠落', '高處', '高处',
   '創傷性截肢', '创伤性截肢', '截肢',
 ];
 
+const TRAUMA_INJURY_KEYWORDS = [
+  '骨折', '脫臼', '脱臼', '扭傷', '扭伤', '外傷', '外伤',
+  '擦傷', '擦伤', '撕裂傷', '撕裂伤', '鈍傷', '钝伤', '穿刺傷', '穿刺伤',
+];
+
+const TRAUMA_BODY_REGION_KEYWORDS = [
+  '頭', '头', '腦', '臉', '脸', '頸', '颈', '胸', '肋', '腹', '腰', '背', '脊椎', '脊柱',
+  '骨盆', '臀', '屁股', '手', '臂', '腕', '肘', '肩', '脚', '腳', '腿', '小腿', '大腿',
+  '足', '踝', '膝', '指', '趾', '眼', '鼻', '耳', '口', '牙', '會陰', '阴', '陰', '生殖',
+];
+
+const CHIEF_COMPLAINT_SYNONYMS: Record<string, string[]> = {
+  '心臟痛': ['胸痛', '胸悶'],
+  '胸口痛': ['胸痛', '胸悶'],
+  '心口痛': ['胸痛', '胸悶'],
+  '胸疼': ['胸痛', '胸悶'],
+  '發燒': ['發燒/畏寒'],
+  '高烧': ['發燒/畏寒'],
+  '高燒': ['發燒/畏寒'],
+  '喉嚨疼': ['喉嚨痛'],
+  '喉咙痛': ['喉嚨痛'],
+  '脊椎骨折': ['腰', '背'],
+  '脊柱骨折': ['腰', '背'],
+};
+
+const hasStrongTraumaMechanism = (text: string): boolean => {
+  const t = text.trim();
+  if (!t) return false;
+  return TRAUMA_STRONG_MECHANISM_KEYWORDS.some(kw => t.includes(kw));
+};
+
 const hasTraumaMechanism = (text: string): boolean => {
   const t = text.trim();
   if (!t) return false;
-  return TRAUMA_MECHANISM_KEYWORDS.some(kw => t.includes(kw));
+  if (hasStrongTraumaMechanism(t)) return true;
+  if (t.includes('外傷') || t.includes('外伤')) return true;
+  const hasInjury = TRAUMA_INJURY_KEYWORDS.some(kw => t.includes(kw));
+  const hasRegion = TRAUMA_BODY_REGION_KEYWORDS.some(kw => t.includes(kw));
+  return hasInjury && hasRegion;
+};
+
+const shouldAutoSwitchTraumaTab = (rawText: string, summaryText: string): boolean => {
+  const raw = rawText.trim();
+  const summary = summaryText.trim();
+  if (!raw && !summary) return false;
+  return (
+    hasStrongTraumaMechanism(raw) ||
+    hasStrongTraumaMechanism(summary) ||
+    hasTraumaMechanism(raw)
+  );
+};
+
+const expandTokensWithSynonyms = (tokens: string[]): string[] => {
+  const expanded = new Set(tokens);
+  for (const token of tokens) {
+    for (const [key, syns] of Object.entries(CHIEF_COMPLAINT_SYNONYMS)) {
+      if (token.includes(key) || key.includes(token)) {
+        syns.forEach(s => expanded.add(s));
+      }
+    }
+  }
+  return Array.from(expanded);
 };
 
 const ChiefComplaintContext = createContext<ChiefComplaintContextApi | null>(null);
@@ -670,7 +726,7 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
   };
 
   const getSafeFallbackByTab = (summary: string, tab: 't' | 'a'): string[] => {
-    const tokens = extractMeaningfulTokens(summary);
+    const tokens = expandTokensWithSynonyms(extractMeaningfulTokens(summary));
     if (!tokens.length || !triageRows) return [];
 
     const isAdult = age !== undefined ? age >= 18 : true;
@@ -717,6 +773,10 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     if (/頭|头|腦/.test(summary)) regionHints.push('頭');
     if (/胸|肋/.test(summary)) regionHints.push('胸');
     if (/腹|骨盆|臀|屁股/.test(summary)) regionHints.push('腹');
+    if (/腰|背|脊椎|脊柱/.test(summary)) {
+      regionHints.push('腰');
+      regionHints.push('背');
+    }
 
     const seen = new Set<string>();
     const results: string[] = [];
@@ -759,8 +819,8 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       return;
     }
 
-    // 關鍵詞至少 2 字，避免「發」這類單字造成誤推薦
-    const allKeywords = extractMeaningfulTokens(text);
+    // 關鍵詞至少 2 字，避免「發」這類單字造成誤推薦；同義詞擴展提升 TTAS 命中率
+    const allKeywords = expandTokensWithSynonyms(extractMeaningfulTokens(text));
 
     if (allKeywords.length === 0) {
       setRecommendedSymptoms([]);
@@ -820,74 +880,60 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     setRecommendedSymptoms(matches);
   };
 
-  // 統一呼叫一次 RAG + LLM，回傳完整推薦症狀，再由前端分類
-  const requestUnifiedRecommendations = async (summary: string): Promise<string[] | null> => {
-    if (!triageRows) return null;
-    if (!summary.trim()) return null;
-
-    // 提供完整候選清單給 LLM（包含外傷 + 非外傷）
+  // 外傷 / 非外傷分開各推 5 個，避免共用名額互相挤掉
+  const buildCandidateList = (tab: 't' | 'a'): string[] => {
+    if (!triageRows) return [];
     const isAdult = age !== undefined ? age >= 18 : true;
     const candidateSet = new Set<string>();
-
     for (const row of triageRows) {
       const code = row.system_code || '';
-      // 只保留可用症狀系統：外傷(T/E) + 非外傷(A/P)
-      if (!code.startsWith('A') && !code.startsWith('P') && !code.startsWith('T') && !code.startsWith('E')) continue;
-      // 非外傷症狀依年齡過濾，外傷不受年齡影響
-      if (code.startsWith('A') && !isAdult) continue;
-      if (code.startsWith('P') && isAdult) continue;
-
+      if (tab === 't') {
+        if (!code.startsWith('T') && !code.startsWith('E')) continue;
+      } else {
+        if (!code.startsWith('A') && !code.startsWith('P')) continue;
+        if (code.startsWith('A') && !isAdult) continue;
+        if (code.startsWith('P') && isAdult) continue;
+      }
       candidateSet.add(row.symptom_name);
     }
+    return Array.from(candidateSet);
+  };
 
-    // Phase 2：不再用 substring 分數預先剔除候選。
-    // 候選縮減交給後端 rag_pipeline.find_similar_symptoms（語意檢索）處理，
-    // 避免「意識改變」這種跟 TTAS 標準名「意識程度改變」字面不完全相同的詞被誤殺。
-    const candidates = Array.from(candidateSet);
+  const requestCategoryRecommendations = async (
+    summary: string,
+    tab: 't' | 'a',
+  ): Promise<string[]> => {
+    const candidates = buildCandidateList(tab);
+    if (!summary.trim() || !candidates.length) return [];
 
-    console.log('[LLM] unified recommendation');
-    console.log('[LLM] summary =', summary);
-    console.log('[LLM] candidates count =', candidates.length, '(send full list to backend for semantic narrowing)');
-
-    if (!candidates.length) return null;
+    const categoryScope = tab === 't' ? 'trauma' : 'non_trauma';
+    console.log(`[LLM] ${categoryScope} recommendation, candidates=`, candidates.length);
 
     try {
-      console.log('[LLM] requesting symptom recommendations with summary:', summary);
-      console.log('[LLM] requesting with vitals:', vitals);
       const res = await fetch(`${LLM_BASE_URL}/api/recommend-symptoms`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: summary,
           symptom_candidates: candidates,
-          max_results: 5,  // 限制最多5個推薦
+          max_results: 5,
+          category_scope: categoryScope,
           llm_mode: llmMode,
-          vitals: vitals || {}
+          vitals: vitals || {},
         }),
       });
 
       if (!res.ok) {
         console.warn('LLM recommend API not ok:', res.status);
-        return null;
+        return [];
       }
 
       const data = await res.json();
-      console.log('[LLM] raw recommend response =', data);
-
       const list: string[] = Array.isArray(data?.recommended_symptoms)
         ? data.recommended_symptoms
         : [];
 
-      console.log('[LLM] received recommended_symptoms from backend:', list);
-
-      if (!list.length) return null;
-
-      // Phase 2：後端已用 RAG 語意檢索 + LLM 過一輪了，前端只負責「去重 + 過濾已選過」。
-      // 不再用 isSymptomRelevantToTerms 這種 substring 過濾，
-      // 否則「意識程度改變」這類語意相關但字面不重疊的症狀會被誤殺。
-      const filtered = list.filter((name, index, arr) => {
+      return list.filter((name, index, arr) => {
         const isFirst = arr.indexOf(name) === index;
         if (!isFirst) return false;
         const already = Array.from(selectedSymptoms).some(selected => {
@@ -896,37 +942,20 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
         });
         return !already;
       }).slice(0, 5);
-
-      return filtered.length > 0 ? filtered : null;
     } catch (err) {
       console.error('LLM recommend error:', err);
-      return null;
+      return [];
     }
-    return null;
   };
 
-  const splitRecommendationsByTab = (list: string[]): { trauma: string[]; nonTrauma: string[] } => {
-    const isAdult = age !== undefined ? age >= 18 : true;
-    const trauma: string[] = [];
-    const nonTrauma: string[] = [];
-
-    for (const symptom of list) {
-      const sysTypes = symptomSystemTypeIndex.get(symptom);
-      if (!sysTypes) continue;
-
-      const isTrauma = sysTypes.has('T') || sysTypes.has('E');
-      const isNonTraumaAdult = isAdult && sysTypes.has('A');
-      const isNonTraumaPediatric = !isAdult && sysTypes.has('P');
-      const isNonTrauma = isNonTraumaAdult || isNonTraumaPediatric;
-
-      if (isTrauma) trauma.push(symptom);
-      if (isNonTrauma) nonTrauma.push(symptom);
-    }
-
-    return {
-      trauma: trauma.slice(0, 5),
-      nonTrauma: nonTrauma.slice(0, 5),
-    };
+  const requestSplitRecommendations = async (
+    summary: string,
+  ): Promise<{ trauma: string[]; nonTrauma: string[] }> => {
+    const [trauma, nonTrauma] = await Promise.all([
+      requestCategoryRecommendations(summary, 't'),
+      requestCategoryRecommendations(summary, 'a'),
+    ]);
+    return { trauma, nonTrauma };
   };
 
   // 共用：用 LLM 先整理主訴，再更新推薦症狀
@@ -1111,29 +1140,29 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       lastIntegrateSignatureRef.current = integrateSignature;
       lastIntegrateVitalsSignatureRef.current = vitalsSignature;
 
-      const traumaMechanism = hasTraumaMechanism(summary);
-      if (traumaMechanism) {
+      const traumaMechanism =
+        hasTraumaMechanism(summary) || hasTraumaMechanism(source);
+      const autoTraumaTab = shouldAutoSwitchTraumaTab(source, summary);
+      if (autoTraumaTab) {
         setActiveTab('t');
-        console.log('[CC] 偵測外傷機轉，切換至 T 外傷 Tab');
+        console.log('[CC] 偵測外傷機轉（原始或統整主訴），切換至 T 外傷 Tab');
       }
 
       // 主訴整理完成後先閃 2 下，再進行推薦症狀 API
       flashAiHighlight('chief');
       const chiefFlashEndsAt = Date.now() + AI_HIGHLIGHT_MS;
 
-      // 真正 unified RAG：一次檢索 + 一次推薦，再前端分類
-      // Phase 2：信任後端 RAG/LLM 已挑好的結果，前端不再做 substring 性質的相關性過濾或強制注入。
-      const unifiedList = (await requestUnifiedRecommendations(summary)) ?? [];
+      // 外傷 / 非外傷各推 5 個（並行請求）
+      const split = await requestSplitRecommendations(summary);
       if (requestId !== integrateRequestIdRef.current) {
         console.log('[LLM] 略過過期的推薦結果（已有較新的請求）');
         return;
       }
-      console.log('[LLM] unified recommendations from backend =', unifiedList);
-      const split = splitRecommendationsByTab(unifiedList);
+      console.log('[LLM] split recommendations from backend =', split);
       const llmHasResult = split.trauma.length > 0 || split.nonTrauma.length > 0;
       const traumaList = split.trauma.length
         ? split.trauma
-        : (hasTraumaMechanism(summary) ? getTraumaMechanismFallback(summary) : getSafeFallbackByTab(summary, 't'));
+        : (traumaMechanism ? getTraumaMechanismFallback(summary) : getSafeFallbackByTab(summary, 't'));
       const nonTraumaList = split.nonTrauma.length ? split.nonTrauma : getSafeFallbackByTab(summary, 'a');
       const picked = new Set(
         Array.from(selectedSymptoms).map(s =>
@@ -1158,7 +1187,7 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
       );
 
       // 一鍵統整後只顯示 LLM 結果，不回退關鍵字推薦
-      if (traumaMechanism || activeTab === 't') {
+      if (autoTraumaTab || activeTab === 't') {
         setRecommendedSymptoms(filteredTrauma);
       } else {
         setRecommendedSymptoms(filteredNonTrauma);

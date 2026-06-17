@@ -76,22 +76,127 @@ def _get_llm_fn(llm_mode: str):
     return call_gemini_llm if str(llm_mode).lower() == "cloud" else call_local_llm
 
 
-TRAUMA_MECHANISM_KEYWORDS = (
-    "車禍", "车祸", "跌倒", "摔倒", "摔到", "摔傷", "摔伤", "撞到", "碰撞", "撞擊", "撞击",
+# 明確外力機轉（車禍、跌倒等）→ 直接視為外傷
+TRAUMA_STRONG_MECHANISM_KEYWORDS = (
+    "車禍", "车祸", "跌倒", "摔倒", "摔到", "摔傷", "摔伤", "撞到", "碰撞", "撞擊", "撞击", "自撞",
     "機車", "机车", "摩托", "汽車", "汽车", "被車", "車撞",
-    "骨折", "脫臼", "脱臼", "扭傷", "扭伤", "外傷", "外伤",
-    "擦傷", "擦伤", "撕裂傷", "撕裂伤", "鈍傷", "钝伤", "穿刺傷", "穿刺伤",
     "刀傷", "刀伤", "刺傷", "刺伤", "燙傷", "烫伤", "燒傷", "烧伤", "燒燙傷",
     "利刃", "切割傷", "槍傷", "枪伤", "爆炸", "墜落", "坠落", "高處", "高处",
     "創傷性截肢", "创伤性截肢", "截肢",
 )
+
+# 傷害類型：需搭配部位或明確機轉，避免單獨「骨折」誤觸外傷模式
+TRAUMA_INJURY_KEYWORDS = (
+    "骨折", "脫臼", "脱臼", "扭傷", "扭伤", "外傷", "外伤",
+    "擦傷", "擦伤", "撕裂傷", "撕裂伤", "鈍傷", "钝伤", "穿刺傷", "穿刺伤",
+)
+
+TRAUMA_BODY_REGION_KEYWORDS = (
+    "頭", "头", "腦", "臉", "脸", "頸", "颈", "胸", "肋", "腹", "腰", "背", "脊椎", "脊柱",
+    "骨盆", "臀", "屁股", "手", "臂", "腕", "肘", "肩", "脚", "腳", "腿", "小腿", "大腿",
+    "足", "踝", "膝", "指", "趾", "眼", "鼻", "耳", "口", "牙", "會陰", "阴", "陰", "生殖",
+)
+
+# 主訴口語 → 檢索/比對用同義詞（不改變統整主訴顯示文字）
+CHIEF_COMPLAINT_SYNONYMS: dict[str, list[str]] = {
+    "心臟痛": ["胸痛", "胸悶"],
+    "胸口痛": ["胸痛", "胸悶"],
+    "心口痛": ["胸痛", "胸悶"],
+    "胸疼": ["胸痛", "胸悶"],
+    "發燒": ["發燒/畏寒"],
+    "高烧": ["發燒/畏寒"],
+    "高燒": ["發燒/畏寒"],
+    "喉嚨疼": ["喉嚨痛"],
+    "喉咙痛": ["喉嚨痛"],
+    "脊椎骨折": ["腰", "背"],
+    "脊柱骨折": ["腰", "背"],
+}
+
+
+def has_strong_trauma_mechanism(text: str) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    return any(kw in t for kw in TRAUMA_STRONG_MECHANISM_KEYWORDS)
 
 
 def has_trauma_mechanism(text: str) -> bool:
     t = (text or "").strip()
     if not t:
         return False
-    return any(kw in t for kw in TRAUMA_MECHANISM_KEYWORDS)
+    if has_strong_trauma_mechanism(t):
+        return True
+    if "外傷" in t or "外伤" in t:
+        return True
+    has_injury = any(kw in t for kw in TRAUMA_INJURY_KEYWORDS)
+    has_region = any(kw in t for kw in TRAUMA_BODY_REGION_KEYWORDS)
+    return has_injury and has_region
+
+
+def expand_chief_complaint_for_matching(text: str) -> str:
+    """將口語同義詞附加到檢索 query，提升 TTAS 標準名稱命中率。"""
+    t = (text or "").strip()
+    if not t:
+        return t
+    extras: list[str] = []
+    for key, syns in CHIEF_COMPLAINT_SYNONYMS.items():
+        if key in t:
+            extras.extend(syns)
+    if not extras:
+        return t
+    seen = set()
+    unique = []
+    for item in extras:
+        if item not in seen:
+            seen.add(item)
+            unique.append(item)
+    return f"{t}；{('、'.join(unique))}"
+
+
+def _preserve_trauma_mechanism_in_summary(raw: str, summary: str) -> str:
+    """若 LLM 統整時刪除外傷機轉，從原文補回標準化機轉詞（例：車禍）。"""
+    raw_t = (raw or "").strip()
+    summary_t = (summary or "").strip()
+    if not raw_t:
+        return summary_t
+
+    mechanism_labels: list[tuple[str, tuple[str, ...]]] = [
+        ("車禍", ("車禍", "车祸", "汽車", "汽车", "機車", "机车", "摩托")),
+        ("跌倒", ("跌倒", "摔倒", "摔到", "摔傷", "摔伤")),
+        ("撞到", ("撞到", "碰撞", "撞擊", "撞击", "自撞")),
+        ("刀傷", ("刀傷", "刀伤", "刺傷", "刺伤")),
+        ("燒燙傷", ("燙傷", "烫伤", "燒傷", "烧伤", "燒燙傷")),
+        ("墜落", ("墜落", "坠落", "高處", "高处")),
+        ("外傷", ("外傷", "外伤")),
+    ]
+
+    prepend: list[str] = []
+    for label, triggers in mechanism_labels:
+        if not any(t in raw_t for t in triggers):
+            continue
+        if label in summary_t or any(t in summary_t for t in triggers):
+            continue
+        prepend.append(label)
+
+    if not prepend:
+        return summary_t
+    if summary_t:
+        return "、".join(prepend) + "、" + summary_t
+    return "、".join(prepend)
+
+
+def _finalize_chief_complaint_summary(summary: str, raw: str = "") -> str:
+    """統整主訴後去重（含完全重複與子字串重複），並轉繁中。"""
+    if not (summary or "").strip():
+        return to_taiwan_traditional(summary or "")
+    with_mechanism = _preserve_trauma_mechanism_in_summary(raw, summary)
+    parts = [
+        p.strip()
+        for p in re.split(r"[、，,]", with_mechanism)
+        if isinstance(p, str) and p.strip()
+    ]
+    deduped = _merge_symptom_lists_preserve_order(parts)
+    return to_taiwan_traditional("、".join(deduped))
 
 
 TRAUMA_SYMPTOM_PROMPT_HINT = (
@@ -343,6 +448,8 @@ class RecommendSymptomsRequest(BaseModel):
     max_results: int = 10
     llm_mode: str = "local"
     vitals: dict = None
+    # all | trauma | non_trauma — 分開推薦時避免外傷偏置挤掉非外傷名額
+    category_scope: str = "all"
 
 
 class RecommendSymptomsResponse(BaseModel):
@@ -365,7 +472,7 @@ async def summarize_cc(body: SummarizeRequest):
 
         # 純生命徵象：有客觀異常時直接回傳，不經 LLM（避免 RAG/重試機制捏造主訴）
         if not raw and vitals_symptoms:
-            summary = to_taiwan_traditional("、".join(vitals_symptoms))
+            summary = _finalize_chief_complaint_summary("、".join(vitals_symptoms))
             print(f"[LLM] 純生命徵象輸入，直接回傳客觀異常：{summary}")
             return SummarizeResponse(summary=summary)
 
@@ -421,7 +528,7 @@ async def summarize_cc(body: SummarizeRequest):
             # 例：LLM 截斷的「嚴重意識障」與規則層的「嚴重意識障礙」會合併為後者，不再並存。
             merged_symptoms = _merge_symptom_lists_preserve_order(existing_symptoms, vitals_symptoms)
 
-            summary = to_taiwan_traditional("、".join(merged_symptoms))
+            summary = _finalize_chief_complaint_summary("、".join(merged_symptoms), raw)
             print(f"[LLM] 最終合併結果：{summary}")
             return SummarizeResponse(summary=summary)
         
@@ -432,10 +539,10 @@ async def summarize_cc(body: SummarizeRequest):
         if not summary:
             summary = to_taiwan_traditional(raw)
 
-        return SummarizeResponse(summary=summary)
+        return SummarizeResponse(summary=_finalize_chief_complaint_summary(summary, raw))
     except Exception as e:
         print("Summarize error:", e)
-        return SummarizeResponse(summary=to_taiwan_traditional(body.text))
+        return SummarizeResponse(summary=_finalize_chief_complaint_summary(body.text, body.text))
 # @app.post("/api/summarize-chief-complaint", response_model=SummarizeResponse)
 # async def summarize_cc(body: SummarizeRequest):
 #     raw = body.text or ""
@@ -472,8 +579,18 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
         max_results = min(body.max_results, 5)  # 限制最多5個推薦
         vitals = body.vitals
         
-        prefer_trauma = has_trauma_mechanism(text)
-        print(f"[LLM] 開始推薦症狀，主訴：{text}，候選數量：{len(candidates)}，外傷機轉={prefer_trauma}")
+        scope = (body.category_scope or "all").strip().lower()
+        if scope == "trauma":
+            prefer_trauma = True
+        elif scope == "non_trauma":
+            prefer_trauma = False
+        else:
+            prefer_trauma = has_trauma_mechanism(text)
+        matching_text = expand_chief_complaint_for_matching(text)
+        print(
+            f"[LLM] 開始推薦症狀，主訴：{text}，候選數量：{len(candidates)}，"
+            f"外傷機轉={prefer_trauma}，scope={scope}"
+        )
         
         # 分析生命徵象異常
         vitals_symptoms = []
@@ -520,10 +637,10 @@ async def recommend_symptoms(body: RecommendSymptomsRequest):
 
             # Phase 1：用語意檢索把全候選縮到 LLM 容易處理的範圍。
             # 同時把 vitals 標籤併入 query，讓 GCS=8 → 嚴重意識障礙 → 意識程度改變 這條路打通。
-            semantic_query_parts = [p for p in (text, vitals_context) if p]
+            semantic_query_parts = [p for p in (matching_text, vitals_context) if p]
             if vitals_symptoms:
                 semantic_query_parts.append(f"客觀異常：{', '.join(vitals_symptoms)}")
-            semantic_query = "；".join(semantic_query_parts) if semantic_query_parts else text
+            semantic_query = "；".join(semantic_query_parts) if semantic_query_parts else matching_text
             narrowed_candidates = rag_pipeline.find_similar_symptoms(
                 query=semantic_query,
                 candidates=candidates,
