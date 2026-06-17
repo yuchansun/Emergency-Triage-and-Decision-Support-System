@@ -1,5 +1,7 @@
 # TTAS 向量知識庫：僅 data/protocol_ttas.csv；LangChain Embeddings + Chroma Retriever
 
+import hashlib
+import json
 import os
 from typing import Any, Dict, List, Optional
 
@@ -12,6 +14,8 @@ from data_loader import DataLoader
 
 PERSIST_DIR = os.environ.get("CHROMA_PERSIST_DIR", "./chroma_db")
 COLLECTION_NAME = "medical_knowledge"
+_MANIFEST_PATH = os.path.join(PERSIST_DIR, ".kb_manifest.json")
+_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 _DEFAULT_CSV = os.path.join(os.path.dirname(__file__), "data", "protocol_ttas.csv")
 
 
@@ -45,11 +49,85 @@ class KnowledgeBase:
     def _get_embeddings(self) -> HuggingFaceEmbeddings:
         if self._embeddings is None:
             self._embeddings = HuggingFaceEmbeddings(
-                model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+                model_name=_EMBEDDING_MODEL,
                 model_kwargs={"device": "cpu"},
                 encode_kwargs={"normalize_embeddings": True},
             )
         return self._embeddings
+
+    def _csv_fingerprint(self, csv_path: str) -> str:
+        digest = hashlib.sha256()
+        with open(csv_path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _load_manifest(self) -> Optional[Dict[str, Any]]:
+        if not os.path.isfile(_MANIFEST_PATH):
+            return None
+        try:
+            with open(_MANIFEST_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else None
+        except Exception:
+            return None
+
+    def _save_manifest(self, csv_path: str, doc_count: int) -> None:
+        os.makedirs(PERSIST_DIR, exist_ok=True)
+        payload = {
+            "csv_path": os.path.abspath(csv_path),
+            "csv_sha256": self._csv_fingerprint(csv_path),
+            "doc_count": doc_count,
+            "embedding_model": _EMBEDDING_MODEL,
+        }
+        with open(_MANIFEST_PATH, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+
+    def _collection_doc_count(self) -> int:
+        client = chromadb.PersistentClient(path=PERSIST_DIR)
+        try:
+            collection = client.get_collection(COLLECTION_NAME)
+            return int(collection.count())
+        except Exception:
+            return 0
+
+    def _can_reuse_existing_index(self, csv_path: str) -> bool:
+        if os.environ.get("CHROMA_FORCE_REBUILD", "").strip().lower() in {"1", "true", "yes"}:
+            print("♻️ CHROMA_FORCE_REBUILD 已啟用，將重新建立向量庫")
+            return False
+
+        manifest = self._load_manifest()
+        if not manifest:
+            return False
+
+        if manifest.get("embedding_model") != _EMBEDDING_MODEL:
+            print("♻️ Embedding 模型已變更，將重新建立向量庫")
+            return False
+
+        if not os.path.isfile(csv_path):
+            return False
+
+        try:
+            if manifest.get("csv_sha256") != self._csv_fingerprint(csv_path):
+                print("♻️ 偵測到 TTAS CSV 內容變更，將重新建立向量庫")
+                return False
+        except OSError as e:
+            print(f"⚠️ 無法讀取 CSV 指紋：{e}")
+            return False
+
+        doc_count = self._collection_doc_count()
+        expected = int(manifest.get("doc_count") or 0)
+        if doc_count <= 0 or (expected > 0 and doc_count != expected):
+            print(
+                f"♻️ 向量庫筆數不符（磁碟 {doc_count} / manifest {expected}），將重新建立"
+            )
+            return False
+
+        return True
+
+    def _load_existing_vectorstore(self) -> int:
+        _ = self._vectorstore
+        return self._collection_doc_count()
 
     def _clear_chroma_collection(self) -> None:
         client = chromadb.PersistentClient(path=PERSIST_DIR)
@@ -84,8 +162,10 @@ class KnowledgeBase:
             client=client,
             collection_name=COLLECTION_NAME,
         )
-        print(f"✅ LangChain Chroma 已載入 TTAS 向量庫：{len(documents)} 筆（來源僅 CSV）")
-        return len(documents)
+        doc_count = len(documents)
+        self._save_manifest(csv_path, doc_count)
+        print(f"✅ LangChain Chroma 已載入 TTAS 向量庫：{doc_count} 筆（來源僅 CSV）")
+        return doc_count
 
     @property
     def _vectorstore(self) -> Chroma:
@@ -107,7 +187,14 @@ class KnowledgeBase:
 
     def initialize_knowledge_base(self) -> None:
         print("🚀 初始化 TTAS 向量知識庫（僅 CSV）...")
-        n = self._rebuild_from_csv(_DEFAULT_CSV)
+        csv_path = _DEFAULT_CSV
+        if self._can_reuse_existing_index(csv_path):
+            n = self._load_existing_vectorstore()
+            print(f"⚡ 沿用既有 Chroma 向量庫（{n} 筆），略過重建")
+            print(f"✅ TTAS 向量庫就緒，共 {n} 筆規則列")
+            return
+
+        n = self._rebuild_from_csv(csv_path)
         print(f"✅ TTAS 向量庫就緒，共 {n} 筆規則列")
 
     def search_medical_knowledge(

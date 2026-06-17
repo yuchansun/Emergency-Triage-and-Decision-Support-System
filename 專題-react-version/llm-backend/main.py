@@ -782,7 +782,7 @@ async def get_patients():
             
     return patients
 
-# 初始化知識庫（只在啟動時執行一次）
+# 初始化知識庫：啟動時載入；僅在 CSV 變更或向量庫不存在時才重建
 @app.on_event("startup")
 async def startup_event():
     print("🚀 初始化 RAG 知識庫...")
