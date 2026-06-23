@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:ipad": "vite",
+    "dev:ipad": "VITE_USE_SAME_ORIGIN=true vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "preview:ipad": "vite preview"
+    "preview:ipad": "VITE_USE_SAME_ORIGIN=true vite preview"
   },
   "dependencies": {
     "@ckeditor/ckeditor5-react": "^11.0.1",

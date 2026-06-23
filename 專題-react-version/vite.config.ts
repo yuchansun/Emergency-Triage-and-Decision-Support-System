@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import basicSsl from '@vitejs/plugin-basic-ssl'
 
@@ -39,25 +39,36 @@ function buildProxy(
   return proxy
 }
 
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [react(), basicSsl()],
-  server: {
-    host: '0.0.0.0',
-    port: 5173,
-    proxy: {
-      ...buildProxy(apiProxy),
-      ...buildProxy(llmProxy),
-      ...nhicardProxy,
-    },
-  },
-  preview: {
-    host: '0.0.0.0',
-    port: 5173,
-    proxy: {
-      ...buildProxy(apiProxy),
-      ...buildProxy(llmProxy),
-      ...nhicardProxy,
-    },
-  },
+function isIpadMode(env: Record<string, string>): boolean {
+  return env.VITE_USE_SAME_ORIGIN === 'true' || env.VITE_USE_SAME_ORIGIN === '1'
+}
+
+// 預設（npm run dev）：http://localhost:5173，API 直連 127.0.0.1
+// iPad 模式（npm run dev:ipad 或 .env 設 VITE_USE_SAME_ORIGIN=true）：
+//   https://localhost:5173 + 區域網路 + 反向代理
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  const ipadMode = isIpadMode(env)
+
+  const proxy = {
+    ...buildProxy(apiProxy),
+    ...buildProxy(llmProxy),
+    ...nhicardProxy,
+  }
+
+  return {
+    plugins: ipadMode ? [react(), basicSsl()] : [react()],
+    ...(ipadMode && {
+      server: {
+        host: '0.0.0.0',
+        port: 5173,
+        proxy,
+      },
+      preview: {
+        host: '0.0.0.0',
+        port: 5173,
+        proxy,
+      },
+    }),
+  }
 })

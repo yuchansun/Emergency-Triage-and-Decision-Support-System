@@ -1,12 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, createContext, useContext } from 'react';
 import { toTaiwanTraditional } from '../utils/toTaiwanTraditional';
-import {
-  buildPresentationRules,
-  buildPresentationSymptomList,
-  detectPresentationScenario,
-  sleep,
-  type PresentationScenario,
-} from '../config/presentationScenarios';
 import { getApiBaseUrl, getLlmBaseUrl } from '../config/serviceUrls';
 
 interface ChiefComplaintProps {
@@ -448,8 +441,6 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
   const preservedTextSourceRef = useRef<string>('');
   const integrateRequestIdRef = useRef(0);
   const prevVitalsSignatureRef = useRef<string>('');
-  /** 發表模式：命中預設情境時保存，供症狀/規則保底使用 */
-  const activePresentationScenarioRef = useRef<PresentationScenario | null>(null);
 
   const vitalsSignature = useMemo(() => JSON.stringify(vitals ?? {}), [vitals]);
 
@@ -489,7 +480,6 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
     setRecommendationSource('none');
     setRecommendedSymptoms([]);
     lastIntegrateSignatureRef.current = '';
-    activePresentationScenarioRef.current = null;
   };
 
   // 生命徵象變更後：上次自動統整的主訴與推薦一律失效
@@ -1064,70 +1054,6 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
         preservedTextSourceRef.current = source;
       }
 
-      const presentationScenario = detectPresentationScenario(source || '');
-      if (presentationScenario) {
-        activePresentationScenarioRef.current = presentationScenario;
-        console.log('[PRESENTATION] 命中展示情境:', presentationScenario.id);
-
-        // 展示模式：補充資料保留完整口述（語音逐字稿），主訴欄位才顯示統整結果
-        if (source.trim()) {
-          preservedTextSourceRef.current = source.trim();
-          setSupplementText(prev => {
-            const src = source.trim();
-            if (!prev) return src;
-            if (prev.includes(src)) return prev;
-            if (src.includes(prev)) return src;
-            return `${prev}\n${src}`;
-          });
-        }
-
-        await sleep(presentationScenario.summarizeDelayMs);
-        if (requestId !== integrateRequestIdRef.current) {
-          console.log('[PRESENTATION] 略過過期的展示結果');
-          return;
-        }
-
-        const summary = presentationScenario.summary;
-        setLastLlmSummary(summary);
-        lastLlmSummaryRef.current = summary;
-        setInputText(summary);
-        lastIntegrateSignatureRef.current = integrateSignature;
-        lastIntegrateVitalsSignatureRef.current = vitalsSignature;
-        setActiveTab(presentationScenario.activeTab);
-
-        flashAiHighlight('chief');
-
-        const picked = new Set(
-          Array.from(selectedSymptoms).map(s =>
-            s.replace(/^[^:]+:/, '').replace(/^[^:]+:/, '')
-          )
-        );
-        const symptomList = buildPresentationSymptomList(presentationScenario, picked);
-
-        // 主訴已出現；推薦症狀區維持「分析中」直到下方延遲結束
-        await sleep(presentationScenario.symptomsDelayAfterSummaryMs);
-        if (requestId !== integrateRequestIdRef.current) {
-          console.log('[PRESENTATION] 略過過期的推薦症狀結果');
-          return;
-        }
-
-        if (presentationScenario.activeTab === 't') {
-          setLlmTraumaSymptoms(symptomList);
-          setLlmNonTraumaSymptoms([]);
-        } else {
-          setLlmTraumaSymptoms([]);
-          setLlmNonTraumaSymptoms(symptomList);
-        }
-        setRecommendationSource('llm');
-        setRecommendedSymptoms(symptomList);
-
-        flashAiHighlight('symptoms');
-
-        return;
-      }
-
-      activePresentationScenarioRef.current = null;
-
       const summary = (await summarizeChiefComplaint(source)).trim();
       if (requestId !== integrateRequestIdRef.current) {
         console.log('[LLM] 略過過期的統整結果（已有較新的請求）');
@@ -1567,25 +1493,6 @@ export const ChiefComplaintProvider: React.FC<ChiefComplaintProps & { children: 
   ): Promise<RecommendedRuleItem[]> => {
     if (!symptomNames.length) return [];
     const ctx = context ?? getRulesPrefetchContext();
-
-    const presentationScenario = activePresentationScenarioRef.current;
-    const hasPresentationRuleTarget =
-      presentationScenario &&
-      symptomNames.some(name =>
-        presentationScenario.ruleTargets.some(target => target.symptomName === name)
-      );
-    if (hasPresentationRuleTarget && presentationScenario && triageRows) {
-      await sleep(presentationScenario.rulesDelayMs);
-      return filterRulesToCriteriaIndex(
-        buildPresentationRules(
-          presentationScenario,
-          symptomNames,
-          triageRows,
-          age
-        ),
-        symptomNames
-      );
-    }
 
     const res = await fetch(`${LLM_BASE_URL}/api/recommend-rules`, {
       method: 'POST',
